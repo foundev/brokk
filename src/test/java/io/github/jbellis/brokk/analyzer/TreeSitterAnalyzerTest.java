@@ -22,7 +22,7 @@ public final class TreeSitterAnalyzerTest {
     /**
      * Lightweight IProject implementation for unit-testing Tree-sitter analyzers.
      */
-    final static class TestProject implements IProject {
+    public final static class TestProject implements IProject {
         private final Path root;
         private final io.github.jbellis.brokk.analyzer.Language language; // Use Brokk's Language enum
 
