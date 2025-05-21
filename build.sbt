@@ -79,7 +79,6 @@ libraryDependencies ++= Seq(
   "io.github.bonede" % "tree-sitter-php" % "0.23.11",
   "io.github.bonede" % "tree-sitter-python" % "0.23.4",
   "io.github.bonede" % "tree-sitter-rust" % "0.23.1",
-  "io.github.bonede" % "tree-sitter-typescript" % "0.21.1",
 
   // Testing
   "org.junit.jupiter" % "junit-jupiter" % "5.10.2" % Test,
@@ -95,6 +94,9 @@ enablePlugins(BuildInfoPlugin)
 buildInfoKeys := Seq[BuildInfoKey](version)
 buildInfoPackage := "io.github.jbellis.brokk"
 buildInfoObject := "BuildInfo"
+
+// Add unmanaged jars from the lib directory
+unmanagedBase := baseDirectory.value / "lib"
 
 assembly / assemblyMergeStrategy := {
   case PathList("META-INF", xs @ _*) =>
