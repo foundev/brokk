@@ -175,8 +175,13 @@ public abstract class TreeSitterAnalyzer implements IAnalyzer {
                         } else {
                             log.trace("analyzeFileDeclarations returned empty result for file: {}", pf);
                         }
-                    } catch (Exception e) {
-                        log.warn("Error analyzing {}: {}", pf, e, e);
+                    } catch (IOException e) { // Catch specific IOExceptions from file operations
+                        log.warn("IO error analyzing {}: {}", pf, e.getMessage());
+                    } catch (RuntimeException e) { // Catch other runtime exceptions to log context and rethrow
+                        log.error("Unexpected runtime error analyzing {}: {}", pf, e.getMessage(), e);
+                        throw e; // Rethrow to make critical errors visible
+                    } catch (Exception e) { // Catch all other exceptions (less likely)
+                        log.warn("Generic error analyzing {}: {}", pf, e.getMessage(), e);
                     }
                 });
     }
@@ -305,15 +310,14 @@ public abstract class TreeSitterAnalyzer implements IAnalyzer {
     private void reconstructSkeletonRecursive(CodeUnit cu, String indent, StringBuilder sb) {
         List<String> sigList = signatures.get(cu);
         if (sigList == null || sigList.isEmpty()) {
-            log.warn("Missing or empty signature list for CU: {}. Skipping in skeleton reconstruction.", cu);
+            // It's possible for some CUs (e.g., a namespace CU acting only as a parent) to not have direct textual signatures.
+            // This can be legitimate if they are primarily structural and their children form the content.
+            log.trace("No direct signatures found for CU: {}. It might be a structural-only CU. Skipping direct rendering in skeleton reconstruction.", cu);
             return;
         }
 
         for (String individualFullSignature : sigList) {
-            if (individualFullSignature == null || individualFullSignature.isBlank()) {
-                log.warn("Encountered null or blank signature in list for CU: {}. Skipping this signature.", cu);
-                continue;
-            }
+            assert individualFullSignature != null && !individualFullSignature.isBlank() : "Stored signature for CU " + cu + " is unexpectedly null or blank.";
             // Apply indent to each line of the current signature
             String[] signatureLines = individualFullSignature.split("\n", -1); // Use -1 limit
             for (String line : signatureLines) {
@@ -529,10 +533,7 @@ public abstract class TreeSitterAnalyzer implements IAnalyzer {
 
         TSTree tree = localParser.parseString(null, src);
         TSNode rootNode = tree.getRootNode();
-        if (rootNode.isNull()) {
-            log.warn("Parsing failed or produced null root node for {}", file);
-            return new FileAnalysisResult(List.of(), Map.of(), Map.of(), Map.of());
-        }
+        assert !rootNode.isNull() : "Tree-sitter parsing failed to produce a root node for " + file;
         // Log root node type
         String rootNodeType = rootNode.getType();
         log.trace("Root node type for {}: {}", file, rootNodeType);
@@ -649,26 +650,24 @@ public abstract class TreeSitterAnalyzer implements IAnalyzer {
             String primaryCaptureName = defInfo.getKey();
             String simpleName = defInfo.getValue();
 
+            // simpleName must be non-null and non-blank here due to how declarationNodes is populated.
+            assert simpleName != null && !simpleName.isBlank() : "simpleName from declarationNodes is unexpectedly null/blank for node "
+                                                                  + node.getType() + ", capture " + primaryCaptureName + " in file " + file;
+
             // Skip creating a field.definition CU if the variable_declarator's value is an arrow function,
             // as it's handled by a function.definition CU.
             if (primaryCaptureName.equals("field.definition") && "variable_declarator".equals(node.getType())) {
                 TSNode valueNode = node.getChildByFieldName("value"); // "value" is standard for variable_declarator
-                if (valueNode != null && !valueNode.isNull() && 
+                if (valueNode != null && !valueNode.isNull() &&
                     getLanguageSyntaxProfile().functionLikeNodeTypes().contains(valueNode.getType())) { // Check against function-like types
                     // More specifically, for TypeScript, check "arrow_function"
                     if (project.getAnalyzerLanguage() == Language.TYPESCRIPT && "arrow_function".equals(valueNode.getType())) {
                          log.trace("analyzeFileDeclarations: Skipping field.definition CU for '{} ({})' because its value is an arrow function, handled by function.definition.",
                                    simpleName, node.getType());
-                         continue; 
+                         continue;
                     }
                     // Add similar checks for other languages if they have field-like constructs that can be functions
                 }
-            }
-
-            if (simpleName == null || simpleName.isBlank()) {
-                log.warn("Simple name was null/blank for node type {} (capture: {}) in file {}. Skipping.",
-                         node.getType(), primaryCaptureName, file);
-                continue;
             }
 
             log.trace("Processing definition: Name='{}', Capture='{}', Node Type='{}'",
