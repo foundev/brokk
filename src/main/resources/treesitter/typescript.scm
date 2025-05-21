@@ -63,7 +63,10 @@
   type_annotation: (_)? @field.type) @field.definition
 
 ; Enum members
-(enum_member name: (property_identifier) @field.name value: (_)? @field.value) @field.definition
+; Member without explicit value: MyEnum { A }
+((enum_body name: (property_identifier) @field.name) @field.definition) ; Use field accessor for name
+; Member with explicit value: MyEnum { B = 1 }
+((enum_assignment name: (property_identifier) @field.name value: (_)) @field.definition) ; Removed @field.value capture
 
 
 ; Decorators

@@ -5,6 +5,7 @@ import org.treesitter.TSLanguage;
 import org.treesitter.TSNode;
 import org.treesitter.TreeSitterTypescript;
 
+import java.util.ArrayList;
 import java.util.Set;
 import java.util.List;
 import java.util.Map;
@@ -152,22 +153,39 @@ public final class TypescriptAnalyzer extends TreeSitterAnalyzer {
         TSNode bodyNode = funcNode.getChildByFieldName(getLanguageSyntaxProfile().bodyFieldName());
         boolean hasBody = bodyNode != null && !bodyNode.isNull() && bodyNode.getEndByte() > bodyNode.getStartByte();
 
+        boolean requiresBodyAssert = switch (funcNode.getType()) {
+            case "function_declaration", "method_definition", "arrow_function", "generator_function_declaration" -> true;
+            default -> false; // e.g. function_signature, method_signature in interfaces
+        };
+
+        if (requiresBodyAssert && !hasBody) {
+            assert false : "Function type " + funcNode.getType() + " (name: " + functionName + ") requires a body, but none was found or body is empty. Node text: " + textSlice(funcNode, src).lines().findFirst().orElse("");
+        }
+
         if ("arrow_function".equals(funcNode.getType())) {
             signature = String.format("%s%s%s%s =>",
                                       exportPrefix + asyncPrefix, // Modifiers first
-                                      functionName.isEmpty() ? "" : functionName, // name might be empty for some direct arrow calls
+                                      functionName.isEmpty() ? "" : functionName,
                                       paramsText,
                                       tsReturnTypeSuffix);
-            bodySuffix = hasBody ? " " + bodyPlaceholder() : ""; // or specific arrow body like " x" if simple
+            bodySuffix = hasBody ? " " + bodyPlaceholder() : "";
         } else { // Covers function_declaration, method_definition, function_signature, method_signature
             String keyword = "function";
+            // method_signature or function_signature are typically found in interfaces or type aliases and don't use the "function" keyword.
             if ("method_signature".equals(funcNode.getType()) || "function_signature".equals(funcNode.getType())) {
-                keyword = ""; // No "function" keyword for interface method signatures
+                keyword = "";
             }
              // For constructors, the name from query might be "constructor"
             if ("constructor".equals(functionName) && "method_definition".equals(funcNode.getType())) {
-                keyword = ""; // "constructor(...)" not "function constructor(...)"
+                keyword = ""; // Output: "constructor(...)" not "function constructor(...)"
             }
+
+            String endMarker = ";"; // Default for bodiless signatures
+            if (hasBody || ("method_definition".equals(funcNode.getType()) || "function_declaration".equals(funcNode.getType())) && !keyword.isEmpty()) {
+                // If it has a body, or it's a standard method/function definition (which implies a body or {}), no semicolon needed here.
+                endMarker = "";
+            }
+
 
             signature = String.format("%s%s%s%s%s%s",
                                       exportPrefix + asyncPrefix,
@@ -175,160 +193,121 @@ public final class TypescriptAnalyzer extends TreeSitterAnalyzer {
                                       functionName,
                                       paramsText,
                                       tsReturnTypeSuffix,
-                                      (hasBody || "method_definition".equals(funcNode.getType()) || "function_declaration".equals(funcNode.getType())) && !keyword.isEmpty() ? "" : ";"
-                                      // Add ";" for bodiless signatures like in interfaces, unless it's a regular func/method def that expects a body
+                                      endMarker
                                       );
-             bodySuffix = (hasBody && !keyword.isEmpty()) ? " " + bodyPlaceholder() : "";
-             if (("method_signature".equals(funcNode.getType()) || "function_signature".equals(funcNode.getType())) && !signature.endsWith(";")) {
-                 signature += ";"; // Ensure interface/type methods end with a semicolon
-             }
+            bodySuffix = (hasBody && (!keyword.isEmpty() || "constructor".equals(functionName))) ? " " + bodyPlaceholder() : "";
         }
-        return indent + signature + bodySuffix;
+        return indent + signature.stripTrailing() + bodySuffix;
     }
 
+    // getModifierKeywords and getVisibilityPrefix are defined above the renderClassHeader method
 
     @Override
     protected String renderClassHeader(TSNode classNode, String src,
-                                       String exportPrefix, // This comes from getVisibilityPrefix or context
-                                       String signatureText, // This is textSlice(nodeStart, bodyStart)
+                                       String exportPrefix,
+                                       String signatureText,
                                        String baseIndent)
     {
-        // signatureText is the part like "class MyClass<T> extends Base implements IBase"
-        // exportPrefix is already determined.
-        // We might need to add abstract keyword if present.
-        String abstractPrefix = "";
-        TSNode modifiersNode = classNode.getChildByFieldName("modifiers"); // Assuming 'modifiers' field exists
-        if (modifiersNode != null && !modifiersNode.isNull()) {
-            for (int i = 0; i < modifiersNode.getChildCount(); i++) {
-                TSNode modifierChild = modifiersNode.getChild(i);
-                if ("abstract_keyword".equals(modifierChild.getType())) {
-                    abstractPrefix = "abstract ";
+        String processedSignatureText = signatureText.stripLeading();
+        // exportPrefix (from getVisibilityPrefix) now contains all relevant modifiers in order.
+        // We need to remove these from the beginning of signatureText if they are duplicated.
+        String[] prefixWords = exportPrefix.strip().split("\\s+"); // split actual words in prefix
+        for (String word : prefixWords) {
+            if (!word.isEmpty() && processedSignatureText.startsWith(word)) {
+                processedSignatureText = processedSignatureText.substring(word.length()).stripLeading();
+            }
+        }
+        String finalPrefixString = exportPrefix.stripTrailing();
+        return baseIndent + finalPrefixString + (finalPrefixString.isEmpty() ? "" : " ") + processedSignatureText + " {";
+    }
+
+    private List<String> getModifierKeywords(TSNode definitionNode, String src) {
+        Set<String> keywords = new java.util.LinkedHashSet<>(); // Preserves insertion order, helps with `export default`
+
+        TSNode parent = definitionNode.getParent();
+        TSNode grandparent = (parent != null && !parent.isNull()) ? parent.getParent() : null;
+
+        // Case 1: `export [default] const/let/var ...`
+        // export_statement -> lexical_declaration -> variable_declarator (definitionNode)
+        if ("variable_declarator".equals(definitionNode.getType()) &&
+            parent != null && ("lexical_declaration".equals(parent.getType()) || "variable_declaration".equals(parent.getType())) &&
+            grandparent != null && "export_statement".equals(grandparent.getType())) {
+            keywords.add("export");
+            for (int i = 0; i < grandparent.getChildCount(); i++) {
+                if ("default_keyword".equals(grandparent.getChild(i).getType())) {
+                    keywords.add("default");
                     break;
                 }
             }
-        } else if ("abstract_class_declaration".equals(classNode.getType())) {
-            // For abstract_class_declaration, the "abstract" is part of the node type,
-            // signatureText might already include it. If not, add it.
-            if (!signatureText.stripLeading().startsWith("abstract")) {
-                 abstractPrefix = "abstract ";
+        }
+        // Case 2: `export [default] function/class/interface/enum/module ...`
+        // export_statement -> actual_declaration (definitionNode)
+        else if (parent != null && "export_statement".equals(parent.getType())) {
+            keywords.add("export");
+            for (int i = 0; i < parent.getChildCount(); i++) {
+                if ("default_keyword".equals(parent.getChild(i).getType())) {
+                    keywords.add("default");
+                    break;
+                }
             }
         }
 
-
-        String fullPrefix = exportPrefix + abstractPrefix;
-        // Avoid double "export abstract" if signatureText already contains one of them due to broad text slicing
-        String cleanSignatureText = signatureText;
-        if (fullPrefix.contains("export") && cleanSignatureText.stripLeading().startsWith("export")) {
-            cleanSignatureText = cleanSignatureText.replaceFirst("export\\s*", "").stripLeading();
+        // Add modifiers from the definition node itself (e.g., `public static readonly` on a class field, or `export` if directly on class/func)
+        TSNode modifiersNodeOnDef = definitionNode.getChildByFieldName("modifiers");
+        if (modifiersNodeOnDef != null && !modifiersNodeOnDef.isNull()) {
+            for (int i = 0; i < modifiersNodeOnDef.getChildCount(); i++) {
+                TSNode modChild = modifiersNodeOnDef.getChild(i);
+                if (getLanguageSyntaxProfile().modifierNodeTypes().contains(modChild.getType())) {
+                    String modText = textSlice(modChild, src).strip();
+                    if (modText.equals("export") && keywords.contains("export")) continue;
+                    if (modText.equals("default") && keywords.contains("default")) continue;
+                    keywords.add(modText);
+                }
+            }
         }
-        if (fullPrefix.contains("abstract") && cleanSignatureText.stripLeading().startsWith("abstract")) {
-             cleanSignatureText = cleanSignatureText.replaceFirst("abstract\\s*", "").stripLeading();
-        }
 
-        return baseIndent + fullPrefix + cleanSignatureText.strip() + " {";
+        // Add `const/let/var` if definitionNode is `variable_declarator`
+        if ("variable_declarator".equals(definitionNode.getType())) {
+            TSNode lexicalOrVarDecl = parent; // parent of variable_declarator
+            if (lexicalOrVarDecl != null && !lexicalOrVarDecl.isNull() &&
+                ("lexical_declaration".equals(lexicalOrVarDecl.getType()) || "variable_declaration".equals(lexicalOrVarDecl.getType()))) {
+                TSNode kindNode = lexicalOrVarDecl.getChild(0); // const, let, var
+                if (kindNode != null && !kindNode.isNull()) {
+                    keywords.add(textSlice(kindNode, src).strip());
+                }
+            }
+        }
+        
+        // Order the collected keywords:
+        List<String> orderedKeywords = new ArrayList<>();
+        // Standard order: export, default, abstract, static, visibility, readonly, kind
+        if (keywords.contains("export")) orderedKeywords.add("export");
+        if (keywords.contains("default")) orderedKeywords.add("default");
+        if (keywords.contains("abstract")) orderedKeywords.add("abstract");
+        if (keywords.contains("static")) orderedKeywords.add("static");
+        // Visibility: only one of public, protected, private
+        if (keywords.contains("public")) orderedKeywords.add("public");
+        else if (keywords.contains("protected")) orderedKeywords.add("protected");
+        else if (keywords.contains("private")) orderedKeywords.add("private");
+        if (keywords.contains("readonly")) orderedKeywords.add("readonly");
+
+        // Kind: const, let, var. Only one should be present.
+        List.of("const", "let", "var").stream()
+            .filter(keywords::contains)
+            .findFirst()
+            .ifPresent(orderedKeywords::add);
+
+        return orderedKeywords;
     }
-
 
     @Override
     protected String getVisibilityPrefix(TSNode node, String src) {
-        StringBuilder prefix = new StringBuilder();
-
-        // 1. Check for explicit 'export' if node is child of 'export_statement'
-        TSNode parent = node.getParent();
-        if (parent != null && !parent.isNull() && "export_statement".equals(parent.getType())) {
-            // Check if it's `export default`
-            boolean isDefaultExport = false;
-            for (int i = 0; i < parent.getChildCount(); i++) {
-                TSNode child = parent.getChild(i);
-                if ("default_keyword".equals(child.getType())) {
-                    isDefaultExport = true;
-                    break;
-                }
-            }
-            prefix.append("export ");
-            if (isDefaultExport) {
-                prefix.append("default ");
-            }
+        List<String> modifiers = getModifierKeywords(node, src);
+        if (modifiers.isEmpty()) {
+            return "";
         }
-
-        // 2. Check for modifiers on the node itself (e.g. public, private, static, export keyword as modifier)
-        // Tree-sitter TS grammar often has a 'modifiers' child node.
-        TSNode modifiersNode = node.getChildByFieldName("modifiers");
-        if (modifiersNode == null || modifiersNode.isNull()) { // Fallback for nodes like lexical_declaration which may not have 'modifiers' field
-            if ("lexical_declaration".equals(node.getType()) || "variable_declaration".equals(node.getType())) {
-                 // Parent might be export_statement, handled above.
-                 // Here, we check first child of lexical_declaration if it's export_keyword (less common directly)
-                TSNode firstChild = node.getChild(0);
-                if (firstChild != null && !firstChild.isNull() && "export_keyword".equals(firstChild.getType())) {
-                    if (!prefix.toString().contains("export ")) { // Avoid double "export"
-                         prefix.append("export ");
-                    }
-                }
-            }
-        }
-
-
-        if (modifiersNode != null && !modifiersNode.isNull()) {
-            // TSNode does not have a direct children() method. Iterate using getChildCount and getChild.
-            List<TSNode> modifierChildren = new java.util.ArrayList<>();
-            for (int i = 0; i < modifiersNode.getChildCount(); i++) {
-                modifierChildren.add(modifiersNode.getChild(i));
-            }
-
-            String collectedModifiers = modifierChildren.stream()
-                .map(modNode -> {
-                    String type = modNode.getType();
-                    if (getLanguageSyntaxProfile().modifierNodeTypes().contains(type)) {
-                        // For "export_keyword", only add "export" if not already added by parent check
-                        if (type.equals("export_keyword") && prefix.toString().contains("export ")) {
-                            return "";
-                        }
-                        return textSlice(modNode, src).strip();
-                    }
-                    return "";
-                })
-                .filter(s -> !s.isEmpty())
-                .collect(Collectors.joining(" "));
-
-            if (!collectedModifiers.isEmpty()) {
-                // Ensure export from modifiers list doesn't duplicate one from parent export_statement
-                if (collectedModifiers.startsWith("export") && prefix.toString().contains("export ")) {
-                    String tempCollected = collectedModifiers.replaceFirst("export\\s*", "").strip();
-                    if (!prefix.toString().endsWith(" ")) prefix.append(" ");
-                    prefix.append(tempCollected);
-                    if (!tempCollected.isEmpty() && !prefix.toString().endsWith(" ")) prefix.append(" ");
-
-                } else {
-                    if (!prefix.toString().endsWith(" ") && !collectedModifiers.startsWith(" ")) prefix.append(" ");
-                    prefix.append(collectedModifiers);
-                    if (!prefix.toString().endsWith(" ")) prefix.append(" ");
-                }
-            }
-        }
-
-
-        // For variable_declarator, the 'export' or 'const/let/var' is handled by its parent lexical_declaration.
-        // The getVisibilityPrefix is called on the actual *definition node* from the SCM query.
-        // If @field.definition is variable_declarator, its parent (lexical_declaration) might have modifiers.
-        if ("variable_declarator".equals(node.getType())) {
-            TSNode lexicalOrVarDecl = node.getParent();
-            if (lexicalOrVarDecl != null && !lexicalOrVarDecl.isNull() &&
-                ("lexical_declaration".equals(lexicalOrVarDecl.getType()) || "variable_declaration".equals(lexicalOrVarDecl.getType())))
-            {
-                // Visibility like export handled by lexicalOrVarDecl's parent (export_statement) or its modifiers.
-                // Here we add const/let/var.
-                String keyword = textSlice(lexicalOrVarDecl.getChild(0), src).strip(); // const, let, var
-                if (!keyword.isEmpty()) {
-                    // Prepend keyword if not already there (e.g. from a broader prefix logic)
-                    if (!prefix.toString().contains(keyword)) {
-                        prefix.insert(0, keyword + " ");
-                    }
-                }
-            }
-        }
-        return prefix.toString().stripTrailing(); // Ensure no trailing space if it's the only thing
+        return String.join(" ", modifiers) + " ";
     }
-
 
     @Override
     protected String bodyPlaceholder() {

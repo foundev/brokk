@@ -71,6 +71,18 @@ export class FieldTest {
     static staticMethod() {}
 }
 
+// Function Overloads
+export function processInput(input: string): string[];
+export function processInput(input: number): number[];
+export function processInput(input: boolean): boolean[];
+export function processInput(input: any): any[] {
+    if (typeof input === "string") return [`s-${input}`];
+    if (typeof input === "number") return [`n-${input}`];
+    if (typeof input === "boolean") return [`b-${input}`];
+    return [input];
+}
+
+
 // export default class DefaultExportedClass {
 //    message: string = "default";
 // }

@@ -265,6 +265,59 @@ public class TypescriptAnalyzerTest {
               protected protectedMethod() { ... }
               static staticMethod() { ... }
             }"""), normalize.apply(skeletons.get(fieldTest)));
+
+
+        // Test for overloaded function
+        CodeUnit overloadedFunc = CodeUnit.fn(advancedTsFile, "", "processInput");
+        assertTrue(skeletons.containsKey(overloadedFunc), "processInput overloaded function skeleton missing.");
+        assertEquals(normalize.apply("""
+            export function processInput(input: string): string[];
+            export function processInput(input: number): number[];
+            export function processInput(input: boolean): boolean[];
+            export function processInput(input: any): any[] { ... }"""),
+                     normalize.apply(skeletons.get(overloadedFunc)));
+    }
+
+    @Test
+    void testDefaultExportSkeletons() {
+        ProjectFile defaultExportFile = new ProjectFile(project.getRoot(), "DefaultExport.ts");
+        Map<CodeUnit, String> skeletons = analyzer.getSkeletons(defaultExportFile);
+        assertFalse(skeletons.isEmpty(), "Skeletons map for DefaultExport.ts should not be empty.");
+
+        // Default exported class
+        // The simple name for a default export class might be tricky.
+        // If query gives it a name like "MyDefaultClass", then CU is "MyDefaultClass"
+        // If query gives it a special name like "default", then CU is "default"
+        // Current query uses `(class_declaration name: (identifier) @class.name)`.
+        // For `export default class Foo`, `name` is `Foo`.
+        // For `export default class { ... }` (anonymous default), name node would be absent.
+        // TS query `@class.name` is `(identifier)`. `export default class MyDefaultClass` has `name: (identifier)`
+        CodeUnit defaultClass = CodeUnit.cls(defaultExportFile, "", "MyDefaultClass");
+        assertTrue(skeletons.containsKey(defaultClass), "MyDefaultClass (default export) skeleton missing. Found: " + skeletons.keySet());
+        assertEquals(normalize.apply("""
+            export default class MyDefaultClass {
+              constructor() { ... }
+              doSomething(): void { ... }
+              get value(): string { ... }
+            }"""), normalize.apply(skeletons.get(defaultClass)));
+
+        // Default exported function
+        CodeUnit defaultFunction = CodeUnit.fn(defaultExportFile, "", "myDefaultFunction");
+        assertTrue(skeletons.containsKey(defaultFunction), "myDefaultFunction (default export) skeleton missing.");
+        assertEquals(normalize.apply("export default function myDefaultFunction(param: string): string { ... }"),
+                     normalize.apply(skeletons.get(defaultFunction)));
+
+        // Named export in the same file
+        CodeUnit anotherNamedClass = CodeUnit.cls(defaultExportFile, "", "AnotherNamedClass");
+        assertTrue(skeletons.containsKey(anotherNamedClass));
+        assertEquals(normalize.apply("""
+            export class AnotherNamedClass {
+              name: string = "Named";
+            }"""), normalize.apply(skeletons.get(anotherNamedClass)));
+
+        CodeUnit utilityRateConst = CodeUnit.field(defaultExportFile, "", "_module_.utilityRate");
+        assertTrue(skeletons.containsKey(utilityRateConst));
+        assertEquals(normalize.apply("export const utilityRate: number = 0.15"), normalize.apply(skeletons.get(utilityRateConst)));
     }
     
     @Test
@@ -287,6 +340,28 @@ public class TypescriptAnalyzerTest {
         Optional<String> asyncNamedSource = analyzer.getMethodSource("asyncNamedFunc");
         assertTrue(asyncNamedSource.isPresent());
         assertEquals(normalize.apply("export async function asyncNamedFunc(param: number): Promise<void> {\n    await Promise.resolve();\n    console.log(param);\n}"), normalize.apply(asyncNamedSource.get()));
+
+        // Test getMethodSource for overloaded function (processInput from Advanced.ts)
+        // It should return all signatures and the implementation concatenated.
+        Optional<String> overloadedSource = analyzer.getMethodSource("processInput");
+        assertTrue(overloadedSource.isPresent(), "Source for overloaded function processInput should be present.");
+        String expectedOverloadedSource = normalize.apply("""
+            export function processInput(input: string): string[];
+            """) + "\n\n" + // TreeSitterAnalyzer joins with "\n\n"
+            normalize.apply("""
+            export function processInput(input: number): number[];
+            """) + "\n\n" +
+            normalize.apply("""
+            export function processInput(input: boolean): boolean[];
+            """) + "\n\n" +
+            normalize.apply("""
+            export function processInput(input: any): any[] {
+                if (typeof input === "string") return [`s-${input}`];
+                if (typeof input === "number") return [`n-${input}`];
+                if (typeof input === "boolean") return [`b-${input}`];
+                return [input];
+            }""");
+        assertEquals(expectedOverloadedSource, normalize.apply(overloadedSource.get()), "processInput overloaded source mismatch.");
     }
 
     @Test

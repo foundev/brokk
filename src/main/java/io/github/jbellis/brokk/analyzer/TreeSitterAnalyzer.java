@@ -590,11 +590,6 @@ public abstract class TreeSitterAnalyzer implements IAnalyzer {
                     }
 
                     if (simpleName != null && !simpleName.isBlank()) {
-                        if ("interface.method.definition".equals(captureName) && file.getFileName().equals("declarations.go")) {
-                            log.trace("[declarations.go DEBUG] About to add to declarationNodes: Node='{}' (line {} text:'{}'), Capture='{}', SimpleName='{}'",
-                                     definitionNode.getType(), definitionNode.getStartPoint().getRow() + 1, textSlice(definitionNode, src).lines().findFirst().orElse(""),
-                                     captureName, simpleName);
-                        }
                         declarationNodes.putIfAbsent(definitionNode, Map.entry(captureName, simpleName));
                         log.trace("MATCH [{}]: Found potential definition: Capture [{}], Node Type [{}], Simple Name [{}] -> Storing with determined name.",
                                   match.getId(), captureName, definitionNode.getType(), simpleName);
@@ -637,7 +632,7 @@ public abstract class TreeSitterAnalyzer implements IAnalyzer {
                                         entry.getValue().getKey(),
                                         entry.getValue().getValue()))
                 .collect(Collectors.toList()));
-             if (declarationNodes.isEmpty()) {
+            if (declarationNodes.isEmpty()) {
                 log.trace("[declarations.go DEBUG] declarationNodes is EMPTY after query execution.");
             }
         }
@@ -677,54 +672,37 @@ public abstract class TreeSitterAnalyzer implements IAnalyzer {
             String classChain = String.join("$", enclosingClassNames);
             log.trace("Computed classChain for simpleName='{}': '{}'", simpleName, classChain);
 
-            // Adjust simpleName and classChain for Go methods to correctly include the receiver type
+            // Language-specific FQN adjustments (e.g., for Go method receivers)
             if (project.getAnalyzerLanguage() == Language.GO && "method.definition".equals(primaryCaptureName)) {
-                // The SCM query for Go methods captures `@method.receiver.type` and `@method.identifier`
-                // `simpleName` at this point is from `@method.identifier` (e.g., "MyMethod")
-                // We need to find the receiver type from the original captures for this match
-                // The `capturedNodes` map (re-populated per match earlier in the loop) is not directly available here.
-                // We need to re-access the specific captures for the current `match` associated with `node`.
-                // This requires finding the original TSQueryMatch or passing its relevant parts.
-                // For now, let's assume `node` is the `method_declaration` node, and we can query its children.
-                // A more robust way would be to pass `capturedNodes` from the outer loop or re-query for this specific `node`.
-
+                // This logic re-queries based on `node` to find specific captures related to the method definition,
+                // such as the receiver type, which is then used to adjust `simpleName` and `classChain`.
                 TSNode receiverNode = null;
-                TSNode methodIdentifierNode = null; // This would be `node.getChildByFieldName("name")` for method_declaration
-                                                    // or more reliably, the node associated with captureName.replace(".definition", ".name")
-                                                    // simpleName is already derived from method.identifier.
-
-                // Re-evaluate captures specific to this `node` (method_definition)
-                // This is a simplified re-querying logic. A more efficient approach might involve
-                // passing the full `capturedNodes` map associated with the `match` that led to this `node`.
-                TSQueryCursor an_cursor = new TSQueryCursor();
-                an_cursor.exec(this.query, node); // Execute query only on the current definition node
-                TSQueryMatch an_match = new TSQueryMatch();
-                Map<String, TSNode> localCaptures = new HashMap<>();
-                if (an_cursor.nextMatch(an_match)) { // Should find one match for the definition node itself
-                    for (TSQueryCapture capture : an_match.getCaptures()) {
-                        String capName = this.query.getCaptureNameForId(capture.getIndex());
-                        localCaptures.put(capName, capture.getNode());
+                TSQueryCursor localCursor = new TSQueryCursor();
+                localCursor.exec(this.query, node); // Query on the specific method definition node
+                TSQueryMatch localMatch = new TSQueryMatch();
+                if (localCursor.nextMatch(localMatch)) {
+                    for (TSQueryCapture capture : localMatch.getCaptures()) {
+                        if ("method.receiver.type".equals(this.query.getCaptureNameForId(capture.getIndex()))) {
+                            receiverNode = capture.getNode();
+                            break;
+                        }
                     }
                 }
-                // an_cursor.close(); // TSQueryCursor does not have close
-
-                receiverNode = localCaptures.get("method.receiver.type");
 
                 if (receiverNode != null && !receiverNode.isNull()) {
                     String receiverTypeText = textSlice(receiverNode, src).trim();
-                    if (receiverTypeText.startsWith("*")) { // Handle pointer receivers like *MyStruct
+                    if (receiverTypeText.startsWith("*")) {
                         receiverTypeText = receiverTypeText.substring(1).trim();
                     }
-                    // Prepend receiver type to simpleName and set classChain to receiver type
                     if (!receiverTypeText.isEmpty()) {
                         simpleName = receiverTypeText + "." + simpleName;
-                        classChain = receiverTypeText;
-                        log.trace("Go method: Adjusted simpleName to '{}', classChain to '{}'", simpleName, classChain);
+                        classChain = receiverTypeText; // For Go methods, classChain is the receiver type
+                        log.trace("Adjusted Go method: simpleName='{}', classChain='{}'", simpleName, classChain);
                     } else {
                         log.warn("Go method: Receiver type text was empty for node {}. FQN might be incorrect.", textSlice(receiverNode, src));
                     }
                 } else {
-                    log.warn("Go method: Could not find @method.receiver.type capture for method '{}'. FQN might be incorrect.", simpleName);
+                    log.warn("Go method: Could not find capture for @method.receiver.type for method '{}'. FQN might be incorrect.", simpleName);
                 }
             }
 
