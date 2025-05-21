@@ -644,10 +644,26 @@ public abstract class TreeSitterAnalyzer implements IAnalyzer {
         TSNode currentRootNode = tree.getRootNode(); // Used for namespace and class chain extraction
 
         for (var entry : sortedDeclarationEntries) {
-            TSNode node = entry.getKey();
+            TSNode node = entry.getKey(); // This is the definitionNode for this entry
             Map.Entry<String, String> defInfo = entry.getValue();
             String primaryCaptureName = defInfo.getKey();
             String simpleName = defInfo.getValue();
+
+            // Skip creating a field.definition CU if the variable_declarator's value is an arrow function,
+            // as it's handled by a function.definition CU.
+            if (primaryCaptureName.equals("field.definition") && "variable_declarator".equals(node.getType())) {
+                TSNode valueNode = node.getChildByFieldName("value"); // "value" is standard for variable_declarator
+                if (valueNode != null && !valueNode.isNull() && 
+                    getLanguageSyntaxProfile().functionLikeNodeTypes().contains(valueNode.getType())) { // Check against function-like types
+                    // More specifically, for TypeScript, check "arrow_function"
+                    if (project.getAnalyzerLanguage() == Language.TYPESCRIPT && "arrow_function".equals(valueNode.getType())) {
+                         log.trace("analyzeFileDeclarations: Skipping field.definition CU for '{} ({})' because its value is an arrow function, handled by function.definition.",
+                                   simpleName, node.getType());
+                         continue; 
+                    }
+                    // Add similar checks for other languages if they have field-like constructs that can be functions
+                }
+            }
 
             if (simpleName == null || simpleName.isBlank()) {
                 log.warn("Simple name was null/blank for node type {} (capture: {}) in file {}. Skipping.",
@@ -922,15 +938,16 @@ public abstract class TreeSitterAnalyzer implements IAnalyzer {
                 buildFunctionSkeleton(nodeForContent, Optional.of(simpleName), src, "", signatureLines, exportPrefix);
                 break;
             case FIELD_LIKE: {
-                String fieldDeclText = textSlice(nodeForContent, src).stripLeading().strip();
-                // If exportPrefix is present and fieldDeclText also starts with it,
-                // remove it from fieldDeclText to avoid duplication.
-                if (!exportPrefix.isEmpty() && !exportPrefix.isBlank() && fieldDeclText.startsWith(exportPrefix.strip())) {
-                    fieldDeclText = fieldDeclText.substring(exportPrefix.strip().length()).stripLeading();
-                } else if (!exportPrefix.isEmpty() && !exportPrefix.isBlank() && fieldDeclText.startsWith(exportPrefix)) {
-                    fieldDeclText = fieldDeclText.substring(exportPrefix.length()).stripLeading();
+                String fieldSignatureText = textSlice(nodeForContent, src).stripLeading().strip();
+                // If exportPrefix is present and fieldSignatureText also starts with it, remove to avoid duplication by formatFieldSignature.
+                if (!exportPrefix.isEmpty() && !exportPrefix.isBlank()) {
+                    String strippedExportPrefix = exportPrefix.strip();
+                    if (fieldSignatureText.startsWith(strippedExportPrefix)) {
+                        fieldSignatureText = fieldSignatureText.substring(strippedExportPrefix.length()).stripLeading();
+                    }
                 }
-                signatureLines.add(exportPrefix + fieldDeclText);
+                String fieldLine = formatFieldSignature(nodeForContent, src, exportPrefix, fieldSignatureText, "");
+                if (fieldLine != null && !fieldLine.isBlank()) signatureLines.add(fieldLine);
                 break;
             }
             case UNSUPPORTED:
@@ -1005,6 +1022,20 @@ public abstract class TreeSitterAnalyzer implements IAnalyzer {
     protected String assembleClassSignature(TSNode classNode, String src, String exportPrefix, String classSignatureText, String baseIndent) {
         return renderClassHeader(classNode, src, exportPrefix, classSignatureText, baseIndent);
     }
+
+    /**
+     * Formats the complete signature for a field-like declaration.
+     * Subclasses must implement this to provide language-specific formatting,
+     * including any necessary keywords, type annotations, and terminators (e.g., semicolon).
+     *
+     * @param fieldNode The TSNode representing the field declaration.
+     * @param src The source code.
+     * @param exportPrefix The pre-determined export/visibility prefix (e.g., "export const ").
+     * @param signatureText The core text of the field signature (e.g., "fieldName: type = value").
+     * @param baseIndent The indentation string for this line.
+     * @return The fully formatted field signature line.
+     */
+    protected abstract String formatFieldSignature(TSNode fieldNode, String src, String exportPrefix, String signatureText, String baseIndent);
 
     /**
      * Determines a visibility or export prefix (e.g., "export ", "public ") for a given node.

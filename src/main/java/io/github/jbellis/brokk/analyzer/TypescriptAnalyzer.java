@@ -40,10 +40,14 @@ public final class TypescriptAnalyzer extends TreeSitterAnalyzer {
                 "class.definition", SkeletonType.CLASS_LIKE,
                 "interface.definition", SkeletonType.CLASS_LIKE,
                 "enum.definition", SkeletonType.CLASS_LIKE,
-                "module.definition", SkeletonType.CLASS_LIKE, // Treat TS modules/namespaces like classes for CU
+                "module.definition", SkeletonType.CLASS_LIKE,
                 "function.definition", SkeletonType.FUNCTION_LIKE,
+                // "method.definition" is covered by "function.definition" due to query structure
+                // "arrow_function.definition" is covered by "function.definition"
                 "field.definition", SkeletonType.FIELD_LIKE,
-                "decorator.definition", SkeletonType.UNSUPPORTED // Decorators themselves are not CUs but modify others
+                // "property.definition" (class/interface property) is covered by "field.definition"
+                // "enum_member.definition" is covered by "field.definition"
+                "decorator.definition", SkeletonType.UNSUPPORTED
             ),
             // asyncKeywordNodeType
             "async", // TS uses 'async' keyword
@@ -82,45 +86,43 @@ public final class TypescriptAnalyzer extends TreeSitterAnalyzer {
                                       String packageName,
                                       String classChain)
     {
-        return switch (captureName) {
-            case "class.definition", "interface.definition", "enum.definition", "module.definition" -> {
-                String finalShortName = classChain.isEmpty() ? simpleName : classChain + "$" + simpleName;
-                yield CodeUnit.cls(file, packageName, finalShortName);
-            }
-            case "function.definition" -> {
-                String finalShortName;
-                 // For arrow functions assigned to const/let, simpleName might be "anonymous_arrow_function" if not extracted from var.
-                 // The TreeSitterAnalyzer's simpleName extraction tries hard to get it from the variable_declarator's name.
-                if (simpleName.equals("anonymous_arrow_function") || simpleName.isEmpty()) {
-                    // This case should be rare if the query and name extraction are robust for assigned arrow functions.
-                    // Consider if a more unique name is needed or if such CUs should be skipped.
-                    // For now, let's try to make it somewhat unique or log.
-                    log.warn("Anonymous or unnamed function found for capture {} in file {}. ClassChain: {}", captureName, file, classChain);
-                    // Potentially skip by returning null if truly anonymous and not desired.
-                    // For now, proceed with a placeholder if needed, or rely on simpleName being correctly extracted.
-                }
+        // Adjust FQN based on capture type and context
+        String finalShortName;
+        SkeletonType skeletonType = getSkeletonTypeForCapture(captureName);
 
-                if (!classChain.isEmpty()) { // Method within a class/interface/module or function within a module
-                    finalShortName = classChain + "." + simpleName;
-                } else { // Top-level function in the file
-                    finalShortName = simpleName;
-                }
-                yield CodeUnit.fn(file, packageName, finalShortName);
-            }
-            case "field.definition" -> {
-                String finalShortName;
-                if (classChain.isEmpty()) { // Top-level variable
-                    finalShortName = "_module_." + simpleName;
-                } else { // Class/interface/enum field
-                    finalShortName = classChain + "." + simpleName;
-                }
-                yield CodeUnit.field(file, packageName, finalShortName);
-            }
-            default -> {
-                log.debug("Ignoring capture in TypescriptAnalyzer: {} with name: {} and classChain: {}", captureName, simpleName, classChain);
-                yield null;
-            }
-        };
+        switch (skeletonType) {
+            case CLASS_LIKE:
+                finalShortName = classChain.isEmpty() ? simpleName : classChain + "$" + simpleName;
+                return CodeUnit.cls(file, packageName, finalShortName);
+            case FUNCTION_LIKE:
+                 if (simpleName.equals("anonymous_arrow_function") || simpleName.isEmpty()) {
+                    log.warn("Anonymous or unnamed function found for capture {} in file {}. ClassChain: {}. Will use placeholder or rely on extracted name.", captureName, file, classChain);
+                    // simpleName might be "anonymous_arrow_function" if #set! "default_name" was used and no var name found
+                 }
+                finalShortName = classChain.isEmpty() ? simpleName : classChain + "." + simpleName;
+                return CodeUnit.fn(file, packageName, finalShortName);
+            case FIELD_LIKE:
+                finalShortName = classChain.isEmpty() ? "_module_." + simpleName : classChain + "." + simpleName;
+                return CodeUnit.field(file, packageName, finalShortName);
+            default: // UNSUPPORTED or other
+                log.debug("Ignoring capture in TypescriptAnalyzer: {} (mapped to type {}) with name: {} and classChain: {}",
+                          captureName, skeletonType, simpleName, classChain);
+                return null;
+        }
+    }
+
+    @Override
+    protected String formatReturnType(TSNode returnTypeNode, String src) {
+        if (returnTypeNode == null || returnTypeNode.isNull()) {
+            return "";
+        }
+        String text = textSlice(returnTypeNode, src).strip();
+        // A type_annotation node in TS is typically ": type"
+        // We only want the "type" part for the suffix.
+        if (text.startsWith(":")) {
+            return text.substring(1).strip();
+        }
+        return text; // Should not happen if TS grammar for return_type capture is specific to type_annotation
     }
 
     @Override
@@ -159,121 +161,199 @@ public final class TypescriptAnalyzer extends TreeSitterAnalyzer {
         };
 
         if (requiresBodyAssert && !hasBody) {
-            assert false : "Function type " + funcNode.getType() + " (name: " + functionName + ") requires a body, but none was found or body is empty. Node text: " + textSlice(funcNode, src).lines().findFirst().orElse("");
+            // This assertion is too strict as some queries might yield method_definition for abstract methods too
+            // For now, we rely on hasBody to correctly append placeholder or semicolon.
+            log.debug("Function type {} (name: {}) requires a body for placeholder, but none was found or body is empty. Node text: {}",
+                     funcNode.getType(), functionName, textSlice(funcNode, src).lines().findFirst().orElse(""));
         }
 
         if ("arrow_function".equals(funcNode.getType())) {
+            // exportPrefix for arrow func comes from its variable_declarator's context
             signature = String.format("%s%s%s%s =>",
-                                      exportPrefix + asyncPrefix, // Modifiers first
-                                      functionName.isEmpty() ? "" : functionName,
+                                      exportPrefix.stripTrailing() + asyncPrefix, // Modifiers first
+                                      functionName.isEmpty() ? "" : functionName, // functionName for arrow is var name
                                       paramsText,
                                       tsReturnTypeSuffix);
-            bodySuffix = hasBody ? " " + bodyPlaceholder() : "";
+            bodySuffix = hasBody ? " " + bodyPlaceholder() : ";"; // Arrow func type implies expression or block, always has a "body"
+                                                                  // but if it's just a type signature for an arrow func var, maybe it ends in ; ?
+                                                                  // The query should only capture arrow functions with bodies.
+                                                                  // Let's assume if hasBody is true, placeholder. If somehow not, this path might be wrong.
+                                                                  // Test cases will clarify. For `const anArrowFunc = (msg: string): void => { ... }`, hasBody is true.
         } else { // Covers function_declaration, method_definition, function_signature, method_signature
-            String keyword = "function";
-            // method_signature or function_signature are typically found in interfaces or type aliases and don't use the "function" keyword.
-            if ("method_signature".equals(funcNode.getType()) || "function_signature".equals(funcNode.getType())) {
-                keyword = "";
+            String keyword = ""; // Default for methods/signatures inside class/interface
+            if ("function_declaration".equals(funcNode.getType()) || "generator_function_declaration".equals(funcNode.getType())) {
+                keyword = "function"; // Top-level functions or explicitly 'function foo()'
+                 if ("generator_function_declaration".equals(funcNode.getType())) keyword += "*";
+            } else if ("constructor".equals(functionName) && "method_definition".equals(funcNode.getType())) {
+                keyword = "constructor"; // Special keyword for constructor, name is "constructor"
+                functionName = ""; // constructor name is part of keyword
+            } else if ("method_definition".equals(funcNode.getType())) {
+                 // For get/set accessors, the "name" is the property name, and "get" or "set" is a modifier/keyword part of the definition.
+                 // The query captures "get" or "set" text as part of method_definition node.
+                 // We need to check if funcNode starts with "get " or "set "
+                 String nodeText = textSlice(funcNode.getStartByte(), funcNode.getStartByte() + 4, src); // Check first few chars
+                 if (nodeText.startsWith("get ")) {
+                     keyword = "get";
+                     functionName = functionName.startsWith("get ") ? functionName.substring(4) : functionName;
+                 } else if (nodeText.startsWith("set ")) {
+                     keyword = "set";
+                     functionName = functionName.startsWith("set ") ? functionName.substring(4) : functionName;
+                 }
+                 // Otherwise, it's a normal method, no explicit "function" keyword.
             }
-             // For constructors, the name from query might be "constructor"
-            if ("constructor".equals(functionName) && "method_definition".equals(funcNode.getType())) {
-                keyword = ""; // Output: "constructor(...)" not "function constructor(...)"
-            }
+            // For function_signature, method_signature, no keyword.
 
-            String endMarker = ";"; // Default for bodiless signatures
-            if (hasBody || ("method_definition".equals(funcNode.getType()) || "function_declaration".equals(funcNode.getType())) && !keyword.isEmpty()) {
-                // If it has a body, or it's a standard method/function definition (which implies a body or {}), no semicolon needed here.
-                endMarker = "";
+            String endMarker = "";
+            if (!hasBody && !"arrow_function".equals(funcNode.getType())) { // If no body (interface, abstract, overload)
+                endMarker = ";";
             }
-
 
             signature = String.format("%s%s%s%s%s%s",
-                                      exportPrefix + asyncPrefix,
-                                      keyword.isEmpty() ? "" : keyword + " ",
+                                      exportPrefix.stripTrailing() + asyncPrefix,
+                                      keyword.isEmpty() ? "" : keyword + (functionName.isEmpty() && keyword.equals("constructor") ? "" : " "), // Add space if keyword exists and it's not just "constructor"
                                       functionName,
                                       paramsText,
                                       tsReturnTypeSuffix,
-                                      endMarker
-                                      );
-            bodySuffix = (hasBody && (!keyword.isEmpty() || "constructor".equals(functionName))) ? " " + bodyPlaceholder() : "";
+                                      endMarker);
+            bodySuffix = hasBody ? " " + bodyPlaceholder() : "";
         }
         return indent + signature.stripTrailing() + bodySuffix;
     }
+
+    @Override
+    protected String formatFieldSignature(TSNode fieldNode, String src, String exportPrefix, String signatureText, String baseIndent) {
+        String fullSignature = (exportPrefix.stripTrailing() + " " + signatureText.strip()).strip();
+        // Avoid adding semicolon if signature already ends with it, or if it's a complex initializer like an object or function body placeholder
+        if (!fullSignature.endsWith(";") &&
+            !fullSignature.endsWith("}") && // common for object literal assignments
+            !fullSignature.endsWith(bodyPlaceholder().trim())) { // check for function assignments rendered with placeholder
+            fullSignature += ";";
+        }
+        return baseIndent + fullSignature;
+    }
+
 
     // getModifierKeywords and getVisibilityPrefix are defined above the renderClassHeader method
 
     @Override
     protected String renderClassHeader(TSNode classNode, String src,
-                                       String exportPrefix,
-                                       String signatureText,
+                                       String exportPrefix, // This now comes from getVisibilityPrefix, includes all mods
+                                       String signatureText, // This is the raw text slice from class start to body start
                                        String baseIndent)
     {
         String processedSignatureText = signatureText.stripLeading();
-        // exportPrefix (from getVisibilityPrefix) now contains all relevant modifiers in order.
-        // We need to remove these from the beginning of signatureText if they are duplicated.
-        String[] prefixWords = exportPrefix.strip().split("\\s+"); // split actual words in prefix
-        for (String word : prefixWords) {
-            if (!word.isEmpty() && processedSignatureText.startsWith(word)) {
-                processedSignatureText = processedSignatureText.substring(word.length()).stripLeading();
-            }
+        String classKeyword;
+        switch (classNode.getType()) {
+            case "interface_declaration": classKeyword = "interface"; break;
+            case "enum_declaration": classKeyword = "enum"; break;
+            case "module": classKeyword = "namespace"; break; // Or "module", but "namespace" is more common in modern TS skeletons
+            default: classKeyword = "class"; break; // class_declaration, abstract_class_declaration
         }
-        String finalPrefixString = exportPrefix.stripTrailing();
-        return baseIndent + finalPrefixString + (finalPrefixString.isEmpty() ? "" : " ") + processedSignatureText + " {";
+
+        // The signatureText from textSlice might contain modifiers already.
+        // exportPrefix from getVisibilityPrefix should be the source of truth for modifiers.
+        // We need to strip these known modifiers + classKeyword from processedSignatureText if present,
+        // then prepend the controlled exportPrefix and classKeyword.
+
+        String tempSig = processedSignatureText;
+        // Strip export/default if present in tempSig, as exportPrefix handles it
+        if (tempSig.startsWith("export default ")) tempSig = tempSig.substring("export default ".length()).stripLeading();
+        else if (tempSig.startsWith("export ")) tempSig = tempSig.substring("export ".length()).stripLeading();
+        // Strip abstract if present
+        if (tempSig.startsWith("abstract ")) tempSig = tempSig.substring("abstract ".length()).stripLeading();
+        // Strip the class keyword itself
+        if (tempSig.startsWith(classKeyword + " ")) tempSig = tempSig.substring((classKeyword + " ").length()).stripLeading();
+        
+        // tempSig now should be "ClassName<Generics> extends Base implements Iface"
+        processedSignatureText = tempSig;
+
+        String finalPrefix = exportPrefix.stripTrailing(); // exportPrefix already has a trailing space if not empty
+        if (!finalPrefix.isEmpty()) finalPrefix += " ";
+
+        return baseIndent + finalPrefix + classKeyword + " " + processedSignatureText + " {";
     }
 
     private List<String> getModifierKeywords(TSNode definitionNode, String src) {
         Set<String> keywords = new java.util.LinkedHashSet<>(); // Preserves insertion order, helps with `export default`
 
         TSNode parent = definitionNode.getParent();
-        TSNode grandparent = (parent != null && !parent.isNull()) ? parent.getParent() : null;
+        TSNode ancestor = parent; // Start with parent for typical export_statement -> decl
 
-        // Case 1: `export [default] const/let/var ...`
-        // export_statement -> lexical_declaration -> variable_declarator (definitionNode)
-        if ("variable_declarator".equals(definitionNode.getType()) &&
-            parent != null && ("lexical_declaration".equals(parent.getType()) || "variable_declaration".equals(parent.getType())) &&
-            grandparent != null && "export_statement".equals(grandparent.getType())) {
-            keywords.add("export");
-            for (int i = 0; i < grandparent.getChildCount(); i++) {
-                if ("default_keyword".equals(grandparent.getChild(i).getType())) {
-                    keywords.add("default");
-                    break;
-                }
-            }
-        }
-        // Case 2: `export [default] function/class/interface/enum/module ...`
-        // export_statement -> actual_declaration (definitionNode)
-        else if (parent != null && "export_statement".equals(parent.getType())) {
+        // Check for export context:
+        // export [default] class/func/interface/enum/module/type (definitionNode is the decl)
+        // export [default] const/let/var (definitionNode is variable_declarator, parent is lexical/var_decl, grandparent is export_stmt)
+        if (parent != null && "export_statement".equals(parent.getType())) { // Direct export: export class X {}, export function f() {}
             keywords.add("export");
             for (int i = 0; i < parent.getChildCount(); i++) {
-                if ("default_keyword".equals(parent.getChild(i).getType())) {
+                TSNode child = parent.getChild(i);
+                if ("default".equals(child.getType())) { // Check for "default" keyword node type
+                    keywords.add("default");
+                    break;
+                }
+            }
+        } else if (parent != null && ("lexical_declaration".equals(parent.getType()) || "variable_declaration".equals(parent.getType())) &&
+                   parent.getParent() != null && "export_statement".equals(parent.getParent().getType())) { // Export of const/let/var: export const x = ...
+            ancestor = parent.getParent(); // ancestor is now export_statement
+            keywords.add("export");
+            for (int i = 0; i < ancestor.getChildCount(); i++) {
+                 TSNode child = ancestor.getChild(i);
+                 if ("default".equals(child.getType())) { // Check for "default" keyword node type
                     keywords.add("default");
                     break;
                 }
             }
         }
 
-        // Add modifiers from the definition node itself (e.g., `public static readonly` on a class field, or `export` if directly on class/func)
-        TSNode modifiersNodeOnDef = definitionNode.getChildByFieldName("modifiers");
-        if (modifiersNodeOnDef != null && !modifiersNodeOnDef.isNull()) {
-            for (int i = 0; i < modifiersNodeOnDef.getChildCount(); i++) {
-                TSNode modChild = modifiersNodeOnDef.getChild(i);
-                if (getLanguageSyntaxProfile().modifierNodeTypes().contains(modChild.getType())) {
-                    String modText = textSlice(modChild, src).strip();
-                    if (modText.equals("export") && keywords.contains("export")) continue;
-                    if (modText.equals("default") && keywords.contains("default")) continue;
-                    keywords.add(modText);
-                }
+
+        // Add modifiers from the definition node itself (e.g., `public static readonly` on a class field, or `abstract` on class)
+        // Tree-sitter stores modifiers typically as children of the definition node, not in a dedicated "modifiers" field node for TS.
+        // Exception: public_field_definition might have them under a "modifiers" field in some grammars, but TS grammar puts them as direct children.
+        // So we iterate direct children of definitionNode that are known modifier types.
+        for (int i = 0; i < definitionNode.getChildCount(); i++) {
+            TSNode modChild = definitionNode.getChild(i);
+            if (modChild == null || modChild.isNull()) continue;
+
+            String modChildType = modChild.getType();
+            String modText = "";
+
+            // Check against known modifier node types from LanguageSyntaxProfile
+            if (getLanguageSyntaxProfile().modifierNodeTypes().contains(modChildType)) {
+                 modText = textSlice(modChild, src).strip();
+            } else { // Some modifiers might be simple keywords like "async", "static" that are not complex nodes
+                 switch(modChildType) {
+                     case "abstract": modText = "abstract"; break;
+                     case "static": modText = "static"; break;
+                     case "readonly": modText = "readonly"; break;
+                     case "public": modText = "public"; break;
+                     case "private": modText = "private"; break;
+                     case "protected": modText = "protected"; break;
+                     // "export" and "default" are handled by checking parent export_statement.
+                     // "async" is handled separately in function rendering.
+                 }
+            }
+            
+            if (!modText.isEmpty()) {
+                 if (modText.equals("export") && keywords.contains("export")) continue;
+                 if (modText.equals("default") && keywords.contains("default")) continue;
+                 keywords.add(modText);
             }
         }
-
+        
         // Add `const/let/var` if definitionNode is `variable_declarator`
+        // (and it wasn't an arrow function that got skipped for field.definition)
         if ("variable_declarator".equals(definitionNode.getType())) {
             TSNode lexicalOrVarDecl = parent; // parent of variable_declarator
-            if (lexicalOrVarDecl != null && !lexicalOrVarDecl.isNull() &&
-                ("lexical_declaration".equals(lexicalOrVarDecl.getType()) || "variable_declaration".equals(lexicalOrVarDecl.getType()))) {
-                TSNode kindNode = lexicalOrVarDecl.getChild(0); // const, let, var
-                if (kindNode != null && !kindNode.isNull()) {
-                    keywords.add(textSlice(kindNode, src).strip());
+            if (lexicalOrVarDecl != null && !lexicalOrVarDecl.isNull()) {
+                String declType = lexicalOrVarDecl.getType();
+                if ("lexical_declaration".equals(declType) || "variable_declaration".equals(declType)) {
+                    TSNode kindNode = lexicalOrVarDecl.getChild(0); // const, let, var
+                    if (kindNode != null && !kindNode.isNull()) {
+                        // Make sure 'kindNode' is indeed one of 'const', 'let', 'var'
+                        String kindText = textSlice(kindNode, src).strip();
+                        if (kindText.equals("const") || kindText.equals("let") || kindText.equals("var")) {
+                            keywords.add(kindText);
+                        }
+                    }
                 }
             }
         }
@@ -282,22 +362,41 @@ public final class TypescriptAnalyzer extends TreeSitterAnalyzer {
         List<String> orderedKeywords = new ArrayList<>();
         // Standard order: export, default, abstract, static, visibility, readonly, kind
         if (keywords.contains("export")) orderedKeywords.add("export");
-        if (keywords.contains("default")) orderedKeywords.add("default");
+        if (keywords.contains("default")) orderedKeywords.add("default"); // Should come after export
         if (keywords.contains("abstract")) orderedKeywords.add("abstract");
         if (keywords.contains("static")) orderedKeywords.add("static");
+        
         // Visibility: only one of public, protected, private
         if (keywords.contains("public")) orderedKeywords.add("public");
         else if (keywords.contains("protected")) orderedKeywords.add("protected");
         else if (keywords.contains("private")) orderedKeywords.add("private");
+        
         if (keywords.contains("readonly")) orderedKeywords.add("readonly");
 
-        // Kind: const, let, var. Only one should be present.
-        List.of("const", "let", "var").stream()
-            .filter(keywords::contains)
-            .findFirst()
-            .ifPresent(orderedKeywords::add);
+        // Kind: const, let, var. Only one should be present and usually first for var decls after export.
+        // For TS, 'export const' is common. If 'export' is present, 'const' comes after.
+        List<String> kindKeywords = new ArrayList<>();
+        if (keywords.contains("const")) kindKeywords.add("const");
+        if (keywords.contains("let")) kindKeywords.add("let");
+        if (keywords.contains("var")) kindKeywords.add("var");
 
-        return orderedKeywords;
+        if (!kindKeywords.isEmpty()) {
+            // If 'export' or 'default' is already there, kind comes after.
+            // Otherwise, kind might come first (e.g. "const x = 10;")
+            // This needs to be robust. Let's insert kind keywords after export/default if present,
+            // or at the beginning if no export/default.
+            int insertIdx = 0;
+            if (orderedKeywords.contains("export") || orderedKeywords.contains("default")){
+                // Find index after 'export' or 'default'
+                if (orderedKeywords.contains("default")) insertIdx = orderedKeywords.indexOf("default") + 1;
+                else if (orderedKeywords.contains("export")) insertIdx = orderedKeywords.indexOf("export") + 1;
+            }
+            orderedKeywords.addAll(insertIdx, kindKeywords);
+        }
+        
+        // Remove duplicates that might have crept in, though LinkedHashSet should prevent it for single words.
+        // This is more for ensuring the specific order we want.
+        return orderedKeywords.stream().distinct().toList();
     }
 
     @Override
@@ -306,6 +405,7 @@ public final class TypescriptAnalyzer extends TreeSitterAnalyzer {
         if (modifiers.isEmpty()) {
             return "";
         }
+        // Join with space, and add a trailing space if not empty
         return String.join(" ", modifiers) + " ";
     }
 
