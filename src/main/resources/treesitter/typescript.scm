@@ -1,7 +1,7 @@
 ; Classes, Interfaces, Enums, Modules (Namespaces)
-((class_declaration name: (identifier) @class.name) @class.definition)
-((abstract_class_declaration name: (identifier) @class.name) @class.definition)
-((interface_declaration name: (identifier) @class.name) @interface.definition)
+((class_declaration name: (type_identifier) @class.name) @class.definition)
+((abstract_class_declaration name: (type_identifier) @class.name) @class.definition)
+((interface_declaration name: (type_identifier) @class.name) @interface.definition)
 ((enum_declaration name: (identifier) @class.name) @enum.definition)
 ((module name: (_) @class.name .) @module.definition (#not-match? @class.name "^\"")) ; module X {} or namespace X {}
 
@@ -13,7 +13,7 @@
   body: (_)? @function.body) @function.definition)
 
 ((method_definition
-  name: [(property_identifier) (private_property_identifier) (string_literal) (number_literal)] @function.name ; also covers get/set accessors and computed names
+  name: [(property_identifier) (private_property_identifier) (string) (number)] @function.name ; also covers get/set accessors and computed names
   parameters: (formal_parameters) @function.parameters
   return_type: (_)? @function.return_type
   body: (_)? @function.body) @function.definition)
@@ -26,7 +26,7 @@
 
 ; Function signature (e.g. in interfaces, type literals)
 ((function_signature
-  name: (property_identifier) @function.name
+  name: (identifier) @function.name
   parameters: (formal_parameters) @function.parameters
   return_type: (_)? @function.return_type) @function.definition)
 ((method_signature ; for interfaces/type literals
@@ -53,14 +53,14 @@
 
 ; Class fields (public_field_definition also covers private, protected, static, readonly)
 (public_field_definition
-  name: [(property_identifier) (private_property_identifier) (string_literal) (number_literal)] @field.name
+  name: [(property_identifier) (private_property_identifier) (string) (number)] @field.name
   type: (_)? @field.type
   value: (_)? @field.value) @field.definition
 
 ; Interface/type literal properties
 (property_signature
-  name: [(property_identifier) (string_literal) (number_literal)] @field.name
-  type_annotation: (_)? @field.type) @field.definition
+  name: [(property_identifier) (string) (number)] @field.name
+  type: (_)? @field.type) @field.definition
 
 ; Enum members
 ; Member without explicit value: MyEnum { A }
@@ -79,6 +79,3 @@
 (type_annotation) @return_type_node  ; General type annotation
 (predefined_type) @predefined_type_node ; e.g. string, number
 (type_identifier) @type_identifier_node ; e.g. MyClass, InterfaceName
-
-; Capture export keyword specifically if it's a child of 'modifiers'
-((modifiers (export_keyword)) @export.keyword)
