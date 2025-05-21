@@ -82,6 +82,8 @@ export function processInput(input: any): any[] {
     return [input];
 }
 
+// Generic Type Alias
+export type Pointy<T> = { x: T, y: T };
 
 // export default class DefaultExportedClass {
 //    message: string = "default";

@@ -101,6 +101,27 @@
 (decorator (call_expression function: (identifier) @decorator.name) @decorator.definition) ; @foo()
 (decorator (call_expression function: (member_expression property: (property_identifier) @decorator.name)) @decorator.definition) ; @obj.foo()
 
+; Type Aliases
+(
+  (type_alias_declaration
+    name: (type_identifier) @typealias.name
+    type_parameters: (_)? @typealias.type_parameters ; Optional: Capture type parameters for alias
+    value: (_) @typealias.value       ; Capture the actual type being aliased
+  ) @typealias.definition
+)
+(
+  (export_statement
+    "export"
+    "default"
+    declaration: (type_alias_declaration
+      name: (type_identifier) @typealias.name
+      type_parameters: (_)? @typealias.type_parameters
+      value: (_) @typealias.value
+    )
+  ) @typealias.definition
+)
+
+
 ; Captures for modifiers, parameters, return types (used by TreeSitterAnalyzer logic, not direct CUs)
 (formal_parameters) @parameters
 (type_annotation) @return_type_node  ; General type annotation

@@ -33,3 +33,5 @@ export const utilityRate: number = 0.15;
 export class AnotherNamedClass {
     name: string = "Named";
 }
+
+export default type DefaultAlias = boolean;

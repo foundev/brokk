@@ -24,7 +24,7 @@ public final class TypescriptAnalyzer extends TreeSitterAnalyzer {
             Set.of("function_declaration", "method_definition", "arrow_function", "generator_function_declaration",
                    "function_signature", "method_signature"), // method_signature for interfaces
             // fieldLikeNodeTypes
-            Set.of("variable_declarator", "public_field_definition", "property_signature", "enum_member"),
+            Set.of("variable_declarator", "public_field_definition", "property_signature", "enum_member"), // type_alias_declaration will be ALIAS_LIKE
             // decoratorNodeTypes
             Set.of("decorator"),
             // identifierFieldName
@@ -35,6 +35,8 @@ public final class TypescriptAnalyzer extends TreeSitterAnalyzer {
             "parameters",
             // returnTypeFieldName
             "return_type", // TypeScript has explicit return types
+            // typeParametersFieldName
+            "type_parameters", // Standard field name for type parameters in TS
             // captureConfiguration
             Map.of(
                 "class.definition", SkeletonType.CLASS_LIKE,
@@ -42,13 +44,10 @@ public final class TypescriptAnalyzer extends TreeSitterAnalyzer {
                 "enum.definition", SkeletonType.CLASS_LIKE,
                 "module.definition", SkeletonType.CLASS_LIKE,
                 "function.definition", SkeletonType.FUNCTION_LIKE,
-                // "method.definition" is covered by "function.definition" due to query structure
-                // "arrow_function.definition" is covered by "function.definition"
                 "field.definition", SkeletonType.FIELD_LIKE,
-                // "property.definition" (class/interface property) is covered by "field.definition"
-                // "enum_member.definition" is covered by "field.definition"
+                "typealias.definition", SkeletonType.ALIAS_LIKE, // New mapping
                 "decorator.definition", SkeletonType.UNSUPPORTED,
-                "keyword.modifier", SkeletonType.UNSUPPORTED // New capture for modifiers
+                "keyword.modifier", SkeletonType.UNSUPPORTED 
             ),
             // asyncKeywordNodeType
             "async", // TS uses 'async' keyword
@@ -111,6 +110,10 @@ public final class TypescriptAnalyzer extends TreeSitterAnalyzer {
                 finalShortName = classChain.isEmpty() ? simpleName : classChain + "." + simpleName;
                 return CodeUnit.fn(file, packageName, finalShortName);
             case FIELD_LIKE:
+                finalShortName = classChain.isEmpty() ? "_module_." + simpleName : classChain + "." + simpleName;
+                return CodeUnit.field(file, packageName, finalShortName);
+            case ALIAS_LIKE:
+                // Type aliases are top-level or module-level, treated like fields for FQN and CU type.
                 finalShortName = classChain.isEmpty() ? "_module_." + simpleName : classChain + "." + simpleName;
                 return CodeUnit.field(file, packageName, finalShortName);
             default: // UNSUPPORTED or other

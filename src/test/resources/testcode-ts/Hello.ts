@@ -28,5 +28,8 @@ export enum Color {
     Blue
 }
 
-// This is a type alias, not typically a CodeUnit itself
+// This is a type alias
 export type StringOrNumber = string | number;
+
+// Non-exported type alias
+type LocalDetails = { id: number, name: string };

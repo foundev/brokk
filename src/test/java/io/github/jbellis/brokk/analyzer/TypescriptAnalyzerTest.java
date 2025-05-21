@@ -47,8 +47,11 @@ public class TypescriptAnalyzerTest {
         CodeUnit greeterClass = CodeUnit.cls(helloTsFile, "", "Greeter");
         CodeUnit globalFunc = CodeUnit.fn(helloTsFile, "", "globalFunc");
         CodeUnit piConst = CodeUnit.field(helloTsFile, "", "_module_.PI");
-        CodeUnit pointInterface = CodeUnit.cls(helloTsFile, "", "Point"); // Interfaces are CodeUnitType.CLASS
-        CodeUnit colorEnum = CodeUnit.cls(helloTsFile, "", "Color");     // Enums are CodeUnitType.CLASS
+        CodeUnit pointInterface = CodeUnit.cls(helloTsFile, "", "Point"); 
+        CodeUnit colorEnum = CodeUnit.cls(helloTsFile, "", "Color");
+        CodeUnit stringOrNumberAlias = CodeUnit.field(helloTsFile, "", "_module_.StringOrNumber");
+        CodeUnit localDetailsAlias = CodeUnit.field(helloTsFile, "", "_module_.LocalDetails");
+
 
         assertTrue(skeletons.containsKey(greeterClass), "Greeter class skeleton missing.");
         assertEquals(normalize.apply("""
@@ -84,6 +87,13 @@ public class TypescriptAnalyzerTest {
               Blue
             }"""), normalize.apply(skeletons.get(colorEnum)));
 
+        assertTrue(skeletons.containsKey(stringOrNumberAlias), "StringOrNumber type alias skeleton missing.");
+        assertEquals(normalize.apply("export type StringOrNumber = string | number;"), normalize.apply(skeletons.get(stringOrNumberAlias)));
+        
+        assertTrue(skeletons.containsKey(localDetailsAlias), "LocalDetails type alias skeleton missing.");
+        assertEquals(normalize.apply("type LocalDetails = { id: number, name: string };"), normalize.apply(skeletons.get(localDetailsAlias)));
+
+
         // Check getDeclarationsInFile
         Set<CodeUnit> declarations = analyzer.getDeclarationsInFile(helloTsFile);
         assertTrue(declarations.contains(greeterClass));
@@ -91,6 +101,9 @@ public class TypescriptAnalyzerTest {
         assertTrue(declarations.contains(piConst));
         assertTrue(declarations.contains(pointInterface));
         assertTrue(declarations.contains(colorEnum));
+        assertTrue(declarations.contains(stringOrNumberAlias));
+        assertTrue(declarations.contains(localDetailsAlias));
+
         // also members
         assertTrue(declarations.contains(CodeUnit.field(helloTsFile, "", "Greeter.greeting")));
         assertTrue(declarations.contains(CodeUnit.fn(helloTsFile, "", "Greeter.constructor")));
@@ -101,6 +114,10 @@ public class TypescriptAnalyzerTest {
 
 
         // Test getSkeleton for individual items
+        Optional<String> stringOrNumberSkeleton = analyzer.getSkeleton("_module_.StringOrNumber");
+        assertTrue(stringOrNumberSkeleton.isPresent());
+        assertEquals(normalize.apply("export type StringOrNumber = string | number;"), normalize.apply(stringOrNumberSkeleton.get()));
+        
         Optional<String> greetMethodSkeleton = analyzer.getSkeleton("Greeter.greet");
         assertTrue(greetMethodSkeleton.isPresent());
         // Note: getSkeleton for a method might only return its own line if it's not a top-level CU.
@@ -182,10 +199,15 @@ public class TypescriptAnalyzerTest {
         CodeUnit anotherClass = CodeUnit.cls(moduleTsFile, "", "AnotherClass");
         assertTrue(skeletons.containsKey(anotherClass));
         assertEquals(normalize.apply("export class AnotherClass {\n}"), normalize.apply(skeletons.get(anotherClass)));
-        
+
         CodeUnit topLevelArrow = CodeUnit.fn(moduleTsFile, "", "topLevelArrow");
         assertTrue(skeletons.containsKey(topLevelArrow));
         assertEquals(normalize.apply("export const topLevelArrow = (input: any): any => { ... }"), normalize.apply(skeletons.get(topLevelArrow)));
+
+        CodeUnit topLevelGenericAlias = CodeUnit.field(moduleTsFile, "", "_module_.TopLevelGenericAlias");
+        assertTrue(skeletons.containsKey(topLevelGenericAlias), "TopLevelGenericAlias skeleton missing. Skeletons: " + skeletons.keySet());
+        assertEquals(normalize.apply("export type TopLevelGenericAlias<K, V> = Map<K, V>;"), normalize.apply(skeletons.get(topLevelGenericAlias)));
+
 
         // Check a nested item via getSkeleton
         Optional<String> innerClassSkel = analyzer.getSkeleton("MyModule$InnerClass");
@@ -197,9 +219,19 @@ public class TypescriptAnalyzerTest {
         // Let's test this behavior:
         assertEquals(normalize.apply(expectedMyModuleSkeleton), normalize.apply(innerClassSkel.get()),
                      "getSkeleton for nested class should return the reconstructed parent skeleton.");
+        
+        Optional<String> innerTypeAliasSkelViaParent = analyzer.getSkeleton("MyModule.InnerTypeAlias");
+        assertTrue(innerTypeAliasSkelViaParent.isPresent(), "Skeleton for MyModule.InnerTypeAlias should be part of MyModule's skeleton");
+        assertEquals(normalize.apply(expectedMyModuleSkeleton), normalize.apply(innerTypeAliasSkelViaParent.get()),
+                     "getSkeleton for nested type alias should return reconstructed parent skeleton.");
+
 
         Set<CodeUnit> declarations = analyzer.getDeclarationsInFile(moduleTsFile);
         assertTrue(declarations.contains(CodeUnit.cls(moduleTsFile, "MyModule", "NestedNamespace$DeeperClass")));
+        assertTrue(declarations.contains(CodeUnit.field(moduleTsFile, "MyModule", "InnerTypeAlias")));
+        assertTrue(declarations.contains(CodeUnit.field(moduleTsFile, "MyModule", "NestedNamespace$DeepType")));
+        assertTrue(declarations.contains(topLevelGenericAlias));
+
     }
 
 
@@ -257,14 +289,18 @@ public class TypescriptAnalyzerTest {
               private id: number = 0;
               protected status?: string;
               readonly creationDate: Date;
-              static version: string = "1.0";
-              #trulyPrivateField: string = "secret";
-              constructor(name: string) { ... }
-              public publicMethod() { ... }
-              private privateMethod() { ... }
-              protected protectedMethod() { ... }
-              static staticMethod() { ... }
-            }"""), normalize.apply(skeletons.get(fieldTest)));
+                      static version: string = "1.0";
+                      #trulyPrivateField: string = "secret";
+                      constructor(name: string) { ... }
+                      public publicMethod() { ... }
+                      private privateMethod() { ... }
+                      protected protectedMethod() { ... }
+                      static staticMethod() { ... }
+                    }"""), normalize.apply(skeletons.get(fieldTest)));
+
+        CodeUnit pointyAlias = CodeUnit.field(advancedTsFile, "", "_module_.Pointy");
+        assertTrue(skeletons.containsKey(pointyAlias), "Pointy type alias skeleton missing. Found: " + skeletons.keySet());
+        assertEquals(normalize.apply("export type Pointy<T> = { x: T, y: T };"), normalize.apply(skeletons.get(pointyAlias)));
 
 
         // Test for overloaded function
@@ -318,6 +354,11 @@ public class TypescriptAnalyzerTest {
         CodeUnit utilityRateConst = CodeUnit.field(defaultExportFile, "", "_module_.utilityRate");
         assertTrue(skeletons.containsKey(utilityRateConst));
         assertEquals(normalize.apply("export const utilityRate: number = 0.15"), normalize.apply(skeletons.get(utilityRateConst)));
+
+        CodeUnit defaultAlias = CodeUnit.field(defaultExportFile, "", "_module_.DefaultAlias");
+        assertTrue(skeletons.containsKey(defaultAlias), "DefaultAlias (default export type) skeleton missing. Skeletons: " + skeletons.keySet());
+        assertEquals(normalize.apply("export default type DefaultAlias = boolean;"), normalize.apply(skeletons.get(defaultAlias)));
+
     }
     
     @Test
@@ -385,14 +426,29 @@ public class TypescriptAnalyzerTest {
         Set<String> expectedSymbols = Set.of(
                 "Greeter", "greeting", "constructor", "greet",
                 "PI",
-                "anArrowFunc"
+                "anArrowFunc",
+                "StringOrNumber" // From Hello.ts, via _module_.StringOrNumber in allCodeUnits()
         );
+        // Add StringOrNumber to sources to test its symbol directly
+        CodeUnit stringOrNumberAlias = CodeUnit.field(helloTsFile, "", "_module_.StringOrNumber");
+        sources = Set.of(greeterClass, piConst, anArrowFunc, stringOrNumberAlias);
+        symbols = analyzer.getSymbols(sources);
         assertEquals(expectedSymbols, symbols);
 
         // Test with interface
         CodeUnit pointInterface = CodeUnit.cls(helloTsFile, "", "Point");
         Set<String> interfaceSymbols = analyzer.getSymbols(Set.of(pointInterface));
         assertEquals(Set.of("Point", "x", "y", "label", "originDistance", "move"), interfaceSymbols);
+
+        // Test with type alias directly
+        Set<String> aliasSymbols = analyzer.getSymbols(Set.of(stringOrNumberAlias));
+        assertEquals(Set.of("StringOrNumber"), aliasSymbols);
+
+        // Test with generic type alias from Advanced.ts
+        ProjectFile advancedTsFile = new ProjectFile(project.getRoot(), "Advanced.ts");
+        CodeUnit pointyAlias = CodeUnit.field(advancedTsFile, "", "_module_.Pointy");
+        Set<String> pointySymbols = analyzer.getSymbols(Set.of(pointyAlias));
+        assertEquals(Set.of("Pointy"), pointySymbols);
     }
 
     @Test

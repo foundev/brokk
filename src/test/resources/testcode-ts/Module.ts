@@ -15,9 +15,12 @@ namespace MyModule {
         describe(): string;
     }
     export enum InnerEnum { A, B }
+    
+    export type InnerTypeAlias<V> = InnerInterface | V;
 
     namespace NestedNamespace {
         export class DeeperClass {}
+        export type DeepType = string;
     }
 }
 
@@ -25,3 +28,5 @@ namespace MyModule {
 export class AnotherClass {}
 
 export const topLevelArrow = (input: any): any => input;
+
+export type TopLevelGenericAlias<K, V> = Map<K, V>;
