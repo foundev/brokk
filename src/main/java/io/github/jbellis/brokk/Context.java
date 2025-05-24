@@ -92,6 +92,23 @@ public class Context implements Serializable {
         this(contextManager, "placeholder");
     }
 
+    @com.fasterxml.jackson.annotation.JsonCreator
+    private Context(@com.fasterxml.jackson.annotation.JsonProperty("editableFiles") List<ContextFragment.ProjectPathFragment> editableFiles,
+                    @com.fasterxml.jackson.annotation.JsonProperty("readonlyFiles") List<ContextFragment.PathFragment> readonlyFiles,
+                    @com.fasterxml.jackson.annotation.JsonProperty("virtualFragments") List<ContextFragment.VirtualFragment> virtualFragments,
+                    @com.fasterxml.jackson.annotation.JsonProperty("taskHistory") List<TaskEntry> taskHistory) {
+        this(newId(),                 // id - new one for deserialized context
+             null,                    // contextManager - to be set by fromJson
+             editableFiles != null ? List.copyOf(editableFiles) : List.of(),
+             readonlyFiles != null ? List.copyOf(readonlyFiles) : List.of(),
+             virtualFragments != null ? List.copyOf(virtualFragments) : List.of(),
+             taskHistory != null ? List.copyOf(taskHistory) : List.of(),
+             Map.of(),                // originalContents - initialized to empty, consistent with transient nature
+             null,                    // parsedOutput - to be set by fromJson with welcome message
+             CompletableFuture.completedFuture(WELCOME_BACK) // action - default for deserialized
+        );
+    }
+
     private Context(int id,
                     IContextManager contextManager,
                     List<ContextFragment.ProjectPathFragment> editableFiles,
@@ -612,6 +629,7 @@ public class Context implements Serializable {
     /**
      * Deserializes a Context object from a byte array
      */
+    @Deprecated
     public static Context deserialize(byte[] data, String welcomeMessage) throws IOException, ClassNotFoundException {
         try (var bais = new java.io.ByteArrayInputStream(data);
              var ois = new java.io.ObjectInputStream(bais)) {
@@ -623,6 +641,31 @@ public class Context implements Serializable {
             return ctx;
         } catch (NoSuchFieldException | IllegalAccessException e) {
             throw new RuntimeException(e);
+        }
+    }
+
+    public static Context fromJson(String json,
+                                   IContextManager contextManager,
+                                   String welcomeMessage) {
+        try {
+            Context ctx = io.github.jbellis.brokk.util.Json.mapper.readValue(json, Context.class);
+
+            // Set fields not fully initialized by the Jackson-specific constructor or requiring external context
+            var contextManagerField = Context.class.getDeclaredField("contextManager");
+            contextManagerField.setAccessible(true);
+            contextManagerField.set(ctx, contextManager); // Set the provided contextManager
+
+            // Ensure parsedOutput is set with the welcomeMessage.
+            // The Jackson constructor path sets it to null initially via the main constructor call.
+            var parsedOutputField = Context.class.getDeclaredField("parsedOutput");
+            parsedOutputField.setAccessible(true);
+            parsedOutputField.set(ctx, getWelcomeOutput(welcomeMessage));
+
+            // id, originalContents, action are already set to their defaults by the Jackson constructor path.
+
+            return ctx;
+        } catch (Exception e) {   // JsonProcessingException | ReflectiveOperationException
+            throw new RuntimeException("Unable to deserialise Context from JSON", e);
         }
     }
 

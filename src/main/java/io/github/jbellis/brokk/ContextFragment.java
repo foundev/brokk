@@ -1,5 +1,6 @@
 package io.github.jbellis.brokk;
 
+import com.fasterxml.jackson.annotation.JsonIgnore;
 import dev.langchain4j.data.message.*;
 import io.github.jbellis.brokk.analyzer.*;
 import io.github.jbellis.brokk.prompts.EditBlockParser;
@@ -521,54 +522,13 @@ public interface ContextFragment extends Serializable {
             return format(); // full search result
         }
 
-        // --- Custom Serialization using Proxy Pattern ---
-        // SearchFragment extends TaskFragment, which has its own proxy for messages.
-        // We only need to handle SearchFragment's own fields here. TaskFragment's state
-        // should be handled by its proxy during the serialization process.
-
-        @Serial
-        private Object writeReplace() {
-            return new SerializationProxy(this);
-        }
-
-        @Serial
-        private void readObject(ObjectInputStream in) throws IOException, ClassNotFoundException {
-            // This method should not be called if writeReplace is used.
-            throw new java.io.NotSerializableException("SearchFragment must be serialized via SerializationProxy");
-        }
-
         public String explanation() {
             return explanation;
-        }
-
-        private static class SerializationProxy implements Serializable {
-            @Serial
-            private static final long serialVersionUID = 41L; // Unique ID for SearchFragment proxy
-
-            private final String query;
-            private final String explanation;
-            private final Set<CodeUnit> sources;
-            // No need to serialize 'messages' or 'sessionName' here; TaskFragment's proxy handles them.
-
-            SerializationProxy(SearchFragment fragment) {
-                this.query = fragment.query;
-                this.explanation = fragment.explanation;
-                this.sources = fragment.sources;
-            }
-
-            @Serial
-            private Object readResolve() throws java.io.ObjectStreamException {
-                // Reconstruct the SearchFragment. The constructor call `super(...)`
-                // will initialize the TaskFragment part, including creating the messages
-                // based on query/explanation. If TaskFragment's proxy ran correctly,
-                // the deserialized state should align.
-                return new SearchFragment(query, explanation, sources);
-            }
         }
     }
 
     abstract class PasteFragment extends ContextFragment.VirtualFragment {
-        protected transient Future<String> descriptionFuture;
+        protected transient @com.fasterxml.jackson.annotation.JsonIgnore Future<String> descriptionFuture;
 
         public PasteFragment(Future<String> descriptionFuture) {
             super();
@@ -590,27 +550,6 @@ public interface ContextFragment extends Serializable {
         @Override
         public String toString() {
             return "PasteFragment('%s')".formatted(description());
-        }
-
-        private void writeObject(java.io.ObjectOutputStream out) throws IOException {
-            out.defaultWriteObject();
-            String desc;
-            if (descriptionFuture.isDone()) {
-                try {
-                    desc = descriptionFuture.get();
-                } catch (Exception e) {
-                    desc = "(Error summarizing paste)";
-                }
-            } else {
-                desc = "(Paste summary incomplete)";
-            }
-            out.writeObject(desc);
-        }
-
-        private void readObject(java.io.ObjectInputStream in) throws IOException, ClassNotFoundException {
-            in.defaultReadObject();
-            String desc = (String) in.readObject();
-            this.descriptionFuture = java.util.concurrent.CompletableFuture.completedFuture(desc);
         }
     }
 
@@ -1024,9 +963,9 @@ public interface ContextFragment extends Serializable {
      * represents a single session's Task History
      */
     class TaskFragment extends VirtualFragment implements OutputFragment {
-        private static final long serialVersionUID = 5L;
-        private final EditBlockParser parser; // TODO this doesn't belong in TaskFragment anymore
-        private final List<ChatMessage> messages;
+        private static final long serialVersionUID = 6L; // Updated due to serialization changes
+        private transient final EditBlockParser parser; // TODO this doesn't belong in TaskFragment anymore
+        private transient final List<ChatMessage> messages;
         private final String sessionName;
 
         public TaskFragment(EditBlockParser parser, List<ChatMessage> messages, String sessionName) {
@@ -1051,6 +990,7 @@ public interface ContextFragment extends Serializable {
         }
 
         @Override
+        @com.fasterxml.jackson.annotation.JsonIgnore
         public String text() {
             // FIXME the right thing to do here is probably to throw UnsupportedOperationException,
             // but lots of stuff breaks without text(), so I am putting that off for another refactor
@@ -1079,49 +1019,32 @@ public interface ContextFragment extends Serializable {
             return parser;
         }
 
-        // --- Custom Serialization using Proxy Pattern ---
-
-        /**
-         * Replace this TaskFragment instance with a SerializationProxy during serialization.
-         * This allows us to convert the non-serializable ChatMessage list to JSON.
-         */
         @Serial
-        private Object writeReplace() {
-            return new SerializationProxy(this);
+        private void writeObject(java.io.ObjectOutputStream out) throws IOException {
+            out.defaultWriteObject(); // Writes sessionName, skips transient parser and messages
+            // Manually serialize messages
+            String messagesJson = dev.langchain4j.data.message.ChatMessageSerializer.messagesToJson(this.messages);
+            out.writeObject(messagesJson);
         }
 
-        /**
-         * Prevent direct deserialization of TaskFragment; must go through the proxy.
-         */
         @Serial
-        private void readObject(ObjectInputStream in) throws IOException, ClassNotFoundException {
-            throw new java.io.NotSerializableException("TaskFragment must be serialized via SerializationProxy");
-        }
+        private void readObject(java.io.ObjectInputStream in) throws IOException, ClassNotFoundException {
+            in.defaultReadObject(); // Reads sessionName
+            // Manually deserialize messages and re-initialize transient final fields
+            String messagesJson = (String) in.readObject();
+            try {
+                var messagesField = TaskFragment.class.getDeclaredField("messages");
+                messagesField.setAccessible(true);
+                List<ChatMessage> deserializedMsgs = dev.langchain4j.data.message.ChatMessageDeserializer.messagesFromJson(messagesJson);
+                messagesField.set(this, deserializedMsgs != null ? List.copyOf(deserializedMsgs) : List.of());
 
-        /**
-         * A helper class to handle the serialization and deserialization of TaskFragment.
-         * It stores the ChatMessage list as a JSON string.
-         */
-        private static class SerializationProxy implements Serializable {
-            @Serial
-            private static final long serialVersionUID = 1L;
-
-            private final String serializedMessages; // Store messages as JSON string
-            private final String sessionName;
-
-            SerializationProxy(TaskFragment fragment) {
-                // Store the class name of the parser
-                this.sessionName = fragment.sessionName;
-                this.serializedMessages = ChatMessageSerializer.messagesToJson(fragment.messages());
-            }
-
-            /**
-             * Reconstruct the TaskFragment instance after the SerializationProxy is deserialized.
-             */
-            @Serial
-            private Object readResolve() throws java.io.ObjectStreamException {
-                List<ChatMessage> deserializedMessages = ChatMessageDeserializer.messagesFromJson(serializedMessages);
-                return new TaskFragment(deserializedMessages, sessionName);
+                // Re-initialize transient final parser field to EditBlockParser.instance
+                // This assumes that for Java deserialized objects, EditBlockParser.instance is sufficient.
+                var parserField = TaskFragment.class.getDeclaredField("parser");
+                parserField.setAccessible(true);
+                parserField.set(this, EditBlockParser.instance);
+            } catch (NoSuchFieldException | IllegalAccessException e) {
+                throw new IOException("Failed to deserialize TaskFragment transient fields", e);
             }
         }
     }
