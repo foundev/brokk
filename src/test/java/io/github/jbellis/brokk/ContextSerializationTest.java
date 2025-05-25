@@ -4,6 +4,7 @@ import dev.langchain4j.data.message.ChatMessage;
 import io.github.jbellis.brokk.analyzer.CodeUnit;
 import io.github.jbellis.brokk.analyzer.ExternalFile;
 import io.github.jbellis.brokk.analyzer.ProjectFile;
+import io.github.jbellis.brokk.util.Json;
 import org.fife.ui.rsyntaxtextarea.SyntaxConstants;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -38,16 +39,16 @@ public class ContextSerializationTest {
         Context context = new Context(mockContextManager);
 
         // Serialize and deserialize
-        byte[] serialized = Context.serialize(context);
-        Context deserialized = Context.deserialize(serialized, "stub");
+        String jsonString = Json.mapper.writeValueAsString(context);
+        Context deserialized = Context.fromJson(jsonString, mockContextManager, "stub");
 
         // Verify non-transient fields were preserved
         assertEquals(context.editableFiles.size(), deserialized.editableFiles.size());
         assertEquals(context.readonlyFiles.size(), deserialized.readonlyFiles.size());
         assertEquals(context.virtualFragments.size(), deserialized.virtualFragments.size());
 
-        // Most transient fields should be initialized to empty
-        assertNull(deserialized.contextManager);
+        // Verify transient fields initialized by fromJson
+        assertSame(mockContextManager, deserialized.contextManager);
         assertNotNull(deserialized.parsedOutput); // Welcome SessionFragment
         assertNotNull(deserialized.originalContents); // Empty Map
         assertNotNull(deserialized.taskHistory); // Empty List (changed from historyMessages)
@@ -80,8 +81,8 @@ public class ContextSerializationTest {
                 .addVirtualFragment(new ContextFragment.StringFragment("virtual content", "Virtual Fragment", SyntaxConstants.SYNTAX_STYLE_NONE));
 
         // Serialize and deserialize
-        byte[] serialized = Context.serialize(context);
-        Context deserialized = Context.deserialize(serialized, "stub");
+        String jsonString = Json.mapper.writeValueAsString(context);
+        Context deserialized = Context.fromJson(jsonString, mockContextManager, "stub");
 
         // Verify fragment counts
         assertEquals(1, deserialized.editableFiles.size());
@@ -147,8 +148,8 @@ public class ContextSerializationTest {
         );
 
         // Serialize and deserialize
-        byte[] serialized = Context.serialize(context);
-        Context deserialized = Context.deserialize(serialized, "stub");
+        String jsonString = Json.mapper.writeValueAsString(context);
+        Context deserialized = Context.fromJson(jsonString, mockContextManager, "stub");
 
         // Verify all serializable fragments were preserved (String, Skeleton, Search, Paste, Usage, Stacktrace)
         assertEquals(6, deserialized.virtualFragments.size());
@@ -198,8 +199,8 @@ public class ContextSerializationTest {
                 .addReadonlyFiles(List.of(fragment));
 
         // Serialize and deserialize
-        byte[] serialized = Context.serialize(context);
-        Context deserialized = Context.deserialize(serialized, "stub");
+        String jsonString = Json.mapper.writeValueAsString(context);
+        Context deserialized = Context.fromJson(jsonString, mockContextManager, "stub");
 
         // Verify the fragment was properly deserialized
         assertEquals(1, deserialized.readonlyFiles.size());
@@ -250,8 +251,8 @@ public class ContextSerializationTest {
         }
 
         // Serialize and deserialize
-        byte[] serialized = Context.serialize(context);
-        Context deserialized = Context.deserialize(serialized, "stub");
+        String jsonString = Json.mapper.writeValueAsString(context);
+        Context deserialized = Context.fromJson(jsonString, mockContextManager, "stub");
 
         // Verify counts
         assertEquals(20, deserialized.editableFiles.size());
@@ -285,8 +286,8 @@ public class ContextSerializationTest {
         context = context.addHistoryEntry(taskEntry, parsedOutput, action, originalContents);
 
         // Serialize and deserialize
-        byte[] serialized = Context.serialize(context);
-        Context deserialized = Context.deserialize(serialized, "stub");
+        String jsonString = Json.mapper.writeValueAsString(context);
+        Context deserialized = Context.fromJson(jsonString, mockContextManager, "stub");
 
         // Verify task history count
         assertEquals(1, deserialized.getTaskHistory().size(), "Deserialized context should have one task history entry.");

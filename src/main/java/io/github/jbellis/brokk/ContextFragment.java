@@ -100,6 +100,7 @@ public interface ContextFragment extends Serializable {
      * If false, the classes returned by sources() will be pruned from AutoContext suggestions.
      * (Corollary: if sources() always returns empty, this doesn't matter.)
      */
+    @JsonIgnore
     default boolean isEligibleForAutoContext() {
         return true;
     }
@@ -456,7 +457,10 @@ public interface ContextFragment extends Serializable {
         private final String description;
         private final String syntaxStyle;
 
-        public StringFragment(String text, String description, String syntaxStyle) {
+        @com.fasterxml.jackson.annotation.JsonCreator
+        public StringFragment(@com.fasterxml.jackson.annotation.JsonProperty("text") String text,
+                              @com.fasterxml.jackson.annotation.JsonProperty("description") String description,
+                              @com.fasterxml.jackson.annotation.JsonProperty("syntaxStyle") String syntaxStyle) {
             super();
             this.syntaxStyle = syntaxStyle;
             assert text != null;
@@ -495,7 +499,10 @@ public interface ContextFragment extends Serializable {
         private final String explanation;
         private final Set<CodeUnit> sources;
 
-        public SearchFragment(String query, String explanation, Set<CodeUnit> sources) {
+        @com.fasterxml.jackson.annotation.JsonCreator
+        public SearchFragment(@com.fasterxml.jackson.annotation.JsonProperty("query") String query,
+                              @com.fasterxml.jackson.annotation.JsonProperty("explanation") String explanation,
+                              @com.fasterxml.jackson.annotation.JsonProperty("sources") Set<CodeUnit> sources) {
             super(List.of(new UserMessage(query), new AiMessage(explanation)), query);
             assert sources != null;
             this.query = query;
@@ -557,7 +564,9 @@ public interface ContextFragment extends Serializable {
         private static final long serialVersionUID = 4L;
         private final String text;
 
-        public PasteTextFragment(String text, Future<String> descriptionFuture) {
+        @com.fasterxml.jackson.annotation.JsonCreator
+        public PasteTextFragment(@com.fasterxml.jackson.annotation.JsonProperty("text") String text,
+                                 @com.fasterxml.jackson.annotation.JsonProperty("descriptionFuture") Future<String> descriptionFuture) {
             super(descriptionFuture);
             assert text != null;
             assert descriptionFuture != null;
@@ -630,7 +639,11 @@ public interface ContextFragment extends Serializable {
         private final String exception;
         private final String code;
 
-        public StacktraceFragment(Set<CodeUnit> sources, String original, String exception, String code) {
+        @com.fasterxml.jackson.annotation.JsonCreator
+        public StacktraceFragment(@com.fasterxml.jackson.annotation.JsonProperty("sources") Set<CodeUnit> sources,
+                                  @com.fasterxml.jackson.annotation.JsonProperty("original") String original,
+                                  @com.fasterxml.jackson.annotation.JsonProperty("exception") String exception,
+                                  @com.fasterxml.jackson.annotation.JsonProperty("code") String code) {
             super();
             assert sources != null;
             assert original != null;
@@ -687,7 +700,10 @@ public interface ContextFragment extends Serializable {
         private final Set<CodeUnit> classes;
         private final String code;
 
-        public UsageFragment(String targetIdentifier, Set<CodeUnit> classes, String code) {
+        @com.fasterxml.jackson.annotation.JsonCreator
+        public UsageFragment(@com.fasterxml.jackson.annotation.JsonProperty("targetIdentifier") String targetIdentifier,
+                             @com.fasterxml.jackson.annotation.JsonProperty("classes") Set<CodeUnit> classes,
+                             @com.fasterxml.jackson.annotation.JsonProperty("code") String code) {
             super();
             assert targetIdentifier != null;
             assert classes != null;
@@ -730,7 +746,11 @@ public interface ContextFragment extends Serializable {
         private final Set<CodeUnit> classes;
         private final String code;
 
-        public CallGraphFragment(String type, String targetIdentifier, Set<CodeUnit> classes, String code) {
+        @com.fasterxml.jackson.annotation.JsonCreator
+        public CallGraphFragment(@com.fasterxml.jackson.annotation.JsonProperty("type") String type,
+                                 @com.fasterxml.jackson.annotation.JsonProperty("targetIdentifier") String targetIdentifier,
+                                 @com.fasterxml.jackson.annotation.JsonProperty("classes") Set<CodeUnit> classes,
+                                 @com.fasterxml.jackson.annotation.JsonProperty("code") String code) {
             super();
             assert type != null;
             assert targetIdentifier != null;
@@ -771,7 +791,8 @@ public interface ContextFragment extends Serializable {
         private static final long serialVersionUID = 3L;
         final Map<CodeUnit, String> skeletons;
 
-        public SkeletonFragment(Map<CodeUnit, String> skeletons) {
+        @com.fasterxml.jackson.annotation.JsonCreator
+        public SkeletonFragment(@com.fasterxml.jackson.annotation.JsonProperty("skeletons") Map<CodeUnit, String> skeletons) {
             super();
             assert skeletons != null;
             this.skeletons = skeletons;
@@ -895,7 +916,8 @@ public interface ContextFragment extends Serializable {
         private static final long serialVersionUID = 3L;
         private final List<TaskEntry> history;
 
-        public HistoryFragment(List<TaskEntry> history) {
+        @com.fasterxml.jackson.annotation.JsonCreator
+        public HistoryFragment(@com.fasterxml.jackson.annotation.JsonProperty("history") List<TaskEntry> history) {
             super();
             assert history != null;
             this.history = List.copyOf(history);
@@ -962,21 +984,28 @@ public interface ContextFragment extends Serializable {
     /**
      * represents a single session's Task History
      */
+    @com.fasterxml.jackson.annotation.JsonIgnoreProperties("text")
     class TaskFragment extends VirtualFragment implements OutputFragment {
         private static final long serialVersionUID = 6L; // Updated due to serialization changes
         private transient final EditBlockParser parser; // TODO this doesn't belong in TaskFragment anymore
         private transient final List<ChatMessage> messages;
         private final String sessionName;
 
+        // Primary constructor for internal use and Java serialization
         public TaskFragment(EditBlockParser parser, List<ChatMessage> messages, String sessionName) {
             super();
             this.parser = parser;
-            this.messages = messages;
+            this.messages = messages != null ? List.copyOf(messages) : List.of(); // Ensure immutable list
             this.sessionName = sessionName;
         }
 
-        public TaskFragment(List<ChatMessage> messages, String sessionName) {
-            this(EditBlockParser.instance, messages, sessionName);
+        // Constructor for Jackson deserialization and convenient programmatic creation
+        @com.fasterxml.jackson.annotation.JsonCreator
+        public TaskFragment(@com.fasterxml.jackson.annotation.JsonProperty("messages") List<ChatMessage> messages,
+                            @com.fasterxml.jackson.annotation.JsonProperty("sessionName") String sessionName) {
+            this(EditBlockParser.instance, // Default parser instance
+                 messages != null ? List.copyOf(messages) : List.of(), // Ensure immutable list
+                 sessionName);
         }
 
         @Override
@@ -990,7 +1019,7 @@ public interface ContextFragment extends Serializable {
         }
 
         @Override
-        @com.fasterxml.jackson.annotation.JsonIgnore
+        @JsonIgnore // Already annotated but ensuring it's the intended com.fasterxml.jackson.annotation.JsonIgnore
         public String text() {
             // FIXME the right thing to do here is probably to throw UnsupportedOperationException,
             // but lots of stuff breaks without text(), so I am putting that off for another refactor

@@ -1,5 +1,6 @@
 package io.github.jbellis.brokk.analyzer;
 
+import com.fasterxml.jackson.annotation.JsonIgnore;
 import org.jetbrains.annotations.NotNull;
 
 import java.io.IOException;
@@ -20,6 +21,7 @@ public interface BrokkFile extends Serializable, Comparable<BrokkFile> {
     }
 
     /** best guess as to whether a file is text and hence eligible for substring search */
+    @JsonIgnore
     default boolean isText() {
         try {
             return Files.isRegularFile(absPath())
@@ -34,6 +36,7 @@ public interface BrokkFile extends Serializable, Comparable<BrokkFile> {
     /**
      * Just the filename, no path at all
      */
+    @JsonIgnore
     default String getFileName() {
         return absPath().getFileName().toString();
     }

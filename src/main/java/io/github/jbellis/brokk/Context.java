@@ -1,5 +1,6 @@
 package io.github.jbellis.brokk;
 
+import com.fasterxml.jackson.annotation.JsonIgnore;
 import com.google.common.collect.Streams;
 import dev.langchain4j.data.message.ChatMessage;
 import io.github.jbellis.brokk.ContextFragment.HistoryFragment;
@@ -54,6 +55,7 @@ public class Context implements Serializable {
     transient final Map<ProjectFile, String> originalContents;
 
     /** LLM output or other parsed content, with optional fragment. May be null */
+    @JsonIgnore
     transient final ContextFragment.TaskFragment parsedOutput;
 
     /** description of the action that created this context, can be a future (like PasteFragment) */
@@ -364,14 +366,17 @@ public class Context implements Serializable {
     // Accessors
     // ---------------------------------------------------------
 
+    @JsonIgnore
     public Stream<ContextFragment.ProjectPathFragment> editableFiles() {
         return editableFiles.stream();
     }
 
+    @JsonIgnore
     public Stream<ContextFragment.PathFragment> readonlyFiles() {
         return readonlyFiles.stream();
     }
 
+    @JsonIgnore
     public Stream<ContextFragment.VirtualFragment> virtualFragments() {
         return virtualFragments.stream();
     }
@@ -379,6 +384,7 @@ public class Context implements Serializable {
     /**
      * Returns readonly files and virtual fragments (excluding usage fragments) as a combined stream
      */
+    @JsonIgnore
     public Stream<ContextFragment> getReadOnlyFragments() {
         return Streams.concat(
             readonlyFiles.stream(),
@@ -389,6 +395,7 @@ public class Context implements Serializable {
     /**
      * Returns editable files and usage fragments as a combined stream
      */
+    @JsonIgnore
     public Stream<ContextFragment> getEditableFragments() {
         // Helper record for associating a fragment with its mtime for safe sorting and filtering
         record EditableFileWithMtime(ContextFragment.ProjectPathFragment fragment, long mtime) {}
@@ -460,6 +467,7 @@ public class Context implements Serializable {
 
     // Method removed in favor of toFragment(int position)
 
+    @JsonIgnore
     public boolean isEmpty() {
         return editableFiles.isEmpty()
                 && readonlyFiles.isEmpty()
@@ -536,6 +544,7 @@ public class Context implements Serializable {
     /**
      * Get the action that created this context
      */
+    @JsonIgnore
     public String getAction() {
         if (action.isDone()) {
             try {
@@ -551,6 +560,7 @@ public class Context implements Serializable {
     /**
      * Get the unique transient identifier for this context instance.
      */
+    @JsonIgnore
     public int getId() {
         return id;
     }
@@ -562,6 +572,7 @@ public class Context implements Serializable {
      * next => read-only (readonlyFiles + virtualFragments)
      * finally => editable
      */
+    @JsonIgnore
     public List<ContextFragment> getAllFragmentsInDisplayOrder() {
         var result = new ArrayList<ContextFragment>();
 

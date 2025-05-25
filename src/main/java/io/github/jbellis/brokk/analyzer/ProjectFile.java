@@ -1,5 +1,9 @@
 package io.github.jbellis.brokk.analyzer;
 
+import com.fasterxml.jackson.annotation.JsonCreator;
+import com.fasterxml.jackson.annotation.JsonIgnore;
+import com.fasterxml.jackson.annotation.JsonProperty;
+
 import java.io.IOException;
 import java.io.ObjectInputStream;
 import java.io.ObjectOutputStream;
@@ -15,13 +19,14 @@ import java.util.Optional;
  */
 public class ProjectFile implements BrokkFile {
     private static final long serialVersionUID = 1L;
-    private transient Path root;
-    private transient Path relPath;
+    private Path root;
+    private Path relPath;
 
     /**
      * root must be pre-normalized; we will normalize relPath if it is not already
      */
-    public ProjectFile(Path root, Path relPath) {
+    @JsonCreator
+    public ProjectFile(@JsonProperty("root") Path root, @JsonProperty("relPath") Path relPath) {
         // We can't rely on these being set until after deserialization
         if (root != null && relPath != null) {
             if (!root.isAbsolute()) {
@@ -61,6 +66,7 @@ public class ProjectFile implements BrokkFile {
     /**
      * Also relative (but unlike raw Path.getParent, ours returns empty path instead of null)
      */
+    @JsonIgnore
     public Path getParent() {
         // since this is the *relative* path component I think it's more correct to return empty than null;
         // the other alternative is to wrap in Optional, but then comparing with an empty path is messier

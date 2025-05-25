@@ -1,5 +1,8 @@
 package io.github.jbellis.brokk.analyzer;
 
+import com.fasterxml.jackson.annotation.JsonCreator;
+import com.fasterxml.jackson.annotation.JsonProperty;
+
 import java.io.IOException;
 import java.io.ObjectInputStream;
 import java.io.ObjectOutputStream;
@@ -10,10 +13,11 @@ import java.nio.file.Path;
  */
 public class ExternalFile implements BrokkFile {
     private static final long serialVersionUID = 1L;
-    private transient Path path;
+    private Path path;
 
     // Constructor validation
-    public ExternalFile(Path path) {
+    @JsonCreator
+    public ExternalFile(@JsonProperty("path") Path path) {
         if (path != null) {
             if (!path.isAbsolute()) {
                 throw new IllegalArgumentException("Path must be absolute");

@@ -1,5 +1,7 @@
 package io.github.jbellis.brokk.analyzer;
 
+import com.fasterxml.jackson.annotation.JsonProperty;
+
 import java.io.Serializable;
 import java.util.Objects;
 import java.util.Optional;
@@ -7,7 +9,10 @@ import java.util.Optional;
 /**
  * Represents a named code element (class, function, field, or module).
  */
-public record CodeUnit(ProjectFile source, CodeUnitType kind, String packageName, String shortName)
+public record CodeUnit(@JsonProperty("source") ProjectFile source,
+                       @JsonProperty("kind") CodeUnitType kind,
+                       @JsonProperty("packageName") String packageName,
+                       @JsonProperty("shortName") String shortName)
         implements Comparable<CodeUnit>, Serializable {
     private static final long serialVersionUID = 4L; // Increment serialVersionUID due to new MODULE type and logic changes
 
