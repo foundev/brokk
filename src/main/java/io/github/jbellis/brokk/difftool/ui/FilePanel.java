@@ -13,6 +13,8 @@ import io.github.jbellis.brokk.difftool.search.SearchHit;
 import io.github.jbellis.brokk.difftool.search.SearchHits;
 
 import javax.swing.*;
+import javax.swing.event.DocumentEvent;
+import javax.swing.event.DocumentListener;
 import javax.swing.text.BadLocationException;
 import javax.swing.text.Document;
 import javax.swing.text.Highlighter;
@@ -22,6 +24,11 @@ import java.awt.event.FocusAdapter;
 import java.awt.event.FocusEvent;
 import java.awt.event.FocusListener;
 
+import org.fife.ui.rsyntaxtextarea.RSyntaxTextArea;
+import org.fife.ui.rsyntaxtextarea.SyntaxConstants;
+
+import io.github.jbellis.brokk.difftool.ui.CompositeHighlighter;
+
 public class FilePanel implements BufferDocumentChangeListenerIF {
     private static final int MAXSIZE_CHANGE_DIFF = 1000;
 
@@ -29,8 +36,14 @@ public class FilePanel implements BufferDocumentChangeListenerIF {
     private final String name;
     private JPanel visualComponentContainer; // Main container for editor or "new file" label
     private JScrollPane scrollPane;
-    private JTextArea editor;
+    private RSyntaxTextArea editor;
+    private JMHighlighter jmHighlighter;
     private BufferDocumentIF bufferDocument;
+
+    /* ------------- mirroring PlainDocument <-> RSyntaxDocument ------------- */
+    private Document plainDocument;
+    private DocumentListener plainToEditorListener;
+    private DocumentListener editorToPlainListener;
     private Timer timer;
     private boolean selected;
     private SearchHits searchHits;
@@ -46,9 +59,17 @@ public class FilePanel implements BufferDocumentChangeListenerIF {
     private void init() {
         visualComponentContainer = new JPanel(new BorderLayout());
 
-        // Initialize text editor with custom highlighting
-        editor = new JTextArea();
-        editor.setHighlighter(new JMHighlighter());
+        // Initialize RSyntaxTextArea with composite highlighter
+        editor = new RSyntaxTextArea();
+        jmHighlighter = new JMHighlighter();
+
+        // Create CompositeHighlighter with JMHighlighter.
+        // RSyntaxTextAreaHighlighter (superclass of CompositeHighlighter) handles syntax.
+        // It gets the RSyntaxTextArea instance via its install() method.
+        // JMHighlighter (secondary) handles diff/search.
+        var compositeHighlighter = new CompositeHighlighter(jmHighlighter);
+        editor.setHighlighter(compositeHighlighter);  // layered: syntax first, diff/search second
+
         editor.addFocusListener(getFocusListener());
         bar.setFilePanel(this);
         // Undo listener will be added in setBufferDocument when editor is active
@@ -84,7 +105,7 @@ public class FilePanel implements BufferDocumentChangeListenerIF {
         return scrollPane;
     }
 
-    public JTextArea getEditor() {
+    public RSyntaxTextArea getEditor() {
         return editor;
     }
 
@@ -115,15 +136,23 @@ public class FilePanel implements BufferDocumentChangeListenerIF {
             if (bd != null) {
                 newDocument = bd.getDocument();
                 if (newDocument != null) {
-                    editor.setDocument(newDocument);
+                    // Copy text into RSyntaxDocument instead of replacing the model
+                    String txt = newDocument.getText(0, newDocument.getLength());
+                    editor.setText(txt);
                     editor.setTabSize(4); // TODO: Make configurable
                     bd.addChangeListener(this);
-                    newDocument.addUndoableEditListener(diffPanel.getUndoHandler());
+
+                    // Setup bidirectional mirroring between PlainDocument and RSyntaxDocument
+                    installMirroring(newDocument);
+
+                    // Undo tracking on the RSyntaxDocument (what the user edits)
+                    editor.getDocument().addUndoableEditListener(diffPanel.getUndoHandler());
                 }
                 editor.setEditable(!bd.isReadonly());
+                updateSyntaxStyle();            // pick syntax based on filename
             } else {
                 // If BufferDocumentIF is null, clear the editor and make it non-editable
-                editor.setDocument(new JTextArea().getDocument()); // Set a new empty document
+                removeMirroring();
                 editor.setText("");
                 editor.setEditable(false);
             }
@@ -268,7 +297,7 @@ public class FilePanel implements BufferDocumentChangeListenerIF {
 
 
     private JMHighlighter getHighlighter() {
-        return (JMHighlighter) editor.getHighlighter();
+        return jmHighlighter;
     }
 
     private void removeHighlights() {
@@ -331,6 +360,113 @@ public class FilePanel implements BufferDocumentChangeListenerIF {
         FontMetrics fm = editor.getFontMetrics(font);
         scrollPane.getHorizontalScrollBar().setUnitIncrement(fm.getHeight());
         editor.setEditable(true);
+    }
+
+    /**
+     * Chooses a syntax style for the current document based on its filename.
+     * Falls back to plain-text when the extension is not recognised.
+     */
+    private void updateSyntaxStyle() {
+        String style = SyntaxConstants.SYNTAX_STYLE_NONE;
+        if (bufferDocument != null) {
+            String fileName = bufferDocument.getName();
+            if (fileName != null && fileName.lastIndexOf('.') > 0) {
+                String ext = fileName.substring(fileName.lastIndexOf('.') + 1).toLowerCase();
+                style = switch (ext) {
+                    case "java"      -> SyntaxConstants.SYNTAX_STYLE_JAVA;
+                    case "js", "jsx" -> SyntaxConstants.SYNTAX_STYLE_JAVASCRIPT;
+                    case "json"      -> SyntaxConstants.SYNTAX_STYLE_JSON;
+                    case "xml"       -> SyntaxConstants.SYNTAX_STYLE_XML;
+                    case "html", "htm" -> SyntaxConstants.SYNTAX_STYLE_HTML;
+                    case "py"        -> SyntaxConstants.SYNTAX_STYLE_PYTHON;
+                    case "sql"       -> SyntaxConstants.SYNTAX_STYLE_SQL;
+                    case "sh", "bash"-> SyntaxConstants.SYNTAX_STYLE_UNIX_SHELL;
+                    case "yaml", "yml" -> SyntaxConstants.SYNTAX_STYLE_YAML;
+                    case "css"       -> SyntaxConstants.SYNTAX_STYLE_CSS;
+                    case "md", "markdown" -> SyntaxConstants.SYNTAX_STYLE_MARKDOWN;
+                    default -> SyntaxConstants.SYNTAX_STYLE_NONE;
+                };
+            }
+        }
+        editor.setSyntaxEditingStyle(style);
+    }
+
+    /* ====================================================================== */
+    /*                          DOCUMENT MIRRORING                            */
+    /* ====================================================================== */
+
+    /**
+     * Installs bidirectional listeners that keep the PlainDocument belonging to
+     * the model and the RSyntaxDocument shown in the editor in sync. Uses a
+     * guard flag to avoid infinite recursion.
+     */
+    private void installMirroring(Document newPlainDoc) {
+        removeMirroring();
+
+        this.plainDocument = newPlainDoc;
+        var rsyntaxDoc = editor.getDocument();
+        var guard = new java.util.concurrent.atomic.AtomicBoolean(false);
+
+        plainToEditorListener = new DocumentListener() {
+            private void sync() {
+                if (guard.get()) return;
+                guard.set(true);
+                try {
+                    copyText(plainDocument, rsyntaxDoc);
+                } finally {
+                    guard.set(false);
+                }
+            }
+            @Override public void insertUpdate(DocumentEvent e) { sync(); }
+            @Override public void removeUpdate(DocumentEvent e)  { sync(); }
+            @Override public void changedUpdate(DocumentEvent e){ sync(); }
+        };
+        editorToPlainListener = new DocumentListener() {
+            private void sync() {
+                if (guard.get()) return;
+                guard.set(true);
+                try {
+                    copyText(rsyntaxDoc, plainDocument);
+                } finally {
+                    guard.set(false);
+                }
+            }
+            @Override public void insertUpdate(DocumentEvent e) { sync(); }
+            @Override public void removeUpdate(DocumentEvent e)  { sync(); }
+            @Override public void changedUpdate(DocumentEvent e){ sync(); }
+        };
+
+        newPlainDoc.addDocumentListener(plainToEditorListener);
+        rsyntaxDoc.addDocumentListener(editorToPlainListener);
+    }
+
+    /**
+     * Removes previously-installed mirroring listeners, if any.
+     */
+    private void removeMirroring() {
+        if (plainDocument != null && plainToEditorListener != null) {
+            plainDocument.removeDocumentListener(plainToEditorListener);
+        }
+        if (editor != null && editorToPlainListener != null) {
+            editor.getDocument().removeDocumentListener(editorToPlainListener);
+        }
+        plainDocument = null;
+        plainToEditorListener = null;
+        editorToPlainListener = null;
+    }
+
+    /**
+     * Replaces the full content of the destination document with the text from
+     * the source document.
+     */
+    private static void copyText(Document src, Document dst) {
+        try {
+            String txt = src.getText(0, src.getLength());
+            dst.remove(0, dst.getLength());
+            dst.insertString(0, txt, null);
+        } catch (BadLocationException e) {
+            throw new RuntimeException("Mirroring documents failed", e);
+        }
     }
 
 
