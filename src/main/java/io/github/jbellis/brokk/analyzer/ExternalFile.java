@@ -1,5 +1,8 @@
 package io.github.jbellis.brokk.analyzer;
 
+import com.fasterxml.jackson.annotation.JsonCreator;
+import com.fasterxml.jackson.annotation.JsonProperty;
+import com.fasterxml.jackson.annotation.JsonGetter;
 import java.io.IOException;
 import java.io.ObjectInputStream;
 import java.io.ObjectOutputStream;
@@ -13,20 +16,29 @@ public class ExternalFile implements BrokkFile {
     private transient Path path;
 
     // Constructor validation
-    public ExternalFile(Path path) {
-        if (path != null) {
-            if (!path.isAbsolute()) {
-                throw new IllegalArgumentException("Path must be absolute");
-            }
-            if (!path.equals(path.normalize())) {
-                throw new IllegalArgumentException("Path must be normalized");
-            }
+    @JsonCreator
+    public ExternalFile(@JsonProperty("path") Path path) {
+        if (path == null) {
+            throw new IllegalArgumentException("Path cannot be null");
+        }
+        if (!path.isAbsolute()) {
+            throw new IllegalArgumentException("Path must be absolute");
+        }
+        if (!path.equals(path.normalize())) {
+            throw new IllegalArgumentException("Path must be normalized");
         }
         this.path = path;
     }
 
+
     @Override
     public Path absPath() {
+        return path;
+    }
+
+    // JsonGetter method for Jackson serialization since field is transient
+    @JsonGetter("path")
+    public Path getPath() {
         return path;
     }
 

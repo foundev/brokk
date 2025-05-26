@@ -8,6 +8,9 @@ import io.github.jbellis.brokk.analyzer.JoernAnalyzer;
 import io.github.jbellis.brokk.analyzer.CodeUnit;
 import io.github.jbellis.brokk.analyzer.IAnalyzer;
 import io.github.jbellis.brokk.analyzer.ProjectFile;
+import io.github.jbellis.brokk.dto.ContextDto;
+import io.github.jbellis.brokk.dto.ContextMapper;
+import io.github.jbellis.brokk.util.Json;
 import io.github.jbellis.brokk.util.Messages;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
@@ -624,6 +627,21 @@ public class Context implements Serializable {
         } catch (NoSuchFieldException | IllegalAccessException e) {
             throw new RuntimeException(e);
         }
+    }
+    
+    /**
+     * Serializes this Context to JSON using the DTO layer.
+     */
+    public String toJson() {
+        return Json.toJson(ContextMapper.toDto(this));
+    }
+    
+    /**
+     * Deserializes a Context from JSON using the DTO layer.
+     */
+    public static Context fromJson(String json, IContextManager mgr) {
+        var dto = Json.fromJson(json, ContextDto.class);
+        return ContextMapper.fromDto(dto, mgr);
     }
 
     @Serial

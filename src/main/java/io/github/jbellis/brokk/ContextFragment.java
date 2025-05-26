@@ -540,6 +540,10 @@ public interface ContextFragment extends Serializable {
         public String explanation() {
             return explanation;
         }
+        
+        public String query() {
+            return query;
+        }
 
         private static class SerializationProxy implements Serializable {
             @Serial
@@ -781,6 +785,10 @@ public interface ContextFragment extends Serializable {
         @Override
         public String syntaxStyle() {
             return SyntaxConstants.SYNTAX_STYLE_JAVA;
+        }
+        
+        public String targetIdentifier() {
+            return targetIdentifier;
         }
     }
 
