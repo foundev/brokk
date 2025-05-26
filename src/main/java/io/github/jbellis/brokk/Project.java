@@ -747,14 +747,13 @@ public class Project implements IProject, AutoCloseable {
     }
 
     /**
-     * Saves a serialized Context object to the workspace properties
+     * Saves a Context object to the workspace properties using JSON serialization
      */
     public void saveContext(Context context) {
         try {
-            // Save the context
-            byte[] serialized = Context.serialize(context);
-            String encoded = java.util.Base64.getEncoder().encodeToString(serialized);
-            workspaceProps.setProperty("context", encoded);
+            // Save the context using JSON serialization
+            String jsonData = context.toJson();
+            workspaceProps.setProperty("context", jsonData);
 
             // Save the current fragment ID counter
             int currentMaxId = ContextFragment.getCurrentMaxId();
@@ -767,7 +766,7 @@ public class Project implements IProject, AutoCloseable {
     }
 
     /**
-     * Loads a serialized Context object from the workspace properties
+     * Loads a Context object from the workspace properties, supporting both JSON and legacy binary formats
      *
      * @return The loaded Context, or null if none exists
      */
@@ -786,11 +785,11 @@ public class Project implements IProject, AutoCloseable {
             }
 
             // Then load the context
-            String encoded = workspaceProps.getProperty("context");
-            if (encoded != null && !encoded.isEmpty()) {
-                byte[] serialized = java.util.Base64.getDecoder().decode(encoded);
-                var context = Context.deserialize(serialized, welcomeMessage).withContextManager(contextManager);
-                logger.debug("Deserialized context with {} fragments", context.allFragments().count());
+            String contextData = workspaceProps.getProperty("context");
+            if (contextData != null && !contextData.isEmpty()) {
+                // Always assume JSON format now
+                Context context = Context.fromJson(contextData, contextManager);
+                logger.debug("Loaded context from JSON with {} fragments", context.allFragments().count());
                 return context;
             }
         } catch (Throwable e) {

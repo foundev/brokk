@@ -9,9 +9,6 @@ import org.fife.ui.rsyntaxtextarea.SyntaxConstants;
 
 import java.awt.*;
 import java.io.IOException;
-import java.io.ObjectInputStream;
-import java.io.Serial;
-import java.io.Serializable;
 import java.nio.file.Path;
 import java.util.*;
 import java.util.List;
@@ -20,7 +17,7 @@ import java.util.concurrent.atomic.AtomicInteger;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
-public interface ContextFragment extends Serializable {
+public interface ContextFragment {
     // Static counter for all fragments
     // TODO reset this on new session (when we have sessions)
     AtomicInteger NEXT_ID = new AtomicInteger(1);
@@ -151,10 +148,17 @@ public interface ContextFragment extends Serializable {
     }
 
     record ProjectPathFragment(ProjectFile file, int id) implements PathFragment {
-        private static final long serialVersionUID = 2L;
 
         public ProjectPathFragment(ProjectFile file) {
             this(file, NEXT_ID.getAndIncrement());
+        }
+
+        public static ProjectPathFragment withId(ProjectFile file, int existingId) {
+            // Update the counter if needed to avoid ID conflicts
+            if (existingId >= NEXT_ID.get()) {
+                NEXT_ID.set(existingId + 1);
+            }
+            return new ProjectPathFragment(file, existingId);
         }
 
         @Override
@@ -212,10 +216,17 @@ public interface ContextFragment extends Serializable {
      * Represents a specific revision of a ProjectFile from Git history.
      */
     record GitFileFragment(ProjectFile file, String revision, String content, int id) implements PathFragment {
-        private static final long serialVersionUID = 2L;
 
         public GitFileFragment(ProjectFile file, String revision, String content) {
             this(file, revision, content, NEXT_ID.getAndIncrement());
+        }
+
+        public static GitFileFragment withId(ProjectFile file, String revision, String content, int existingId) {
+            // Update the counter if needed to avoid ID conflicts
+            if (existingId >= NEXT_ID.get()) {
+                NEXT_ID.set(existingId + 1);
+            }
+            return new GitFileFragment(file, revision, content, existingId);
         }
 
         private String shortRevision() {
@@ -273,10 +284,17 @@ public interface ContextFragment extends Serializable {
 
 
     record ExternalPathFragment(ExternalFile file, int id) implements PathFragment {
-        private static final long serialVersionUID = 2L;
 
         public ExternalPathFragment(ExternalFile file) {
             this(file, NEXT_ID.getAndIncrement());
+        }
+
+        public static ExternalPathFragment withId(ExternalFile file, int existingId) {
+            // Update the counter if needed to avoid ID conflicts
+            if (existingId >= NEXT_ID.get()) {
+                NEXT_ID.set(existingId + 1);
+            }
+            return new ExternalPathFragment(file, existingId);
         }
 
         @Override
@@ -304,11 +322,19 @@ public interface ContextFragment extends Serializable {
      * Represents an image file, either from the project or external.
      */
     record ImageFileFragment(BrokkFile file, int id) implements PathFragment {
-        private static final long serialVersionUID = 1L;
 
         public ImageFileFragment(BrokkFile file) {
             this(file, NEXT_ID.getAndIncrement());
             assert !file.isText() : "ImageFileFragment should only be used for non-text files";
+        }
+
+        public static ImageFileFragment withId(BrokkFile file, int existingId) {
+            assert !file.isText() : "ImageFileFragment should only be used for non-text files";
+            // Update the counter if needed to avoid ID conflicts
+            if (existingId >= NEXT_ID.get()) {
+                NEXT_ID.set(existingId + 1);
+            }
+            return new ImageFileFragment(file, existingId);
         }
 
         @Override
@@ -387,11 +413,18 @@ public interface ContextFragment extends Serializable {
     }
 
     abstract class VirtualFragment implements ContextFragment {
-        private static final long serialVersionUID = 2L;
         private final int id;
 
         public VirtualFragment() {
             this.id = NEXT_ID.getAndIncrement();
+        }
+
+        protected VirtualFragment(int existingId) {
+            this.id = existingId;
+            // Update the counter if needed to avoid ID conflicts
+            if (existingId >= NEXT_ID.get()) {
+                NEXT_ID.set(existingId + 1);
+            }
         }
 
         @Override
@@ -450,13 +483,21 @@ public interface ContextFragment extends Serializable {
     }
 
     class StringFragment extends VirtualFragment {
-        private static final long serialVersionUID = 3L;
         private final String text;
         private final String description;
         private final String syntaxStyle;
 
         public StringFragment(String text, String description, String syntaxStyle) {
             super();
+            this.syntaxStyle = syntaxStyle;
+            assert text != null;
+            assert description != null;
+            this.text = text;
+            this.description = description;
+        }
+
+        public StringFragment(int existingId, String text, String description, String syntaxStyle) {
+            super(existingId);
             this.syntaxStyle = syntaxStyle;
             assert text != null;
             assert description != null;
@@ -489,13 +530,20 @@ public interface ContextFragment extends Serializable {
     // the search, I think we need to add a messages parameter and pass them to super();
     // then we'd also want to override format() to keep it out of what the LLM sees
     class SearchFragment extends TaskFragment {
-        private static final long serialVersionUID = 4L;
         private final String query;
         private final String explanation;
         private final Set<CodeUnit> sources;
 
         public SearchFragment(String query, String explanation, Set<CodeUnit> sources) {
             super(List.of(new UserMessage(query), new AiMessage(explanation)), query);
+            assert sources != null;
+            this.query = query;
+            this.explanation = explanation;
+            this.sources = sources;
+        }
+
+        public SearchFragment(int existingId, String query, String explanation, Set<CodeUnit> sources) {
+            super(existingId, List.of(new UserMessage(query), new AiMessage(explanation)), query);
             assert sources != null;
             this.query = query;
             this.explanation = explanation;
@@ -521,49 +569,12 @@ public interface ContextFragment extends Serializable {
             return format(); // full search result
         }
 
-        // --- Custom Serialization using Proxy Pattern ---
-        // SearchFragment extends TaskFragment, which has its own proxy for messages.
-        // We only need to handle SearchFragment's own fields here. TaskFragment's state
-        // should be handled by its proxy during the serialization process.
-
-        @Serial
-        private Object writeReplace() {
-            return new SerializationProxy(this);
-        }
-
-        @Serial
-        private void readObject(ObjectInputStream in) throws IOException, ClassNotFoundException {
-            // This method should not be called if writeReplace is used.
-            throw new java.io.NotSerializableException("SearchFragment must be serialized via SerializationProxy");
-        }
-
         public String explanation() {
             return explanation;
         }
-
-        private static class SerializationProxy implements Serializable {
-            @Serial
-            private static final long serialVersionUID = 41L; // Unique ID for SearchFragment proxy
-
-            private final String query;
-            private final String explanation;
-            private final Set<CodeUnit> sources;
-            // No need to serialize 'messages' or 'sessionName' here; TaskFragment's proxy handles them.
-
-            SerializationProxy(SearchFragment fragment) {
-                this.query = fragment.query;
-                this.explanation = fragment.explanation;
-                this.sources = fragment.sources;
-            }
-
-            @Serial
-            private Object readResolve() throws java.io.ObjectStreamException {
-                // Reconstruct the SearchFragment. The constructor call `super(...)`
-                // will initialize the TaskFragment part, including creating the messages
-                // based on query/explanation. If TaskFragment's proxy ran correctly,
-                // the deserialized state should align.
-                return new SearchFragment(query, explanation, sources);
-            }
+        
+        public String query() {
+            return query;
         }
     }
 
@@ -572,6 +583,11 @@ public interface ContextFragment extends Serializable {
 
         public PasteFragment(Future<String> descriptionFuture) {
             super();
+            this.descriptionFuture = descriptionFuture;
+        }
+
+        public PasteFragment(int existingId, Future<String> descriptionFuture) {
+            super(existingId);
             this.descriptionFuture = descriptionFuture;
         }
 
@@ -591,35 +607,20 @@ public interface ContextFragment extends Serializable {
         public String toString() {
             return "PasteFragment('%s')".formatted(description());
         }
-
-        private void writeObject(java.io.ObjectOutputStream out) throws IOException {
-            out.defaultWriteObject();
-            String desc;
-            if (descriptionFuture.isDone()) {
-                try {
-                    desc = descriptionFuture.get();
-                } catch (Exception e) {
-                    desc = "(Error summarizing paste)";
-                }
-            } else {
-                desc = "(Paste summary incomplete)";
-            }
-            out.writeObject(desc);
-        }
-
-        private void readObject(java.io.ObjectInputStream in) throws IOException, ClassNotFoundException {
-            in.defaultReadObject();
-            String desc = (String) in.readObject();
-            this.descriptionFuture = java.util.concurrent.CompletableFuture.completedFuture(desc);
-        }
     }
 
     class PasteTextFragment extends PasteFragment {
-        private static final long serialVersionUID = 4L;
         private final String text;
 
         public PasteTextFragment(String text, Future<String> descriptionFuture) {
             super(descriptionFuture);
+            assert text != null;
+            assert descriptionFuture != null;
+            this.text = text;
+        }
+
+        public PasteTextFragment(int existingId, String text, Future<String> descriptionFuture) {
+            super(existingId, descriptionFuture);
             assert text != null;
             assert descriptionFuture != null;
             this.text = text;
@@ -638,11 +639,17 @@ public interface ContextFragment extends Serializable {
     }
 
     class PasteImageFragment extends PasteFragment {
-        private static final long serialVersionUID = 1L;
         private final Image image;
 
         public PasteImageFragment(Image image, Future<String> descriptionFuture) {
             super(descriptionFuture);
+            assert image != null;
+            assert descriptionFuture != null;
+            this.image = image;
+        }
+
+        public PasteImageFragment(int existingId, Image image, Future<String> descriptionFuture) {
+            super(existingId, descriptionFuture);
             assert image != null;
             assert descriptionFuture != null;
             this.image = image;
@@ -685,7 +692,6 @@ public interface ContextFragment extends Serializable {
     }
 
     class StacktraceFragment extends VirtualFragment {
-        private static final long serialVersionUID = 2L;
         private final Set<CodeUnit> sources;
         private final String original;
         private final String exception;
@@ -693,6 +699,18 @@ public interface ContextFragment extends Serializable {
 
         public StacktraceFragment(Set<CodeUnit> sources, String original, String exception, String code) {
             super();
+            assert sources != null;
+            assert original != null;
+            assert exception != null;
+            assert code != null;
+            this.sources = sources;
+            this.original = original;
+            this.exception = exception;
+            this.code = code;
+        }
+
+        public StacktraceFragment(int existingId, Set<CodeUnit> sources, String original, String exception, String code) {
+            super(existingId);
             assert sources != null;
             assert original != null;
             assert exception != null;
@@ -743,13 +761,22 @@ public interface ContextFragment extends Serializable {
     }
 
     class UsageFragment extends VirtualFragment {
-        private static final long serialVersionUID = 3L;
         private final String targetIdentifier;
         private final Set<CodeUnit> classes;
         private final String code;
 
         public UsageFragment(String targetIdentifier, Set<CodeUnit> classes, String code) {
             super();
+            assert targetIdentifier != null;
+            assert classes != null;
+            assert code != null;
+            this.targetIdentifier = targetIdentifier;
+            this.classes = classes;
+            this.code = code;
+        }
+
+        public UsageFragment(int existingId, String targetIdentifier, Set<CodeUnit> classes, String code) {
+            super(existingId);
             assert targetIdentifier != null;
             assert classes != null;
             assert code != null;
@@ -782,10 +809,13 @@ public interface ContextFragment extends Serializable {
         public String syntaxStyle() {
             return SyntaxConstants.SYNTAX_STYLE_JAVA;
         }
+        
+        public String targetIdentifier() {
+            return targetIdentifier;
+        }
     }
 
     class CallGraphFragment extends VirtualFragment {
-        private static final long serialVersionUID = 1L;
         private final String type;
         private final String targetIdentifier;
         private final Set<CodeUnit> classes;
@@ -793,6 +823,17 @@ public interface ContextFragment extends Serializable {
 
         public CallGraphFragment(String type, String targetIdentifier, Set<CodeUnit> classes, String code) {
             super();
+            assert type != null;
+            assert targetIdentifier != null;
+            assert classes != null;
+            this.type = type;
+            this.targetIdentifier = targetIdentifier;
+            this.classes = classes;
+            this.code = code;
+        }
+
+        public CallGraphFragment(int existingId, String type, String targetIdentifier, Set<CodeUnit> classes, String code) {
+            super(existingId);
             assert type != null;
             assert targetIdentifier != null;
             assert classes != null;
@@ -829,11 +870,16 @@ public interface ContextFragment extends Serializable {
     }
 
     class SkeletonFragment extends VirtualFragment {
-        private static final long serialVersionUID = 3L;
         final Map<CodeUnit, String> skeletons;
 
         public SkeletonFragment(Map<CodeUnit, String> skeletons) {
             super();
+            assert skeletons != null;
+            this.skeletons = skeletons;
+        }
+
+        public SkeletonFragment(int existingId, Map<CodeUnit, String> skeletons) {
+            super(existingId);
             assert skeletons != null;
             this.skeletons = skeletons;
         }
@@ -953,11 +999,16 @@ public interface ContextFragment extends Serializable {
      * represents the entire Task History
      */
     class HistoryFragment extends VirtualFragment implements OutputFragment {
-        private static final long serialVersionUID = 3L;
         private final List<TaskEntry> history;
 
         public HistoryFragment(List<TaskEntry> history) {
             super();
+            assert history != null;
+            this.history = List.copyOf(history);
+        }
+
+        public HistoryFragment(int existingId, List<TaskEntry> history) {
+            super(existingId);
             assert history != null;
             this.history = List.copyOf(history);
         }
@@ -1024,7 +1075,6 @@ public interface ContextFragment extends Serializable {
      * represents a single session's Task History
      */
     class TaskFragment extends VirtualFragment implements OutputFragment {
-        private static final long serialVersionUID = 5L;
         private final EditBlockParser parser; // TODO this doesn't belong in TaskFragment anymore
         private final List<ChatMessage> messages;
         private final String sessionName;
@@ -1038,6 +1088,17 @@ public interface ContextFragment extends Serializable {
 
         public TaskFragment(List<ChatMessage> messages, String sessionName) {
             this(EditBlockParser.instance, messages, sessionName);
+        }
+
+        public TaskFragment(int existingId, EditBlockParser parser, List<ChatMessage> messages, String sessionName) {
+            super(existingId);
+            this.parser = parser;
+            this.messages = messages;
+            this.sessionName = sessionName;
+        }
+
+        public TaskFragment(int existingId, List<ChatMessage> messages, String sessionName) {
+            this(existingId, EditBlockParser.instance, messages, sessionName);
         }
 
         @Override
@@ -1077,52 +1138,6 @@ public interface ContextFragment extends Serializable {
 
         public EditBlockParser parser() {
             return parser;
-        }
-
-        // --- Custom Serialization using Proxy Pattern ---
-
-        /**
-         * Replace this TaskFragment instance with a SerializationProxy during serialization.
-         * This allows us to convert the non-serializable ChatMessage list to JSON.
-         */
-        @Serial
-        private Object writeReplace() {
-            return new SerializationProxy(this);
-        }
-
-        /**
-         * Prevent direct deserialization of TaskFragment; must go through the proxy.
-         */
-        @Serial
-        private void readObject(ObjectInputStream in) throws IOException, ClassNotFoundException {
-            throw new java.io.NotSerializableException("TaskFragment must be serialized via SerializationProxy");
-        }
-
-        /**
-         * A helper class to handle the serialization and deserialization of TaskFragment.
-         * It stores the ChatMessage list as a JSON string.
-         */
-        private static class SerializationProxy implements Serializable {
-            @Serial
-            private static final long serialVersionUID = 1L;
-
-            private final String serializedMessages; // Store messages as JSON string
-            private final String sessionName;
-
-            SerializationProxy(TaskFragment fragment) {
-                // Store the class name of the parser
-                this.sessionName = fragment.sessionName;
-                this.serializedMessages = ChatMessageSerializer.messagesToJson(fragment.messages());
-            }
-
-            /**
-             * Reconstruct the TaskFragment instance after the SerializationProxy is deserialized.
-             */
-            @Serial
-            private Object readResolve() throws java.io.ObjectStreamException {
-                List<ChatMessage> deserializedMessages = ChatMessageDeserializer.messagesFromJson(serializedMessages);
-                return new TaskFragment(deserializedMessages, sessionName);
-            }
         }
     }
 }
