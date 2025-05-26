@@ -4,12 +4,11 @@ import com.fasterxml.jackson.annotation.JsonIgnore;
 import org.jetbrains.annotations.NotNull;
 
 import java.io.IOException;
-import java.io.Serializable;
 import java.io.UncheckedIOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 
-public interface BrokkFile extends Serializable, Comparable<BrokkFile> {
+public interface BrokkFile extends Comparable<BrokkFile> {
     Path absPath();
 
     default String read() throws IOException {

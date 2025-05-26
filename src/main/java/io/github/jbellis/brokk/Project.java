@@ -787,17 +787,9 @@ public class Project implements IProject, AutoCloseable {
             // Then load the context
             String contextData = workspaceProps.getProperty("context");
             if (contextData != null && !contextData.isEmpty()) {
-                Context context;
-                if (looksLikeJson(contextData)) {
-                    // New JSON format
-                    context = Context.fromJson(contextData, contextManager);
-                    logger.debug("Loaded context from JSON with {} fragments", context.allFragments().count());
-                } else {
-                    // Legacy Base64-encoded binary format
-                    byte[] serialized = java.util.Base64.getDecoder().decode(contextData);
-                    context = Context.deserialize(serialized, welcomeMessage).withContextManager(contextManager);
-                    logger.debug("Deserialized legacy context with {} fragments", context.allFragments().count());
-                }
+                // Always assume JSON format now
+                Context context = Context.fromJson(contextData, contextManager);
+                logger.debug("Loaded context from JSON with {} fragments", context.allFragments().count());
                 return context;
             }
         } catch (Throwable e) {
@@ -805,13 +797,6 @@ public class Project implements IProject, AutoCloseable {
             clearSavedContext();
         }
         return null;
-    }
-
-    /**
-     * Helper method to detect if a string contains JSON data
-     */
-    private static boolean looksLikeJson(String data) {
-        return data != null && !data.isEmpty() && data.trim().startsWith("{");
     }
 
     private void clearSavedContext() {

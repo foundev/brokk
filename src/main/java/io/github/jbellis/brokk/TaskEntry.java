@@ -4,24 +4,18 @@ import dev.langchain4j.data.message.ChatMessage;
 import io.github.jbellis.brokk.util.Messages;
 import org.jetbrains.annotations.NotNull;
 
-import java.io.Serial;
-import java.io.Serializable;
 import java.util.List;
 import java.util.stream.Collectors;
 
 /**
  * Represents a single task interaction for the Task History, including the user request ("description") and the full LLM message log.
  * The log can be compressed to save context space while retaining the most relevant information.
- * This record is serializable, using langchain4j's JSON serialization for ChatMessage lists.
  *
  * @param sequence A unique sequence number for ordering tasks.
  * @param log      The uncompressed list of chat messages for this task. Null if compressed.
  * @param summary  The compressed representation of the chat messages (summary). Null if uncompressed.
  */
-public record TaskEntry(int sequence, ContextFragment.TaskFragment log, String summary) implements Serializable {
-    @Serial
-    private static final long serialVersionUID = 2L;
-
+public record TaskEntry(int sequence, ContextFragment.TaskFragment log, String summary) {
     private static final System.Logger logger = System.getLogger(TaskEntry.class.getName());
 
     /** Enforce that exactly one of log or summary is non-null */

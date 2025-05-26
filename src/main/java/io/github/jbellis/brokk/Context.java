@@ -17,8 +17,6 @@ import org.apache.logging.log4j.Logger;
 import org.jetbrains.annotations.NotNull;
 
 import java.io.IOException;
-import java.io.Serial;
-import java.io.Serializable;
 import java.util.*;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.Future;
@@ -29,7 +27,7 @@ import java.util.stream.Stream;
 /**
  * Encapsulates all state that will be sent to the model (prompts, filename context, conversation history).
  */
-public class Context implements Serializable {
+public class Context {
     private static final Logger logger = LogManager.getLogger(Context.class);
     private static final AtomicInteger idCounter = new AtomicInteger(0);
 
@@ -37,12 +35,8 @@ public class Context implements Serializable {
         return idCounter.incrementAndGet();
     }
 
-    @Serial
-    private static final long serialVersionUID = 3L;
-
     public static final int MAX_AUTO_CONTEXT_FILES = 100;
     private static final String WELCOME_ACTION = "Welcome to Brokk";
-    private static final String WELCOME_BACK = "Welcome back";
     public static final String SUMMARIZING = "(Summarizing)";
 
     transient final IContextManager contextManager;
@@ -602,34 +596,6 @@ public class Context implements Serializable {
     }
 
     /**
-     * Serializes a Context object to a byte array
-     */
-    public static byte[] serialize(Context ctx) throws IOException {
-        try (var baos = new java.io.ByteArrayOutputStream();
-             var oos = new java.io.ObjectOutputStream(baos)) {
-            oos.writeObject(ctx);
-            return baos.toByteArray();
-        }
-    }
-
-    /**
-     * Deserializes a Context object from a byte array
-     */
-    public static Context deserialize(byte[] data, String welcomeMessage) throws IOException, ClassNotFoundException {
-        try (var bais = new java.io.ByteArrayInputStream(data);
-             var ois = new java.io.ObjectInputStream(bais)) {
-            var ctx = (Context) ois.readObject();
-            // inject our welcome message as parsed output
-            var parsedOutputField = Context.class.getDeclaredField("parsedOutput");
-            parsedOutputField.setAccessible(true);
-            parsedOutputField.set(ctx, getWelcomeOutput(welcomeMessage));
-            return ctx;
-        } catch (NoSuchFieldException | IllegalAccessException e) {
-            throw new RuntimeException(e);
-        }
-    }
-    
-    /**
      * Serializes this Context to JSON using the DTO layer.
      */
     public String toJson() {
@@ -642,39 +608,6 @@ public class Context implements Serializable {
     public static Context fromJson(String json, IContextManager mgr) {
         var dto = Json.fromJson(json, ContextDto.class);
         return ContextMapper.fromDto(dto, mgr);
-    }
-
-    @Serial
-    private void writeObject(java.io.ObjectOutputStream oos) throws IOException {
-        // Write non-transient fields
-        oos.defaultWriteObject();
-    }
-
-    @Serial
-    private void readObject(java.io.ObjectInputStream ois) throws IOException, ClassNotFoundException {
-        // Read non-transient fields
-        ois.defaultReadObject();
-
-        try {
-            // Use reflection to set final transient fields
-            var originalContentsField = Context.class.getDeclaredField("originalContents");
-            originalContentsField.setAccessible(true);
-            originalContentsField.set(this, Map.of());
-
-            var contextManagerField = Context.class.getDeclaredField("contextManager");
-            contextManagerField.setAccessible(true);
-            contextManagerField.set(this, null); // This will need to be set externally after deserialization
-
-            var actionField = Context.class.getDeclaredField("action");
-            actionField.setAccessible(true);
-            actionField.set(this, CompletableFuture.completedFuture(WELCOME_BACK));
-
-            var idField = Context.class.getDeclaredField("id");
-            idField.setAccessible(true);
-            idField.set(this, newId()); // Assign new ID on deserialization
-        } catch (NoSuchFieldException | IllegalAccessException e) {
-            throw new IOException("Failed to initialize fields during deserialization", e);
-        }
     }
 
     /**

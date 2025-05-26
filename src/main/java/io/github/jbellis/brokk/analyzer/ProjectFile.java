@@ -5,12 +5,9 @@ import com.fasterxml.jackson.annotation.JsonIgnore;
 import com.fasterxml.jackson.annotation.JsonProperty;
 import com.fasterxml.jackson.annotation.JsonGetter;
 import java.io.IOException;
-import java.io.ObjectInputStream;
-import java.io.ObjectOutputStream;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.Objects;
-import java.util.Optional;
 
 /**
  * Abstraction for a filename relative to the repo.  This exists to make it less difficult to ensure
@@ -18,7 +15,6 @@ import java.util.Optional;
  * or may not be absolute, or may be relative to the jvm root rather than the repo root.
  */
 public class ProjectFile implements BrokkFile {
-    private static final long serialVersionUID = 1L;
     private transient Path root;
     private transient Path relPath;
 
@@ -107,30 +103,5 @@ public class ProjectFile implements BrokkFile {
     @Override
     public int hashCode() {
         return relPath.hashCode();
-    }
-
-    private void writeObject(ObjectOutputStream oos) throws IOException {
-        oos.defaultWriteObject();
-        // store the string forms of root/relPath
-        oos.writeUTF(root.toString());
-        oos.writeUTF(relPath.toString());
-    }
-
-    private void readObject(ObjectInputStream ois) throws IOException, ClassNotFoundException {
-        // read all non-transient fields
-        ois.defaultReadObject();
-        // reconstitute root/relPath from the strings
-        String rootString = ois.readUTF();
-        String relString = ois.readUTF();
-        // both must be absolute/relative as before
-        root = Path.of(rootString);
-        if (!root.isAbsolute()) {
-            throw new IllegalArgumentException("Root must be absolute");
-        }
-
-        relPath = Path.of(relString);
-        if (relPath.isAbsolute()) {
-            throw new IllegalArgumentException("RelPath must be relative");
-        }
     }
 }
