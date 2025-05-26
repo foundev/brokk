@@ -17,14 +17,14 @@ public class FragmentDtos {
      * Sealed interface for path-based fragments (files).
      */
     @JsonTypeInfo(use = Id.CLASS, include = As.PROPERTY, property = "type")
-    public sealed interface PathFragmentDto permits ProjectFileDto, ExternalFileDto, ImageFileDto {
+    public sealed interface PathFragmentDto permits ProjectFileDto, ExternalFileDto, ImageFileDto, GitFileFragmentDto {
     }
     
     /**
      * Sealed interface for virtual fragments (non-file content).
      */
     @JsonTypeInfo(use = Id.CLASS, include = As.PROPERTY, property = "type")
-    public sealed interface VirtualFragmentDto permits TaskFragmentDto, StringFragmentDto, SearchFragmentDto, SkeletonFragmentDto, UsageFragmentDto {
+    public sealed interface VirtualFragmentDto permits TaskFragmentDto, StringFragmentDto, SearchFragmentDto, SkeletonFragmentDto, UsageFragmentDto, PasteTextFragmentDto, PasteImageFragmentDto, StacktraceFragmentDto, CallGraphFragmentDto, HistoryFragmentDto {
     }
     
     /**
@@ -174,6 +174,102 @@ public class FragmentDtos {
                 throw new IllegalArgumentException("code cannot be null");
             }
             classes = classes != null ? Set.copyOf(classes) : Set.of();
+        }
+    }
+    
+    /**
+     * DTO for GitFileFragment - represents a specific revision of a file from Git history.
+     */
+    public record GitFileFragmentDto(String repoRoot, String relPath, String revision, String content) implements PathFragmentDto {
+        public GitFileFragmentDto {
+            if (repoRoot == null || repoRoot.isEmpty()) {
+                throw new IllegalArgumentException("repoRoot cannot be null or empty");
+            }
+            if (relPath == null || relPath.isEmpty()) {
+                throw new IllegalArgumentException("relPath cannot be null or empty");
+            }
+            if (revision == null || revision.isEmpty()) {
+                throw new IllegalArgumentException("revision cannot be null or empty");
+            }
+            if (content == null) {
+                throw new IllegalArgumentException("content cannot be null");
+            }
+        }
+    }
+    
+    /**
+     * DTO for PasteTextFragment - contains pasted text with resolved description.
+     */
+    public record PasteTextFragmentDto(String text, String description) implements VirtualFragmentDto {
+        public PasteTextFragmentDto {
+            if (text == null) {
+                throw new IllegalArgumentException("text cannot be null");
+            }
+            if (description == null) {
+                throw new IllegalArgumentException("description cannot be null");
+            }
+        }
+    }
+    
+    /**
+     * DTO for PasteImageFragment - contains base64-encoded image data with resolved description.
+     */
+    public record PasteImageFragmentDto(String base64ImageData, String description) implements VirtualFragmentDto {
+        public PasteImageFragmentDto {
+            if (base64ImageData == null || base64ImageData.isEmpty()) {
+                throw new IllegalArgumentException("base64ImageData cannot be null or empty");
+            }
+            if (description == null) {
+                throw new IllegalArgumentException("description cannot be null");
+            }
+        }
+    }
+    
+    /**
+     * DTO for StacktraceFragment - contains stacktrace analysis data.
+     */
+    public record StacktraceFragmentDto(Set<CodeUnitDto> sources, String original, String exception, String code) implements VirtualFragmentDto {
+        public StacktraceFragmentDto {
+            if (original == null) {
+                throw new IllegalArgumentException("original cannot be null");
+            }
+            if (exception == null) {
+                throw new IllegalArgumentException("exception cannot be null");
+            }
+            if (code == null) {
+                throw new IllegalArgumentException("code cannot be null");
+            }
+            sources = sources != null ? Set.copyOf(sources) : Set.of();
+        }
+    }
+    
+    /**
+     * DTO for CallGraphFragment - contains call graph analysis data.
+     */
+    public record CallGraphFragmentDto(String type, String targetIdentifier, Set<CodeUnitDto> classes, String code) implements VirtualFragmentDto {
+        public CallGraphFragmentDto {
+            if (type == null) {
+                throw new IllegalArgumentException("type cannot be null");
+            }
+            if (targetIdentifier == null) {
+                throw new IllegalArgumentException("targetIdentifier cannot be null");
+            }
+            if (code == null) {
+                throw new IllegalArgumentException("code cannot be null");
+            }
+            classes = classes != null ? Set.copyOf(classes) : Set.of();
+        }
+    }
+    
+    /**
+     * DTO for HistoryFragment - contains task history entries.
+     */
+    public record HistoryFragmentDto(List<TaskEntryDto> history) implements VirtualFragmentDto {
+        public HistoryFragmentDto {
+            if (history == null) {
+                throw new IllegalArgumentException("history cannot be null");
+            }
+            history = List.copyOf(history);
         }
     }
     

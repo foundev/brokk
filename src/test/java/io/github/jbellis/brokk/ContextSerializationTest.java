@@ -4,6 +4,7 @@ import dev.langchain4j.data.message.ChatMessage;
 import io.github.jbellis.brokk.analyzer.CodeUnit;
 import io.github.jbellis.brokk.analyzer.ExternalFile;
 import io.github.jbellis.brokk.analyzer.ProjectFile;
+import io.github.jbellis.brokk.util.Json;
 import org.fife.ui.rsyntaxtextarea.SyntaxConstants;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -537,5 +538,318 @@ public class ContextSerializationTest {
         assertTrue(deserialized.virtualFragments.isEmpty());
         assertTrue(deserialized.taskHistory.isEmpty());
         assertTrue(deserialized.isEmpty());
+    }
+
+    @Test
+    void testJsonSerializationWithPasteFragments() throws Exception {
+        Context context = new Context(mockContextManager);
+
+        // Create PasteTextFragment with completed future
+        CompletableFuture<String> textDescFuture = CompletableFuture.completedFuture("code snippet");
+        var pasteTextFragment = new ContextFragment.PasteTextFragment("int x = 5;", textDescFuture);
+        context = context.addVirtualFragment(pasteTextFragment);
+
+        // Create PasteImageFragment with completed future
+        CompletableFuture<String> imageDescFuture = CompletableFuture.completedFuture("diagram");
+        // Create a simple test image
+        var testImage = new java.awt.image.BufferedImage(10, 10, java.awt.image.BufferedImage.TYPE_INT_RGB);
+        var pasteImageFragment = new ContextFragment.PasteImageFragment(testImage, imageDescFuture);
+        context = context.addVirtualFragment(pasteImageFragment);
+
+        // Serialize to JSON and deserialize
+        String json = context.toJson();
+        assertNotNull(json);
+        Context deserialized = Context.fromJson(json, mockContextManager);
+
+        // Verify fragments were preserved
+        assertEquals(2, deserialized.virtualFragments.size());
+
+        // Find PasteTextFragment
+        var deserializedTextFragment = (ContextFragment.PasteTextFragment) deserialized.virtualFragments.stream()
+                .filter(f -> f instanceof ContextFragment.PasteTextFragment)
+                .findFirst()
+                .orElseThrow();
+        assertEquals("int x = 5;", deserializedTextFragment.text());
+        assertEquals("Paste of code snippet", deserializedTextFragment.description());
+
+        // Find PasteImageFragment
+        var deserializedImageFragment = (ContextFragment.PasteImageFragment) deserialized.virtualFragments.stream()
+                .filter(f -> f instanceof ContextFragment.PasteImageFragment)
+                .findFirst()
+                .orElseThrow();
+        assertEquals("Paste of diagram", deserializedImageFragment.description());
+        assertNotNull(deserializedImageFragment.image());
+        assertFalse(deserializedImageFragment.isText());
+    }
+
+    @Test
+    void testJsonSerializationWithGitFileFragment() throws Exception {
+        // Create test ProjectFile
+        Path repoRoot = tempDir.resolve("repo");
+        Files.createDirectories(repoRoot);
+        var projectFile = new ProjectFile(repoRoot, "src/Test.java");
+        
+        // Create GitFileFragment
+        var gitFileFragment = new ContextFragment.GitFileFragment(
+            projectFile, 
+            "abc123def", 
+            "public class OldTest {}"
+        );
+
+        Context context = new Context(mockContextManager)
+                .addReadonlyFiles(List.of(gitFileFragment));
+
+        // Serialize to JSON and deserialize
+        String json = context.toJson();
+        assertNotNull(json);
+        assertTrue(json.contains("revision"), "JSON should contain revision field");
+        assertTrue(json.contains("abc123def"), "JSON should contain revision value");
+
+        Context deserialized = Context.fromJson(json, mockContextManager);
+
+        // Verify GitFileFragment was preserved
+        assertEquals(1, deserialized.readonlyFiles.size());
+        var deserializedFragment = (ContextFragment.GitFileFragment) deserialized.readonlyFiles.get(0);
+        
+        assertEquals("abc123def", deserializedFragment.revision());
+        assertEquals("public class OldTest {}", deserializedFragment.content());
+        assertEquals(projectFile.toString(), deserializedFragment.file().toString());
+        assertTrue(deserializedFragment.description().contains("@abc123d")); // short revision
+    }
+
+    @Test
+    void testJsonSerializationWithImageFileFragment() throws Exception {
+        // Create test image file
+        Path imagePath = tempDir.resolve("test.png").toAbsolutePath();
+        Files.createFile(imagePath);
+        var externalFile = new ExternalFile(imagePath);
+        
+        // Create ImageFileFragment
+        var imageFileFragment = new ContextFragment.ImageFileFragment(externalFile);
+
+        Context context = new Context(mockContextManager)
+                .addReadonlyFiles(List.of(imageFileFragment));
+
+        // Serialize to JSON and deserialize
+        String json = context.toJson();
+        assertNotNull(json);
+
+        Context deserialized = Context.fromJson(json, mockContextManager);
+
+        // Verify ImageFileFragment was preserved
+        assertEquals(1, deserialized.readonlyFiles.size());
+        var deserializedFragment = (ContextFragment.ImageFileFragment) deserialized.readonlyFiles.get(0);
+        
+        assertEquals(imagePath.toString(), deserializedFragment.file().toString());
+        assertEquals("test.png", deserializedFragment.file().getFileName());
+        assertFalse(deserializedFragment.isText());
+        assertEquals("[Image content provided out of band]", deserializedFragment.text());
+    }
+
+    @Test
+    void testJsonSerializationWithCallGraphFragment() throws Exception {
+        Context context = new Context(mockContextManager);
+        ProjectFile mockFile = new ProjectFile(tempDir, "Test.java");
+        Files.createFile(mockFile.absPath());
+
+        // Create CallGraphFragment
+        var codeUnits = Set.of(CodeUnit.cls(mockFile, "com.test", "TestClass"));
+        var callGraphFragment = new ContextFragment.CallGraphFragment(
+            "Callers", 
+            "TestClass.method", 
+            codeUnits, 
+            "TestClass.method() calls:\n  OtherClass.helper()"
+        );
+
+        context = context.addVirtualFragment(callGraphFragment);
+
+        // Serialize to JSON and deserialize
+        String json = context.toJson();
+        assertNotNull(json);
+
+        Context deserialized = Context.fromJson(json, mockContextManager);
+
+        // Verify CallGraphFragment was preserved
+        assertEquals(1, deserialized.virtualFragments.size());
+        var deserializedFragment = (ContextFragment.CallGraphFragment) deserialized.virtualFragments.get(0);
+        
+        assertEquals("Callers of TestClass.method", deserializedFragment.description());
+        assertEquals("TestClass.method() calls:\n  OtherClass.helper()", deserializedFragment.text());
+        assertEquals(1, deserializedFragment.sources(null).size());
+    }
+
+    @Test
+    void testJsonSerializationWithHistoryFragment() throws Exception {
+        Context context = new Context(mockContextManager);
+
+        // Create some task entries
+        List<ChatMessage> messages1 = List.of(
+            dev.langchain4j.data.message.UserMessage.from("First question"),
+            dev.langchain4j.data.message.AiMessage.from("First answer")
+        );
+        var taskFragment1 = new ContextFragment.TaskFragment(messages1, "Task 1");
+        var taskEntry1 = new TaskEntry(1, taskFragment1, null);
+
+        List<ChatMessage> messages2 = List.of(
+            dev.langchain4j.data.message.UserMessage.from("Second question"),
+            dev.langchain4j.data.message.AiMessage.from("Second answer")
+        );
+        var taskFragment2 = new ContextFragment.TaskFragment(messages2, "Task 2");
+        var taskEntry2 = new TaskEntry(2, taskFragment2, null);
+
+        var historyFragment = new ContextFragment.HistoryFragment(List.of(taskEntry1, taskEntry2));
+        context = context.addVirtualFragment(historyFragment);
+
+        // Serialize to JSON and deserialize
+        String json = context.toJson();
+        assertNotNull(json);
+
+        Context deserialized = Context.fromJson(json, mockContextManager);
+
+        // Verify HistoryFragment was preserved
+        assertEquals(1, deserialized.virtualFragments.size());
+        var deserializedFragment = (ContextFragment.HistoryFragment) deserialized.virtualFragments.get(0);
+        
+        assertEquals("Task History (2 tasks)", deserializedFragment.description());
+        assertEquals(2, deserializedFragment.entries().size());
+        
+        // Check first task entry
+        var firstEntry = deserializedFragment.entries().get(0);
+        assertEquals(1, firstEntry.sequence());
+        assertNotNull(firstEntry.log());
+        assertEquals("Task 1", firstEntry.log().description());
+        assertEquals(2, firstEntry.log().messages().size());
+    }
+
+    @Test
+    void testJsonSerializationWithSpecialCharacters() throws Exception {
+        Context context = new Context(mockContextManager);
+
+        // Create fragments with special characters
+        String specialText = "Special chars: äöü ñ 中文 🎉 \"quotes\" 'apostrophes' \n\t\r";
+        var stringFragment = new ContextFragment.StringFragment(
+            specialText, 
+            "Fragment with émojis & spéciäl chars", 
+            SyntaxConstants.SYNTAX_STYLE_NONE
+        );
+        context = context.addVirtualFragment(stringFragment);
+
+        // Test with file paths containing special characters
+        Path repoRoot = tempDir.resolve("project with spaces & symbols");
+        Files.createDirectories(repoRoot);
+        var specialFile = new ProjectFile(repoRoot, "src/Special File (1).java");
+        context = context.addEditableFiles(List.of(new ContextFragment.ProjectPathFragment(specialFile)));
+
+        // Serialize to JSON and deserialize
+        String json = context.toJson();
+        assertNotNull(json);
+        // Verify JSON contains escaped special characters properly
+        assertTrue(json.contains("Special chars"));
+
+        Context deserialized = Context.fromJson(json, mockContextManager);
+
+        // Verify special characters were preserved
+        assertEquals(1, deserialized.virtualFragments.size());
+        var deserializedStringFragment = (ContextFragment.StringFragment) deserialized.virtualFragments.get(0);
+        assertEquals(specialText, deserializedStringFragment.text());
+        assertEquals("Fragment with émojis & spéciäl chars", deserializedStringFragment.description());
+
+        assertEquals(1, deserialized.editableFiles.size());
+        var deserializedFileFragment = deserialized.editableFiles.get(0);
+        assertTrue(deserializedFileFragment.file().toString().contains("Special File (1).java"));
+    }
+
+    @Test
+    void testJsonSerializationVersionField() throws Exception {
+        Context context = new Context(mockContextManager);
+
+        // Serialize to JSON
+        String json = context.toJson();
+        assertNotNull(json);
+        assertTrue(json.contains("version"), "JSON should contain version field");
+
+        // Parse JSON to verify version value
+        @SuppressWarnings("unchecked")
+        var jsonMap = (java.util.Map<String, Object>) Json.getMapper().readValue(json, java.util.Map.class);
+        assertTrue(jsonMap.containsKey("version"));
+        assertEquals(1, ((Number) jsonMap.get("version")).intValue());
+
+        // Verify deserialization works
+        Context deserialized = Context.fromJson(json, mockContextManager);
+        assertNotNull(deserialized);
+    }
+
+    @Test
+    void testJsonSerializationRoundTripIntegrity() throws Exception {
+        // Create a complex context with multiple fragment types
+        Context context = new Context(mockContextManager);
+
+        // Add ProjectFile
+        Path repoRoot = tempDir.resolve("complex-project");
+        Files.createDirectories(repoRoot);
+        var projectFile = new ProjectFile(repoRoot, "src/main/java/Complex.java");
+        Files.createDirectories(projectFile.absPath().getParent());
+        Files.writeString(projectFile.absPath(), "public class Complex {}");
+        context = context.addEditableFiles(List.of(new ContextFragment.ProjectPathFragment(projectFile)));
+
+        // Add ExternalFile
+        var externalFile = new ExternalFile(tempDir.resolve("external.txt").toAbsolutePath());
+        Files.writeString(externalFile.absPath(), "External content");
+        context = context.addReadonlyFiles(List.of(new ContextFragment.ExternalPathFragment(externalFile)));
+
+        // Add StringFragment
+        context = context.addVirtualFragment(new ContextFragment.StringFragment(
+            "String content", "String Description", SyntaxConstants.SYNTAX_STYLE_JAVA));
+
+        // Add SearchFragment
+        var searchSources = Set.of(CodeUnit.cls(projectFile, "com.test", "Complex"));
+        context = context.addVirtualFragment(new ContextFragment.SearchFragment(
+            "search query", "search result", searchSources));
+
+        // Add SkeletonFragment
+        var skeletonMap = Map.of(CodeUnit.cls(projectFile, "com.test", "Complex"), "class Complex {}");
+        context = context.addVirtualFragment(new ContextFragment.SkeletonFragment(skeletonMap));
+
+        // Add UsageFragment
+        context = context.addVirtualFragment(new ContextFragment.UsageFragment(
+            "Complex.method", searchSources, "Complex.method() usage"));
+
+        // Add TaskHistory
+        List<ChatMessage> sessionMessages = List.of(
+            dev.langchain4j.data.message.UserMessage.from("Test question"),
+            dev.langchain4j.data.message.AiMessage.from("Test answer")
+        );
+        var taskFragment = new ContextFragment.TaskFragment(sessionMessages, "Integration Test");
+        var result = new SessionResult("Test question", taskFragment, Map.of(), 
+            new SessionResult.StopDetails(SessionResult.StopReason.SUCCESS));
+        var taskEntry = context.createTaskEntry(result);
+        context = context.addHistoryEntry(taskEntry, taskFragment, 
+            CompletableFuture.completedFuture("Integration Test"), Map.of());
+
+        // Perform multiple round-trips
+        String json1 = context.toJson();
+        Context deserialized1 = Context.fromJson(json1, mockContextManager);
+        String json2 = deserialized1.toJson();
+        Context deserialized2 = Context.fromJson(json2, mockContextManager);
+
+        // Verify consistency across round-trips
+        assertEquals(context.editableFiles.size(), deserialized1.editableFiles.size());
+        assertEquals(context.editableFiles.size(), deserialized2.editableFiles.size());
+        
+        assertEquals(context.readonlyFiles.size(), deserialized1.readonlyFiles.size());
+        assertEquals(context.readonlyFiles.size(), deserialized2.readonlyFiles.size());
+        
+        assertEquals(context.virtualFragments.size(), deserialized1.virtualFragments.size());
+        assertEquals(context.virtualFragments.size(), deserialized2.virtualFragments.size());
+        
+        assertEquals(context.taskHistory.size(), deserialized1.taskHistory.size());
+        assertEquals(context.taskHistory.size(), deserialized2.taskHistory.size());
+
+        // Verify that JSON representations are stable
+        // Note: Order and exact formatting might vary, but structure should be consistent
+        assertNotNull(json1);
+        assertNotNull(json2);
+        assertTrue(json1.length() > 100); // Sanity check for non-trivial content
+        assertTrue(json2.length() > 100);
     }
  }
