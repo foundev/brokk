@@ -1,12 +1,11 @@
 package io.github.jbellis.brokk.gui.dialogs;
 
-import io.github.jbellis.brokk.Service;
 import io.github.jbellis.brokk.Project;
 import io.github.jbellis.brokk.Project.DataRetentionPolicy;
+import io.github.jbellis.brokk.Service;
 import io.github.jbellis.brokk.agents.BuildAgent;
 import io.github.jbellis.brokk.gui.Chrome;
 import io.github.jbellis.brokk.gui.components.BrowserLabel;
-import io.github.jbellis.brokk.Llm;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 
@@ -596,7 +595,7 @@ public class SettingsDialog extends JDialog {
         gbc.fill = GridBagConstraints.HORIZONTAL;
         gbc.anchor = GridBagConstraints.WEST;
         buildPanel.add(new JLabel("CI Refresh:"), gbc); // CI for Code Intelligence
-        cpgRefreshComboBox = new JComboBox<>(new Project.CpgRefresh[]{Project.CpgRefresh.AUTO, Project.CpgRefresh.ON_RESTART});
+        cpgRefreshComboBox = new JComboBox<>(new Project.CpgRefresh[]{Project.CpgRefresh.AUTO, Project.CpgRefresh.ON_RESTART, Project.CpgRefresh.MANUAL});
         var currentRefresh = project.getAnalyzerRefresh();
         cpgRefreshComboBox.setSelectedItem(currentRefresh == Project.CpgRefresh.UNSET ? Project.CpgRefresh.AUTO : currentRefresh);
         gbc.gridx = 1;
@@ -730,8 +729,7 @@ public class SettingsDialog extends JDialog {
             cm.submitUserTask("Running Build Agent", () -> {
                 try {
                     chrome.systemOutput("Starting Build Agent...");
-                    // Use the same as on ContextManager#ensureBuildDetailsAsync
-                    var agent = new BuildAgent(proj, cm.getLlm(cm.getService().quickModel(), "Infer build details"), cm.getToolRegistry());
+                    var agent = new BuildAgent(proj, cm.getLlm(cm.getSearchModel(), "Infer build details"), cm.getToolRegistry());
                     var newBuildDetails = agent.execute();
 
                     if (newBuildDetails == BuildAgent.BuildDetails.EMPTY) {
