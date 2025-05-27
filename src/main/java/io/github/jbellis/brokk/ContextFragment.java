@@ -153,6 +153,14 @@ public interface ContextFragment {
             this(file, NEXT_ID.getAndIncrement());
         }
 
+        public static ProjectPathFragment withId(ProjectFile file, int existingId) {
+            // Update the counter if needed to avoid ID conflicts
+            if (existingId >= NEXT_ID.get()) {
+                NEXT_ID.set(existingId + 1);
+            }
+            return new ProjectPathFragment(file, existingId);
+        }
+
         @Override
         public String shortDescription() {
             return file().getFileName();
@@ -211,6 +219,14 @@ public interface ContextFragment {
 
         public GitFileFragment(ProjectFile file, String revision, String content) {
             this(file, revision, content, NEXT_ID.getAndIncrement());
+        }
+
+        public static GitFileFragment withId(ProjectFile file, String revision, String content, int existingId) {
+            // Update the counter if needed to avoid ID conflicts
+            if (existingId >= NEXT_ID.get()) {
+                NEXT_ID.set(existingId + 1);
+            }
+            return new GitFileFragment(file, revision, content, existingId);
         }
 
         private String shortRevision() {
@@ -273,6 +289,14 @@ public interface ContextFragment {
             this(file, NEXT_ID.getAndIncrement());
         }
 
+        public static ExternalPathFragment withId(ExternalFile file, int existingId) {
+            // Update the counter if needed to avoid ID conflicts
+            if (existingId >= NEXT_ID.get()) {
+                NEXT_ID.set(existingId + 1);
+            }
+            return new ExternalPathFragment(file, existingId);
+        }
+
         @Override
         public String shortDescription() {
             return description();
@@ -302,6 +326,15 @@ public interface ContextFragment {
         public ImageFileFragment(BrokkFile file) {
             this(file, NEXT_ID.getAndIncrement());
             assert !file.isText() : "ImageFileFragment should only be used for non-text files";
+        }
+
+        public static ImageFileFragment withId(BrokkFile file, int existingId) {
+            assert !file.isText() : "ImageFileFragment should only be used for non-text files";
+            // Update the counter if needed to avoid ID conflicts
+            if (existingId >= NEXT_ID.get()) {
+                NEXT_ID.set(existingId + 1);
+            }
+            return new ImageFileFragment(file, existingId);
         }
 
         @Override
@@ -386,6 +419,14 @@ public interface ContextFragment {
             this.id = NEXT_ID.getAndIncrement();
         }
 
+        protected VirtualFragment(int existingId) {
+            this.id = existingId;
+            // Update the counter if needed to avoid ID conflicts
+            if (existingId >= NEXT_ID.get()) {
+                NEXT_ID.set(existingId + 1);
+            }
+        }
+
         @Override
         public int id() {
             return id;
@@ -455,6 +496,15 @@ public interface ContextFragment {
             this.description = description;
         }
 
+        public StringFragment(int existingId, String text, String description, String syntaxStyle) {
+            super(existingId);
+            this.syntaxStyle = syntaxStyle;
+            assert text != null;
+            assert description != null;
+            this.text = text;
+            this.description = description;
+        }
+
         @Override
         public String text() {
             return text;
@@ -486,6 +536,14 @@ public interface ContextFragment {
 
         public SearchFragment(String query, String explanation, Set<CodeUnit> sources) {
             super(List.of(new UserMessage(query), new AiMessage(explanation)), query);
+            assert sources != null;
+            this.query = query;
+            this.explanation = explanation;
+            this.sources = sources;
+        }
+
+        public SearchFragment(int existingId, String query, String explanation, Set<CodeUnit> sources) {
+            super(existingId, List.of(new UserMessage(query), new AiMessage(explanation)), query);
             assert sources != null;
             this.query = query;
             this.explanation = explanation;
@@ -528,6 +586,11 @@ public interface ContextFragment {
             this.descriptionFuture = descriptionFuture;
         }
 
+        public PasteFragment(int existingId, Future<String> descriptionFuture) {
+            super(existingId);
+            this.descriptionFuture = descriptionFuture;
+        }
+
         @Override
         public String description() {
             if (descriptionFuture.isDone()) {
@@ -556,6 +619,13 @@ public interface ContextFragment {
             this.text = text;
         }
 
+        public PasteTextFragment(int existingId, String text, Future<String> descriptionFuture) {
+            super(existingId, descriptionFuture);
+            assert text != null;
+            assert descriptionFuture != null;
+            this.text = text;
+        }
+
         @Override
         public String syntaxStyle() {
             // TODO infer from contents
@@ -573,6 +643,13 @@ public interface ContextFragment {
 
         public PasteImageFragment(Image image, Future<String> descriptionFuture) {
             super(descriptionFuture);
+            assert image != null;
+            assert descriptionFuture != null;
+            this.image = image;
+        }
+
+        public PasteImageFragment(int existingId, Image image, Future<String> descriptionFuture) {
+            super(existingId, descriptionFuture);
             assert image != null;
             assert descriptionFuture != null;
             this.image = image;
@@ -622,6 +699,18 @@ public interface ContextFragment {
 
         public StacktraceFragment(Set<CodeUnit> sources, String original, String exception, String code) {
             super();
+            assert sources != null;
+            assert original != null;
+            assert exception != null;
+            assert code != null;
+            this.sources = sources;
+            this.original = original;
+            this.exception = exception;
+            this.code = code;
+        }
+
+        public StacktraceFragment(int existingId, Set<CodeUnit> sources, String original, String exception, String code) {
+            super(existingId);
             assert sources != null;
             assert original != null;
             assert exception != null;
@@ -686,6 +775,16 @@ public interface ContextFragment {
             this.code = code;
         }
 
+        public UsageFragment(int existingId, String targetIdentifier, Set<CodeUnit> classes, String code) {
+            super(existingId);
+            assert targetIdentifier != null;
+            assert classes != null;
+            assert code != null;
+            this.targetIdentifier = targetIdentifier;
+            this.classes = classes;
+            this.code = code;
+        }
+
         @Override
         public String text() {
             return code;
@@ -733,6 +832,17 @@ public interface ContextFragment {
             this.code = code;
         }
 
+        public CallGraphFragment(int existingId, String type, String targetIdentifier, Set<CodeUnit> classes, String code) {
+            super(existingId);
+            assert type != null;
+            assert targetIdentifier != null;
+            assert classes != null;
+            this.type = type;
+            this.targetIdentifier = targetIdentifier;
+            this.classes = classes;
+            this.code = code;
+        }
+
         @Override
         public String text() {
             return code;
@@ -764,6 +874,12 @@ public interface ContextFragment {
 
         public SkeletonFragment(Map<CodeUnit, String> skeletons) {
             super();
+            assert skeletons != null;
+            this.skeletons = skeletons;
+        }
+
+        public SkeletonFragment(int existingId, Map<CodeUnit, String> skeletons) {
+            super(existingId);
             assert skeletons != null;
             this.skeletons = skeletons;
         }
@@ -891,6 +1007,12 @@ public interface ContextFragment {
             this.history = List.copyOf(history);
         }
 
+        public HistoryFragment(int existingId, List<TaskEntry> history) {
+            super(existingId);
+            assert history != null;
+            this.history = List.copyOf(history);
+        }
+
         public List<TaskEntry> entries() {
             return history;
         }
@@ -966,6 +1088,17 @@ public interface ContextFragment {
 
         public TaskFragment(List<ChatMessage> messages, String sessionName) {
             this(EditBlockParser.instance, messages, sessionName);
+        }
+
+        public TaskFragment(int existingId, EditBlockParser parser, List<ChatMessage> messages, String sessionName) {
+            super(existingId);
+            this.parser = parser;
+            this.messages = messages;
+            this.sessionName = sessionName;
+        }
+
+        public TaskFragment(int existingId, List<ChatMessage> messages, String sessionName) {
+            this(existingId, EditBlockParser.instance, messages, sessionName);
         }
 
         @Override

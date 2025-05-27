@@ -30,7 +30,7 @@ public class FragmentDtos {
     /**
      * DTO for ProjectFile - contains root and relative path as strings.
      */
-    public record ProjectFileDto(String repoRoot, String relPath) implements PathFragmentDto {
+    public record ProjectFileDto(int id, String repoRoot, String relPath) implements PathFragmentDto {
         public ProjectFileDto {
             if (repoRoot == null || repoRoot.isEmpty()) {
                 throw new IllegalArgumentException("repoRoot cannot be null or empty");
@@ -44,7 +44,7 @@ public class FragmentDtos {
     /**
      * DTO for ExternalFile - contains absolute path as string.
      */
-    public record ExternalFileDto(String absPath) implements PathFragmentDto {
+    public record ExternalFileDto(int id, String absPath) implements PathFragmentDto {
         public ExternalFileDto {
             if (absPath == null || absPath.isEmpty()) {
                 throw new IllegalArgumentException("absPath cannot be null or empty");
@@ -55,7 +55,7 @@ public class FragmentDtos {
     /**
      * DTO for ImageFile - contains absolute path and media type.
      */
-    public record ImageFileDto(String absPath, String mediaType) implements PathFragmentDto {
+    public record ImageFileDto(int id, String absPath, String mediaType) implements PathFragmentDto {
         public ImageFileDto {
             if (absPath == null || absPath.isEmpty()) {
                 throw new IllegalArgumentException("absPath cannot be null or empty");
@@ -82,7 +82,7 @@ public class FragmentDtos {
     /**
      * DTO for TaskFragment - represents a session's chat messages.
      */
-    public record TaskFragmentDto(List<ChatMessageDto> messages, String sessionName) implements VirtualFragmentDto {
+    public record TaskFragmentDto(int id, List<ChatMessageDto> messages, String sessionName) implements VirtualFragmentDto {
         public TaskFragmentDto {
             messages = messages != null ? List.copyOf(messages) : List.of();
             if (sessionName == null) {
@@ -108,7 +108,7 @@ public class FragmentDtos {
     /**
      * DTO for StringFragment - contains text content with description and syntax style.
      */
-    public record StringFragmentDto(String text, String description, String syntaxStyle) implements VirtualFragmentDto {
+    public record StringFragmentDto(int id, String text, String description, String syntaxStyle) implements VirtualFragmentDto {
         public StringFragmentDto {
             if (text == null) {
                 throw new IllegalArgumentException("text cannot be null");
@@ -125,7 +125,7 @@ public class FragmentDtos {
     /**
      * DTO for SearchFragment - contains search query, explanation, sources and messages.
      */
-    public record SearchFragmentDto(String query, String explanation, Set<CodeUnitDto> sources, List<ChatMessageDto> messages) implements VirtualFragmentDto {
+    public record SearchFragmentDto(int id, String query, String explanation, Set<CodeUnitDto> sources, List<ChatMessageDto> messages) implements VirtualFragmentDto {
         public SearchFragmentDto {
             if (query == null) {
                 throw new IllegalArgumentException("query cannot be null");
@@ -142,7 +142,7 @@ public class FragmentDtos {
      * DTO for SkeletonFragment - contains mapping of code units to their skeleton representations.
      * Uses a list of pairs instead of a map to avoid Jackson key serialization issues.
      */
-    public record SkeletonFragmentDto(List<SkeletonEntryDto> skeletons) implements VirtualFragmentDto {
+    public record SkeletonFragmentDto(int id, List<SkeletonEntryDto> skeletons) implements VirtualFragmentDto {
         public SkeletonFragmentDto {
             skeletons = skeletons != null ? List.copyOf(skeletons) : List.of();
         }
@@ -165,7 +165,7 @@ public class FragmentDtos {
     /**
      * DTO for UsageFragment - contains target identifier, related classes and code.
      */
-    public record UsageFragmentDto(String targetIdentifier, Set<CodeUnitDto> classes, String code) implements VirtualFragmentDto {
+    public record UsageFragmentDto(int id, String targetIdentifier, Set<CodeUnitDto> classes, String code) implements VirtualFragmentDto {
         public UsageFragmentDto {
             if (targetIdentifier == null) {
                 throw new IllegalArgumentException("targetIdentifier cannot be null");
@@ -180,7 +180,7 @@ public class FragmentDtos {
     /**
      * DTO for GitFileFragment - represents a specific revision of a file from Git history.
      */
-    public record GitFileFragmentDto(String repoRoot, String relPath, String revision, String content) implements PathFragmentDto {
+    public record GitFileFragmentDto(int id, String repoRoot, String relPath, String revision, String content) implements PathFragmentDto {
         public GitFileFragmentDto {
             if (repoRoot == null || repoRoot.isEmpty()) {
                 throw new IllegalArgumentException("repoRoot cannot be null or empty");
@@ -200,7 +200,7 @@ public class FragmentDtos {
     /**
      * DTO for PasteTextFragment - contains pasted text with resolved description.
      */
-    public record PasteTextFragmentDto(String text, String description) implements VirtualFragmentDto {
+    public record PasteTextFragmentDto(int id, String text, String description) implements VirtualFragmentDto {
         public PasteTextFragmentDto {
             if (text == null) {
                 throw new IllegalArgumentException("text cannot be null");
@@ -214,7 +214,7 @@ public class FragmentDtos {
     /**
      * DTO for PasteImageFragment - contains base64-encoded image data with resolved description.
      */
-    public record PasteImageFragmentDto(String base64ImageData, String description) implements VirtualFragmentDto {
+    public record PasteImageFragmentDto(int id, String base64ImageData, String description) implements VirtualFragmentDto {
         public PasteImageFragmentDto {
             if (base64ImageData == null || base64ImageData.isEmpty()) {
                 throw new IllegalArgumentException("base64ImageData cannot be null or empty");
@@ -228,7 +228,7 @@ public class FragmentDtos {
     /**
      * DTO for StacktraceFragment - contains stacktrace analysis data.
      */
-    public record StacktraceFragmentDto(Set<CodeUnitDto> sources, String original, String exception, String code) implements VirtualFragmentDto {
+    public record StacktraceFragmentDto(int id, Set<CodeUnitDto> sources, String original, String exception, String code) implements VirtualFragmentDto {
         public StacktraceFragmentDto {
             if (original == null) {
                 throw new IllegalArgumentException("original cannot be null");
@@ -246,7 +246,7 @@ public class FragmentDtos {
     /**
      * DTO for CallGraphFragment - contains call graph analysis data.
      */
-    public record CallGraphFragmentDto(String type, String targetIdentifier, Set<CodeUnitDto> classes, String code) implements VirtualFragmentDto {
+    public record CallGraphFragmentDto(int id, String type, String targetIdentifier, Set<CodeUnitDto> classes, String code) implements VirtualFragmentDto {
         public CallGraphFragmentDto {
             if (type == null) {
                 throw new IllegalArgumentException("type cannot be null");
@@ -264,7 +264,7 @@ public class FragmentDtos {
     /**
      * DTO for HistoryFragment - contains task history entries.
      */
-    public record HistoryFragmentDto(List<TaskEntryDto> history) implements VirtualFragmentDto {
+    public record HistoryFragmentDto(int id, List<TaskEntryDto> history) implements VirtualFragmentDto {
         public HistoryFragmentDto {
             if (history == null) {
                 throw new IllegalArgumentException("history cannot be null");
