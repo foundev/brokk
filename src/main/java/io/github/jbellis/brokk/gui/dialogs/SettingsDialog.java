@@ -70,7 +70,10 @@ public class SettingsDialog extends JDialog {
     private JTextField balanceField;
     // Signup Label (Global -> Service)
     private BrowserLabel signupLabel;
-
+    // Project -> General labels with html that need explicit refresh on theme change
+    private JLabel styleGuideInfoLabel;
+    private JLabel commitFormatInfoLabel;
+    private BrowserLabel topUpLabel;
 
     public SettingsDialog(Frame owner, Chrome chrome) {
         super(owner, "Settings", true); // Modal dialog
@@ -250,7 +253,7 @@ public class SettingsDialog extends JDialog {
         var balanceDisplayPanel = new JPanel(new FlowLayout(FlowLayout.LEFT, 5, 0));
         balanceDisplayPanel.add(this.balanceField);
         var topUpUrl = Service.TOP_UP_URL;
-        var topUpLabel = new BrowserLabel(topUpUrl, "Top Up");
+        topUpLabel = new BrowserLabel(topUpUrl, "Top Up");
         balanceDisplayPanel.add(topUpLabel);
 
         gbc.gridx = 1;
@@ -459,6 +462,14 @@ public class SettingsDialog extends JDialog {
         return panel;
     }
 
+    public static void refreshHtmlLabel(JLabel label) {
+        if (label != null) {
+            String text = label.getText();
+            // Clear and reset text to force re-evaluation of HTML with new L&F colors/fonts
+            label.setText(null);
+            label.setText(text);
+        }
+    }
 
     private JPanel createProjectPanel() {
         var project = chrome.getProject();
@@ -604,10 +615,10 @@ public class SettingsDialog extends JDialog {
         gbc.weighty = 0.0; // No vertical weight for label
         gbc.fill = GridBagConstraints.HORIZONTAL;
         gbc.anchor = GridBagConstraints.NORTHWEST;
-        var styleGuideInfo = new JLabel("<html>The Style Guide is used by the Code Agent to help it conform to your project's style.</html>");
-        styleGuideInfo.setFont(styleGuideInfo.getFont().deriveFont(Font.ITALIC, styleGuideInfo.getFont().getSize() * 0.9f));
+        styleGuideInfoLabel = new JLabel("<html>The Style Guide is used by the Code Agent to help it conform to your project's style.</html>");
+        styleGuideInfoLabel.setFont(this.styleGuideInfoLabel.getFont().deriveFont(Font.ITALIC, this.styleGuideInfoLabel.getFont().getSize() * 0.9f));
         gbc.insets = new Insets(0, 2, 8, 2); // Add bottom margin
-        otherPanel.add(styleGuideInfo, gbc);
+        otherPanel.add(styleGuideInfoLabel, gbc);
 
         // --- Commit Message Format ---
         gbc.insets = new Insets(2, 2, 2, 2); // Reset insets
@@ -644,10 +655,10 @@ public class SettingsDialog extends JDialog {
         gbc.weighty = 0.0; // No vertical weight for label
         gbc.fill = GridBagConstraints.HORIZONTAL;
         gbc.anchor = GridBagConstraints.NORTHWEST;
-        var commitFormatInfo = new JLabel("<html>This informs the LLM how to structure the commit message suggestions it makes.</html>");
-        commitFormatInfo.setFont(commitFormatInfo.getFont().deriveFont(Font.ITALIC, commitFormatInfo.getFont().getSize() * 0.9f));
+        commitFormatInfoLabel = new JLabel("<html>This informs the LLM how to structure the commit message suggestions it makes.</html>");
+        commitFormatInfoLabel.setFont(this.commitFormatInfoLabel.getFont().deriveFont(Font.ITALIC, this.commitFormatInfoLabel.getFont().getSize() * 0.9f));
         gbc.insets = new Insets(0, 2, 2, 2); // Small bottom margin
-        otherPanel.add(commitFormatInfo, gbc);
+        otherPanel.add(commitFormatInfoLabel, gbc);
 
         // Reset weighty for subsequent components if any were added below
         gbc.weighty = 0.0;
@@ -1065,6 +1076,14 @@ public class SettingsDialog extends JDialog {
                 project.setDataRetentionPolicy(selectedPolicy);
             }
         }
+
+        /**
+         * Refreshes all HTML-based JLabels within this panel.
+         */
+        public void refreshHtmlLabels() {
+            List.of(improveDescLabel, minimalDescLabel, orgDisabledLabel, infoLabel)
+                .forEach(SettingsDialog::refreshHtmlLabel);
+        }
     }
 
     /**
@@ -1365,6 +1384,18 @@ public class SettingsDialog extends JDialog {
             if (!newTheme.equals(Project.getTheme())) {
                 chrome.switchTheme(newIsDark); // switchTheme calls Project.setTheme internally
                 logger.debug("Applied Theme: {}", newTheme);
+
+                // Explicitly update the dialog's UI after theme change
+                SwingUtilities.invokeLater(() -> {
+                    var previousSize = SettingsDialog.this.getSize();
+                    SwingUtilities.updateComponentTreeUI(SettingsDialog.this);
+                    SettingsDialog.this.setSize(previousSize); // Restore previous size
+
+                    // Explicitly refresh HTML JLabels
+                    List.of(styleGuideInfoLabel, commitFormatInfoLabel, 
+                        signupLabel, topUpLabel).forEach(SettingsDialog::refreshHtmlLabel);
+                    dataRetentionPanel.refreshHtmlLabels();
+                });
             }
         } else {
             // This case should ideally not be hit if panel construction is correct.
