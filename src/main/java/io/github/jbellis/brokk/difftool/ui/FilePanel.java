@@ -23,6 +23,7 @@ import java.awt.event.ActionListener;
 import java.awt.event.FocusAdapter;
 import java.awt.event.FocusEvent;
 import java.awt.event.FocusListener;
+import java.util.List;
 
 import org.fife.ui.rsyntaxtextarea.RSyntaxTextArea;
 import org.fife.ui.rsyntaxtextarea.SyntaxConstants;
@@ -362,32 +363,73 @@ public class FilePanel implements BufferDocumentChangeListenerIF {
         editor.setEditable(true);
     }
 
+    int n = 0;
     /**
      * Chooses a syntax style for the current document based on its filename.
      * Falls back to plain-text when the extension is not recognised.
      */
     private void updateSyntaxStyle() {
-        String style = SyntaxConstants.SYNTAX_STYLE_NONE;
+        /*
+         * Heuristic 1: strip well-known VCS/backup suffixes and decide
+         *              the style from the remaining extension.
+         * Heuristic 2: if still undecided, inherit the style of the
+         */
+        var style = SyntaxConstants.SYNTAX_STYLE_NONE;
+
+        // --------------------------- Heuristic 1 -----------------------------
         if (bufferDocument != null) {
-            String fileName = bufferDocument.getName();
-            if (fileName != null && fileName.lastIndexOf('.') > 0) {
-                String ext = fileName.substring(fileName.lastIndexOf('.') + 1).toLowerCase();
-                style = switch (ext) {
-                    case "java"      -> SyntaxConstants.SYNTAX_STYLE_JAVA;
-                    case "js", "jsx" -> SyntaxConstants.SYNTAX_STYLE_JAVASCRIPT;
-                    case "json"      -> SyntaxConstants.SYNTAX_STYLE_JSON;
-                    case "xml"       -> SyntaxConstants.SYNTAX_STYLE_XML;
-                    case "html", "htm" -> SyntaxConstants.SYNTAX_STYLE_HTML;
-                    case "py"        -> SyntaxConstants.SYNTAX_STYLE_PYTHON;
-                    case "sql"       -> SyntaxConstants.SYNTAX_STYLE_SQL;
-                    case "sh", "bash"-> SyntaxConstants.SYNTAX_STYLE_UNIX_SHELL;
-                    case "yaml", "yml" -> SyntaxConstants.SYNTAX_STYLE_YAML;
-                    case "css"       -> SyntaxConstants.SYNTAX_STYLE_CSS;
-                    case "md", "markdown" -> SyntaxConstants.SYNTAX_STYLE_MARKDOWN;
-                    default -> SyntaxConstants.SYNTAX_STYLE_NONE;
-                };
+            var fileName = bufferDocument.getName();
+            if (fileName != null && !fileName.isBlank()) {
+                // Remove trailing '~'
+                var candidate = fileName.endsWith("~")
+                                ? fileName.substring(0, fileName.length() - 1)
+                                : fileName;
+
+                // Remove dotted suffixes (case-insensitive)
+                for (var suffix : List.of("orig", "base", "mine", "theirs", "backup")) {
+                    var sfx = "." + suffix;
+                    if (candidate.toLowerCase().endsWith(sfx)) {
+                        candidate = candidate.substring(0, candidate.length() - sfx.length());
+                        break;
+                    }
+                }
+
+                // Extract extension
+                var lastDot = candidate.lastIndexOf('.');
+                if (lastDot > 0 && lastDot < candidate.length() - 1) {
+                    var ext = candidate.substring(lastDot + 1).toLowerCase();
+                    style = switch (ext) {
+                        case "java"            -> SyntaxConstants.SYNTAX_STYLE_JAVA;
+                        case "js", "jsx"       -> SyntaxConstants.SYNTAX_STYLE_JAVASCRIPT;
+                        case "json"            -> SyntaxConstants.SYNTAX_STYLE_JSON;
+                        case "xml"             -> SyntaxConstants.SYNTAX_STYLE_XML;
+                        case "html", "htm"     -> SyntaxConstants.SYNTAX_STYLE_HTML;
+                        case "py"              -> SyntaxConstants.SYNTAX_STYLE_PYTHON;
+                        case "sql"             -> SyntaxConstants.SYNTAX_STYLE_SQL;
+                        case "sh", "bash"      -> SyntaxConstants.SYNTAX_STYLE_UNIX_SHELL;
+                        case "yaml", "yml"     -> SyntaxConstants.SYNTAX_STYLE_YAML;
+                        case "css"             -> SyntaxConstants.SYNTAX_STYLE_CSS;
+                        case "md", "markdown"  -> SyntaxConstants.SYNTAX_STYLE_MARKDOWN;
+                        default                -> SyntaxConstants.SYNTAX_STYLE_NONE;
+                    };
+                }
             }
         }
+
+        // --------------------------- Heuristic 2 -----------------------------
+        if (SyntaxConstants.SYNTAX_STYLE_NONE.equals(style) && diffPanel != null) {
+            var otherPanel = BufferDocumentIF.ORIGINAL.equals(name)
+                             ? diffPanel.getFilePanel(BufferDiffPanel.RIGHT)
+                             : diffPanel.getFilePanel(BufferDiffPanel.LEFT);
+
+            if (otherPanel != null) {
+                var otherStyle = otherPanel.getEditor().getSyntaxEditingStyle();
+                if (!SyntaxConstants.SYNTAX_STYLE_NONE.equals(otherStyle)) {
+                    style = otherStyle;
+                }
+            }
+        }
+
         editor.setSyntaxEditingStyle(style);
     }
 
