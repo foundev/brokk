@@ -418,8 +418,10 @@ public class ContextMapper {
     }
     
     private static CodeUnitDto toCodeUnitDto(CodeUnit codeUnit) {
+        ProjectFile pf = codeUnit.source();
+        ProjectFileDto pfd = new ProjectFileDto(pf.getRoot().toString(), pf.getRelPath().toString());
         return new CodeUnitDto(
-                codeUnit.source().toString(),
+                pfd,
                 codeUnit.kind().name(),
                 codeUnit.packageName(),
                 codeUnit.shortName()
@@ -441,11 +443,8 @@ public class ContextMapper {
     }
     
     private static CodeUnit fromCodeUnitDto(CodeUnitDto dto) {
-        // Note: This assumes we can reconstruct the ProjectFile from the relative path
-        // In a real implementation, we might need to pass the project root through the context
-        // Use a default absolute path for now - this is a limitation of the current DTO approach
-        var tempRoot = Path.of(System.getProperty("java.io.tmpdir")).toAbsolutePath().normalize();
-        var source = new ProjectFile(tempRoot, dto.fileRelPath());
+        ProjectFileDto pfd = dto.sourceFile();
+        ProjectFile source = new ProjectFile(Path.of(pfd.repoRoot()), Path.of(pfd.relPath()));
         var kind = io.github.jbellis.brokk.analyzer.CodeUnitType.valueOf(dto.kind());
         return new CodeUnit(source, kind, dto.packageName(), dto.shortName());
     }

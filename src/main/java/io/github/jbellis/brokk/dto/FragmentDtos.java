@@ -276,10 +276,10 @@ public class FragmentDtos {
     /**
      * DTO for CodeUnit - represents a named code element.
      */
-    public record CodeUnitDto(String fileRelPath, String kind, String packageName, String shortName) {
+    public record CodeUnitDto(ProjectFileDto sourceFile, String kind, String packageName, String shortName) {
         public CodeUnitDto {
-            if (fileRelPath == null) {
-                throw new IllegalArgumentException("fileRelPath cannot be null");
+            if (sourceFile == null) {
+                throw new IllegalArgumentException("sourceFile cannot be null");
             }
             if (kind == null || kind.isEmpty()) {
                 throw new IllegalArgumentException("kind cannot be null or empty");
