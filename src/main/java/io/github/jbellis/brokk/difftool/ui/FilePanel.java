@@ -29,7 +29,6 @@ import org.fife.ui.rsyntaxtextarea.RSyntaxTextArea;
 import org.fife.ui.rsyntaxtextarea.SyntaxConstants;
 import javax.swing.SwingUtilities;
 
-import io.github.jbellis.brokk.difftool.ui.CompositeHighlighter;
 import io.github.jbellis.brokk.util.SyntaxDetector;
 
 public class FilePanel implements BufferDocumentChangeListenerIF {
@@ -422,10 +421,6 @@ public class FilePanel implements BufferDocumentChangeListenerIF {
         editor.setSyntaxEditingStyle(style);
     }
 
-    /* ====================================================================== */
-    /*                          DOCUMENT MIRRORING                            */
-    /* ====================================================================== */
-
     /**
      * Installs bidirectional listeners that keep the PlainDocument belonging to
      * the model and the RSyntaxDocument shown in the editor in sync. Uses a
@@ -438,45 +433,52 @@ public class FilePanel implements BufferDocumentChangeListenerIF {
         var rsyntaxDoc = editor.getDocument();
         var guard = new java.util.concurrent.atomic.AtomicBoolean(false);
 
-        plainToEditorListener = new DocumentListener() {
-            private void sync() {
-                // plainDocument changes can occur on any thread.
-                // Updates to rsyntaxDoc (editor's document) must occur on the EDT.
-                SwingUtilities.invokeLater(() -> {
-                    if (!guard.compareAndSet(false, true)) { // Attempt to acquire lock
-                        return; // Lock not acquired, another sync operation is in progress
-                    }
-                    try {
-                        copyText(plainDocument, rsyntaxDoc);
-                    } finally {
-                        guard.set(false); // Release lock
-                    }
-                });
-            }
-            @Override public void insertUpdate(DocumentEvent e) { sync(); }
-            @Override public void removeUpdate(DocumentEvent e)  { sync(); }
-            @Override public void changedUpdate(DocumentEvent e){ sync(); }
-        };
+        plainToEditorListener = createMirroringListener(this.plainDocument, rsyntaxDoc, guard, true);
+        editorToPlainListener = createMirroringListener(rsyntaxDoc, this.plainDocument, guard, false);
 
-        editorToPlainListener = new DocumentListener() {
-            private void sync() {
-                // rsyntaxDoc changes occur on the EDT (user typing or programmatic changes on EDT).
+        newPlainDoc.addDocumentListener(plainToEditorListener);
+        rsyntaxDoc.addDocumentListener(editorToPlainListener);
+    }
+
+    /**
+     * Creates a DocumentListener for mirroring text between two documents.
+     *
+     * @param sourceDoc The source document to copy text from.
+     * @param destinationDoc The destination document to copy text to.
+     * @param guard The AtomicBoolean guard to prevent recursive updates.
+     * @param runDestinationUpdateOnEdt If true, updates to the destination document will be scheduled on the EDT.
+     * @return A configured DocumentListener.
+     */
+    private DocumentListener createMirroringListener(Document sourceDoc, Document destinationDoc,
+                                                     java.util.concurrent.atomic.AtomicBoolean guard,
+                                                     boolean runDestinationUpdateOnEdt) {
+        return new DocumentListener() {
+            private void performSync() {
                 if (!guard.compareAndSet(false, true)) { // Attempt to acquire lock
-                    return; // Lock not acquired
+                    return; // Lock not acquired, another sync operation is in progress
                 }
                 try {
-                    copyText(rsyntaxDoc, plainDocument);
+                    copyText(sourceDoc, destinationDoc);
                 } finally {
                     guard.set(false); // Release lock
                 }
             }
+
+            private void sync() {
+                if (runDestinationUpdateOnEdt) {
+                    // Updates to the destination document (e.g., editor's document) must occur on the EDT.
+                    SwingUtilities.invokeLater(this::performSync);
+                } else {
+                    // Source document changes (e.g., editor) are already on EDT,
+                    // or destination document (e.g., plain model) can be updated directly.
+                    performSync();
+                }
+            }
+
             @Override public void insertUpdate(DocumentEvent e) { sync(); }
             @Override public void removeUpdate(DocumentEvent e)  { sync(); }
             @Override public void changedUpdate(DocumentEvent e){ sync(); }
         };
-
-        newPlainDoc.addDocumentListener(plainToEditorListener);
-        rsyntaxDoc.addDocumentListener(editorToPlainListener);
     }
 
     /**
@@ -497,6 +499,8 @@ public class FilePanel implements BufferDocumentChangeListenerIF {
     /**
      * Replaces the full content of the destination document with the text from
      * the source document.
+     * Brute force copying of the full document could be a performance issue for large
+     * documents
      */
     private static void copyText(Document src, Document dst) {
         try {
@@ -524,7 +528,6 @@ public class FilePanel implements BufferDocumentChangeListenerIF {
     }
 
     public void doStopSearch() {
-        assert SwingUtilities.isEventDispatchThread();
         searchHits = null;
         reDisplay();
     }
