@@ -33,6 +33,14 @@ public record SessionResult(String actionDescription,
              stopDetails);
     }
 
+    public SessionResult(String actionDescription,
+                         List<ChatMessage> uiMessages,
+                         Map<ProjectFile, String> originalContents,
+                         StopReason simpleReason)
+    {
+        this(actionDescription, uiMessages, originalContents, new StopDetails(simpleReason));
+    }
+
     /**
      * Enum representing the reason a CodeAgent session concluded.
      */
@@ -78,9 +86,9 @@ public record SessionResult(String actionDescription,
          */
         SEARCH_INVALID_ANSWER,
         /**
-         * the LLM determined that it was not possible to answer the query
+         * the LLM determined that it was not possible to fulfil the request
          */
-        SEARCH_IMPOSSIBLE,
+        LLM_ABORTED,
     }
 
     public record StopDetails(StopReason reason, String explanation) {

@@ -166,10 +166,10 @@ public final class Service {
         this.modelInfoMap = Map.copyOf(tempModelInfoMap);
 
         // these should always be available
-        var qm = get("gemini-2.0-flash", ReasoningLevel.DEFAULT);
+        var qm = getModel("gemini-2.0-flash", ReasoningLevel.DEFAULT);
         quickModel = qm == null ? new UnavailableStreamingModel() : qm;
         // hardcode quickest temperature to 0 so that Quick Context inference is reproducible
-        var qqm = get("gemini-2.0-flash-lite", ReasoningLevel.DEFAULT, 0.0);
+        var qqm = getModel("gemini-2.0-flash-lite", ReasoningLevel.DEFAULT, 0.0);
         quickestModel = qqm == null ? new UnavailableStreamingModel() : qqm;
 
         // STT model initialization
@@ -512,6 +512,10 @@ public final class Service {
             logger.warn("Location not found for model name {}, assuming no reasoning effort support.", modelName);
             return false;
         }
+        return supportsReasoningEffortInternal(location);
+    }
+
+    private boolean supportsReasoningEffortInternal(String location) {
         var info = modelInfoMap.get(location);
         if (info == null) {
             logger.warn("Model info not found for location {}, assuming no reasoning effort support.", location);
@@ -529,7 +533,7 @@ public final class Service {
      *
      * @param modelName      The display name of the model (e.g., "gemini-2.5-pro-exp-03-25").
      */
-    public StreamingChatLanguageModel get(String modelName, ReasoningLevel reasoningLevel, Double temperature) {
+    public StreamingChatLanguageModel getModel(String modelName, ReasoningLevel reasoningLevel, Double temperature) {
         String location = modelLocations.get(modelName);
         logger.debug("Creating new model instance for '{}' at location '{}' with reasoning '{}' via LiteLLM",
                      modelName, location, reasoningLevel);
@@ -589,8 +593,8 @@ public final class Service {
         return builder.build();
     }
 
-    public StreamingChatLanguageModel get(String modelName, ReasoningLevel reasoningLevel) {
-        return get(modelName, reasoningLevel, null);
+    public StreamingChatLanguageModel getModel(String modelName, ReasoningLevel reasoningLevel) {
+        return getModel(modelName, reasoningLevel, null);
     }
 
     public boolean supportsJsonSchema(StreamingChatLanguageModel model) {
@@ -650,25 +654,22 @@ public final class Service {
     /**
      * Checks if the model is designated as a "reasoning" model based on its metadata.
      * Reasoning models are expected to perform "think" steps implicitly.
-     * This refers to the old `is_reasoning` flag, distinct from the new `supports_reasoning` for effort levels.
      *
      * @param model The model instance to check.
-     * @return True if the model info contains `"is_reasoning": true`, false otherwise.
+     * @return True if the model is configured for reasoning
      */
-    // TODO clean this up
     public boolean isReasoning(StreamingChatLanguageModel model) {
         var location = model.defaultRequestParameters().modelName();
-        var info = modelInfoMap.get(location);
-        if (info == null) {
-            logger.warn("Model info not found for {}, assuming not a reasoning model (old flag).", location);
+        if (!supportsReasoningEffortInternal(location)) {
             return false;
         }
-        var isReasoning = info.get("is_reasoning");
-        // is_reasoning might not be present, treat null as false
-        if (isReasoning == null) {
+        if (!(model instanceof OpenAiStreamingChatModel om)) {
             return false;
         }
-        return (Boolean) isReasoning;
+
+        // every reasoning model, except Sonnet, defaults to enabling it
+        return !location.toLowerCase().contains("sonnet")
+                || om.defaultRequestParameters().reasoningEffort() != null;
     }
 
     /**

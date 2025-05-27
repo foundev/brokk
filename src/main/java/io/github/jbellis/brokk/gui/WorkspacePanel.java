@@ -666,7 +666,6 @@ public class WorkspacePanel extends JPanel {
                 project.getArchitectModelConfig(),
                 project.getCodeModelConfig(),
                 project.getAskModelConfig(),
-                project.getEditModelConfig(),
                 project.getSearchModelConfig()
         );
 
@@ -675,7 +674,7 @@ public class WorkspacePanel extends JPanel {
                 continue;
             }
             try {
-                var model = models.get(config.name(), config.reasoning());
+                var model = models.getModel(config.name(), config.reasoning());
                 // Skip if model is unavailable or a placeholder
                 if (model instanceof Service.UnavailableStreamingModel) {
                     logger.debug("Skipping unavailable model for context warning: {}", config.name());

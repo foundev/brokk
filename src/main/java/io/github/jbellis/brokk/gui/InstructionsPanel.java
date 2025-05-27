@@ -152,7 +152,7 @@ public class InstructionsPanel extends JPanel implements IContextManager.Context
         codeButton.setMenuSupplier(() -> createModelSelectionMenu(
                 (modelName, reasoningLevel) -> {
                     var models = chrome.getContextManager().getService();
-                    StreamingChatLanguageModel selectedModel = models.get(modelName, reasoningLevel);
+                    StreamingChatLanguageModel selectedModel = models.getModel(modelName, reasoningLevel);
                     if (selectedModel != null) {
                         runCodeCommand(selectedModel);
                     } else {
@@ -168,7 +168,7 @@ public class InstructionsPanel extends JPanel implements IContextManager.Context
         askButton.setMenuSupplier(() -> createModelSelectionMenu(
                 (modelName, reasoningLevel) -> {
                     var models = chrome.getContextManager().getService();
-                    StreamingChatLanguageModel selectedModel = models.get(modelName, reasoningLevel);
+                    StreamingChatLanguageModel selectedModel = models.getModel(modelName, reasoningLevel);
                     if (selectedModel != null) {
                         runAskCommand(selectedModel);
                     } else {
@@ -1196,7 +1196,7 @@ public class InstructionsPanel extends JPanel implements IContextManager.Context
                     var sessionResult = new SessionResult("Ask: " + question,
                                                           List.copyOf(chrome.getLlmRawMessages()),
                                                           Map.of(), // No undo contents for Ask
-                                                          new SessionResult.StopDetails(SessionResult.StopReason.SUCCESS));
+                                                          SessionResult.StopReason.SUCCESS);
                     chrome.setSkipNextUpdateOutputPanelOnContextChange(true);
                     contextManager.addToHistory(sessionResult, false);
                     chrome.systemOutput("Ask command complete!");
@@ -1236,8 +1236,9 @@ public class InstructionsPanel extends JPanel implements IContextManager.Context
         try {
             // Pass options to the constructor
             var agent = new ArchitectAgent(contextManager, model, contextManager.getToolRegistry(), goal, options);
-            agent.execute();
+            var result = agent.execute();
             chrome.systemOutput("Architect complete!");
+            contextManager.addToHistory(result, false);
         } catch (InterruptedException e) {
             chrome.systemOutput("Architect Agent cancelled!");
             maybeAddInterruptedResult("Architect", goal);
@@ -1323,11 +1324,11 @@ public class InstructionsPanel extends JPanel implements IContextManager.Context
         var contextManager = chrome.getContextManager();
         var models = contextManager.getService();
         var architectModel = contextManager.getArchitectModel();
-        var editModel = contextManager.getEditModel();
+        var codeModel = contextManager.getCodeModel();
         var searchModel = contextManager.getSearchModel();
 
         if (contextHasImages()) {
-            var nonVisionModels = Stream.of(architectModel, editModel, searchModel)
+            var nonVisionModels = Stream.of(architectModel, codeModel, searchModel)
                     .filter(m -> !models.supportsVision(m))
                     .map(models::nameOf)
                     .toList();
