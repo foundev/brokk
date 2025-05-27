@@ -30,6 +30,7 @@ import org.fife.ui.rsyntaxtextarea.SyntaxConstants;
 import javax.swing.SwingUtilities;
 
 import io.github.jbellis.brokk.difftool.ui.CompositeHighlighter;
+import io.github.jbellis.brokk.util.SyntaxDetector;
 
 public class FilePanel implements BufferDocumentChangeListenerIF {
     private static final int MAXSIZE_CHANGE_DIFF = 1000;
@@ -399,20 +400,7 @@ public class FilePanel implements BufferDocumentChangeListenerIF {
                 var lastDot = candidate.lastIndexOf('.');
                 if (lastDot > 0 && lastDot < candidate.length() - 1) {
                     var ext = candidate.substring(lastDot + 1).toLowerCase();
-                    style = switch (ext) {
-                        case "java"            -> SyntaxConstants.SYNTAX_STYLE_JAVA;
-                        case "js", "jsx"       -> SyntaxConstants.SYNTAX_STYLE_JAVASCRIPT;
-                        case "json"            -> SyntaxConstants.SYNTAX_STYLE_JSON;
-                        case "xml"             -> SyntaxConstants.SYNTAX_STYLE_XML;
-                        case "html", "htm"     -> SyntaxConstants.SYNTAX_STYLE_HTML;
-                        case "py"              -> SyntaxConstants.SYNTAX_STYLE_PYTHON;
-                        case "sql"             -> SyntaxConstants.SYNTAX_STYLE_SQL;
-                        case "sh", "bash"      -> SyntaxConstants.SYNTAX_STYLE_UNIX_SHELL;
-                        case "yaml", "yml"     -> SyntaxConstants.SYNTAX_STYLE_YAML;
-                        case "css"             -> SyntaxConstants.SYNTAX_STYLE_CSS;
-                        case "md", "markdown"  -> SyntaxConstants.SYNTAX_STYLE_MARKDOWN;
-                        default                -> SyntaxConstants.SYNTAX_STYLE_NONE;
-                    };
+                    style = SyntaxDetector.fromExtension(ext);
                 }
             }
         }
