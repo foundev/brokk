@@ -27,6 +27,7 @@ import java.util.List;
 
 import org.fife.ui.rsyntaxtextarea.RSyntaxTextArea;
 import org.fife.ui.rsyntaxtextarea.SyntaxConstants;
+import javax.swing.SwingUtilities;
 
 import io.github.jbellis.brokk.difftool.ui.CompositeHighlighter;
 
@@ -116,6 +117,7 @@ public class FilePanel implements BufferDocumentChangeListenerIF {
 
 
     public void setBufferDocument(BufferDocumentIF bd) {
+        assert SwingUtilities.isEventDispatchThread();
         Document previousDocument;
         Document newDocument;
 
@@ -363,7 +365,6 @@ public class FilePanel implements BufferDocumentChangeListenerIF {
         editor.setEditable(true);
     }
 
-    int n = 0;
     /**
      * Chooses a syntax style for the current document based on its filename.
      * Falls back to plain-text when the extension is not recognised.
@@ -451,26 +452,34 @@ public class FilePanel implements BufferDocumentChangeListenerIF {
 
         plainToEditorListener = new DocumentListener() {
             private void sync() {
-                if (guard.get()) return;
-                guard.set(true);
-                try {
-                    copyText(plainDocument, rsyntaxDoc);
-                } finally {
-                    guard.set(false);
-                }
+                // plainDocument changes can occur on any thread.
+                // Updates to rsyntaxDoc (editor's document) must occur on the EDT.
+                SwingUtilities.invokeLater(() -> {
+                    if (!guard.compareAndSet(false, true)) { // Attempt to acquire lock
+                        return; // Lock not acquired, another sync operation is in progress
+                    }
+                    try {
+                        copyText(plainDocument, rsyntaxDoc);
+                    } finally {
+                        guard.set(false); // Release lock
+                    }
+                });
             }
             @Override public void insertUpdate(DocumentEvent e) { sync(); }
             @Override public void removeUpdate(DocumentEvent e)  { sync(); }
             @Override public void changedUpdate(DocumentEvent e){ sync(); }
         };
+
         editorToPlainListener = new DocumentListener() {
             private void sync() {
-                if (guard.get()) return;
-                guard.set(true);
+                // rsyntaxDoc changes occur on the EDT (user typing or programmatic changes on EDT).
+                if (!guard.compareAndSet(false, true)) { // Attempt to acquire lock
+                    return; // Lock not acquired
+                }
                 try {
                     copyText(rsyntaxDoc, plainDocument);
                 } finally {
-                    guard.set(false);
+                    guard.set(false); // Release lock
                 }
             }
             @Override public void insertUpdate(DocumentEvent e) { sync(); }
@@ -527,6 +536,7 @@ public class FilePanel implements BufferDocumentChangeListenerIF {
     }
 
     public void doStopSearch() {
+        assert SwingUtilities.isEventDispatchThread();
         searchHits = null;
         reDisplay();
     }
