@@ -16,6 +16,8 @@ import javax.swing.*;
 import javax.swing.text.BadLocationException;
 import java.awt.*;
 import java.util.ArrayList;
+import io.github.jbellis.brokk.gui.GuiTheme;
+import org.jetbrains.annotations.NotNull;
 
 /**
  * This panel shows the side-by-side file panels, the diff curves, plus search bars.
@@ -27,6 +29,7 @@ public class BufferDiffPanel extends AbstractContentPanel
     public static final int RIGHT = 2;
     public static final int NUMBER_OF_PANELS = 3;
 
+    @NotNull
     private final BrokkDiffPanel mainPanel;
     private final boolean isDarkTheme;
 
@@ -274,7 +277,7 @@ public class BufferDiffPanel extends AbstractContentPanel
         return scrollSynchronizer;
     }
 
-    public BrokkDiffPanel getMainPanel()
+    public @NotNull BrokkDiffPanel getMainPanel()
     {
         return mainPanel;
     }

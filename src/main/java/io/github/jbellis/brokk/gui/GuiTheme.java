@@ -117,13 +117,9 @@ public class GuiTheme {
      * @param isDark true for dark theme, false for light theme
      * @return The loaded Theme object, or null if loading fails.
      */
-    private static Optional<Theme> loadRSyntaxTheme(boolean isDark) {
+    public static Optional<Theme> loadRSyntaxTheme(boolean isDark) {
         String themeChoice = getThemeName(isDark);
-<<<<<<< HEAD
-        String themeResource = String.format("/org/fife/ui/rsyntaxtextarea/themes/%s.xml", isDark ? "dark" : "default");
-=======
-        String themeResource = String.format("/org/fife/ui/rsyntaxtextarea/themes/%s.xml", themeChoice);
->>>>>>> 01bbc8f8 (refactor: Extract RSyntaxTextArea theme loading.)
+        String themeResource = "/org/fife/ui/rsyntaxtextarea/themes/%s".formatted(isDark ? "dark.xml" : "default.xml");
         try {
             return Optional.of(Theme.load(GuiTheme.class.getResourceAsStream(themeResource)));
         } catch (IOException e) {
@@ -131,7 +127,6 @@ public class GuiTheme {
             return Optional.empty();
         }
     }
-<<<<<<< HEAD
 
     /**
      * Applies the syntax theme to every relevant component contained in the

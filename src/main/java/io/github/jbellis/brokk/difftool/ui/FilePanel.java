@@ -29,11 +29,14 @@ import org.fife.ui.rsyntaxtextarea.RSyntaxTextArea;
 import org.fife.ui.rsyntaxtextarea.SyntaxConstants;
 import javax.swing.SwingUtilities;
 
+import io.github.jbellis.brokk.gui.GuiTheme;
 import io.github.jbellis.brokk.util.SyntaxDetector;
+import org.jetbrains.annotations.NotNull;
 
 public class FilePanel implements BufferDocumentChangeListenerIF {
     private static final int MAXSIZE_CHANGE_DIFF = 1000;
 
+    @NotNull
     private final BufferDiffPanel diffPanel;
     private final String name;
     private JPanel visualComponentContainer; // Main container for editor or "new file" label
@@ -51,7 +54,7 @@ public class FilePanel implements BufferDocumentChangeListenerIF {
     private SearchHits searchHits;
     private final SearchBarDialog bar;
 
-    public FilePanel(BufferDiffPanel diffPanel, String name, SearchBarDialog bar) {
+    public FilePanel(@NotNull BufferDiffPanel diffPanel, String name, SearchBarDialog bar) {
         this.diffPanel = diffPanel;
         this.name = name;
         this.bar = bar;
@@ -93,6 +96,11 @@ public class FilePanel implements BufferDocumentChangeListenerIF {
         // Setup a one-time timer to refresh the UI after 100ms
         timer = new Timer(100, refresh());
         timer.setRepeats(false);
+
+        // Apply current theme
+        GuiTheme.loadRSyntaxTheme(diffPanel.isDarkTheme()).ifPresent(theme ->
+                theme.apply(editor)
+        );
 
 //        diffPanel.getCaseSensitiveCheckBox().addActionListener(e -> {
 //            doSearch()
