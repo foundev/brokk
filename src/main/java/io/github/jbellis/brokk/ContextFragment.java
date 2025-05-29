@@ -591,6 +591,10 @@ public interface ContextFragment {
             this.descriptionFuture = descriptionFuture;
         }
 
+        public Future<String> getDescriptionFuture() {
+            return descriptionFuture;
+        }
+
         @Override
         public String description() {
             if (descriptionFuture.isDone()) {

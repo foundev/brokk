@@ -43,7 +43,6 @@ public class ContextSerializationTest {
         String json = context.toJson();
         assertNotNull(json, "JSON serialization should not return null");
         assertTrue(json.contains("editableFiles"), "JSON should contain editableFiles field");
-        assertTrue(json.contains("version"), "JSON should contain version field");
 
         Context deserialized = Context.fromJson(json, mockContextManager);
 
@@ -488,25 +487,6 @@ public class ContextSerializationTest {
         assertTrue(deserializedFileFragment.file().toString().contains("Special File (1).java"));
     }
 
-    @Test
-    void testJsonSerializationVersionField() throws Exception {
-        Context context = new Context(mockContextManager);
-
-        // Serialize to JSON
-        String json = context.toJson();
-        assertNotNull(json);
-        assertTrue(json.contains("version"), "JSON should contain version field");
-
-        // Parse JSON to verify version value
-        @SuppressWarnings("unchecked")
-        var jsonMap = (java.util.Map<String, Object>) Json.getMapper().readValue(json, java.util.Map.class);
-        assertTrue(jsonMap.containsKey("version"));
-        assertEquals(1, ((Number) jsonMap.get("version")).intValue());
-
-        // Verify deserialization works
-        Context deserialized = Context.fromJson(json, mockContextManager);
-        assertNotNull(deserialized);
-    }
 
     @Test
     void testJsonSerializationRoundTripIntegrity() throws Exception {

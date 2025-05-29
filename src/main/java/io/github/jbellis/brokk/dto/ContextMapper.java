@@ -13,16 +13,13 @@ import io.github.jbellis.brokk.dto.FragmentDtos.*;
 import io.github.jbellis.brokk.util.Messages;
 
 import javax.imageio.ImageIO;
-import java.awt.Image;
+import java.awt.*;
 import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.Base64;
-import java.util.List;
-import java.util.Map;
-import java.util.Set;
 import java.util.concurrent.CompletableFuture;
 import java.util.stream.Collectors;
 
@@ -56,13 +53,10 @@ public class ContextMapper {
                 .map(ContextMapper::toTaskEntryDto)
                 .toList();
         
-        return new ContextDto(
-                editableFilesDto,
+        return new ContextDto(editableFilesDto,
                 readonlyFilesDto,
                 virtualFragmentsDto,
-                taskHistoryDto,
-                ContextDto.CURRENT_VERSION
-        );
+                taskHistoryDto);
     }
     
     /**
@@ -270,28 +264,34 @@ public class ContextMapper {
                 );
             }
             case ContextFragment.PasteTextFragment pasteTextFragment -> {
-                // Resolve the future to get the description, removing "Paste of " prefix
+                // Block for up to 10 seconds to get the completed description
                 String description;
                 try {
-                    String fullDescription = pasteTextFragment.description(); // This handles the future internally
+                    var future = pasteTextFragment.getDescriptionFuture();
+                    String fullDescription = future.get(10, java.util.concurrent.TimeUnit.SECONDS);
                     // Remove "Paste of " prefix to avoid duplication during deserialization
                     description = fullDescription.startsWith("Paste of ") 
                         ? fullDescription.substring("Paste of ".length()) 
                         : fullDescription;
+                } catch (java.util.concurrent.TimeoutException e) {
+                    description = "(Paste description timed out)";
                 } catch (Exception e) {
                     description = "(Error getting paste description)";
                 }
                 yield new PasteTextFragmentDto(pasteTextFragment.id(), pasteTextFragment.text(), description);
             }
             case ContextFragment.PasteImageFragment pasteImageFragment -> {
-                // Resolve the future to get the description, removing "Paste of " prefix
+                // Block for up to 10 seconds to get the completed description
                 String description;
                 try {
-                    String fullDescription = pasteImageFragment.description(); // This handles the future internally
+                    var future = pasteImageFragment.getDescriptionFuture();
+                    String fullDescription = future.get(10, java.util.concurrent.TimeUnit.SECONDS);
                     // Remove "Paste of " prefix to avoid duplication during deserialization
                     description = fullDescription.startsWith("Paste of ") 
                         ? fullDescription.substring("Paste of ".length()) 
                         : fullDescription;
+                } catch (java.util.concurrent.TimeoutException e) {
+                    description = "(Paste description timed out)";
                 } catch (Exception e) {
                     description = "(Error getting paste description)";
                 }

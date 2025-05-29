@@ -7,15 +7,11 @@ import java.util.List;
  * DTO record for Context containing only persistent fields.
  * Excludes transient runtime fields like contextManager, action, parsedOutput, etc.
  */
-public record ContextDto(
-        List<ProjectFileDto> editableFiles,
-        List<PathFragmentDto> readonlyFiles,
-        List<VirtualFragmentDto> virtualFragments,
-        List<TaskEntryDto> taskHistory,
-        int version
-) {
-    public static final int CURRENT_VERSION = 1;
-    
+public record ContextDto(List<ProjectFileDto> editableFiles,
+                         List<PathFragmentDto> readonlyFiles,
+                         List<VirtualFragmentDto> virtualFragments,
+                         List<TaskEntryDto> taskHistory)
+{
     public ContextDto {
         // Defensive copying for immutability
         editableFiles = editableFiles != null ? List.copyOf(editableFiles) : List.of();
