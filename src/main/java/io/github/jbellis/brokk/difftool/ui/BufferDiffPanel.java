@@ -17,13 +17,14 @@ import javax.swing.text.BadLocationException;
 import java.awt.*;
 import java.util.ArrayList;
 import io.github.jbellis.brokk.gui.GuiTheme;
+import io.github.jbellis.brokk.gui.ThemeAware;
 import org.jetbrains.annotations.NotNull;
 
 /**
  * This panel shows the side-by-side file panels, the diff curves, plus search bars.
  * It no longer depends on custom JMRevision/JMDelta but rather on a Patch<String>.
  */
-public class BufferDiffPanel extends AbstractContentPanel
+public class BufferDiffPanel extends AbstractContentPanel implements ThemeAware
 {
     public static final int LEFT = 0;
     public static final int RIGHT = 2;
@@ -31,7 +32,8 @@ public class BufferDiffPanel extends AbstractContentPanel
 
     @NotNull
     private final BrokkDiffPanel mainPanel;
-    private final boolean isDarkTheme;
+    // Mutable so existing panels can react to live theme changes
+    private boolean isDarkTheme;
 
     // Instead of JMRevision:
     private Patch<String> patch; // from JMDiffNode
@@ -539,5 +541,34 @@ public class BufferDiffPanel extends AbstractContentPanel
     {
         super.doRedo();
         mainPanel.updateUndoRedoButtons();
+    }
+
+    /**
+     * ThemeAware implementation – update highlight colours and syntax themes
+     * when the global GUI theme changes.
+     */
+    @Override
+    public void applyTheme(GuiTheme guiTheme)
+    {
+        assert javax.swing.SwingUtilities.isEventDispatchThread()
+                : "applyTheme must be invoked on the EDT";
+
+        this.isDarkTheme = guiTheme.isDarkTheme();
+
+        // Refresh RSyntax themes and highlights in each child FilePanel
+        if (filePanels != null) {
+            for (FilePanel fp : filePanels) {
+                if (fp == null) continue;
+                guiTheme.applyCurrentThemeToComponent(fp.getEditor());
+                fp.reDisplay();
+            }
+        }
+
+        // Let the Look-and-Feel repaint every child component (headers, scroll-bars, etc.)
+        SwingUtilities.updateComponentTreeUI(this);
+        revalidate();
+
+        // Repaint diff connectors, revision bars, etc.
+        reDisplay();
     }
 }
