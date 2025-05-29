@@ -41,7 +41,7 @@ public class Context {
     private static final String WELCOME_ACTION = "Welcome to Brokk";
     public static final String SUMMARIZING = "(Summarizing)";
 
-    transient final IContextManager contextManager;
+    private final transient IContextManager contextManager;
     final List<ContextFragment.ProjectPathFragment> editableFiles;
     final List<ContextFragment.PathFragment> readonlyFiles;
     final List<ContextFragment.VirtualFragment> virtualFragments;
@@ -67,32 +67,32 @@ public class Context {
     /**
      * Constructor for initial empty context
      */
-    public Context(IContextManager contextManager, String initialOutputText) {
+    public Context(@NotNull IContextManager contextManager, String initialOutputText) {
         this(newId(),
-             contextManager,
+             Objects.requireNonNull(contextManager, "contextManager cannot be null"),
              List.of(),
              List.of(),
              List.of(),
              new ArrayList<>(),
              Map.of(),
-             getWelcomeOutput(initialOutputText),
+             getWelcomeOutput(contextManager, initialOutputText), // Pass contextManager here
              CompletableFuture.completedFuture(WELCOME_ACTION));
     }
 
-    private static @NotNull ContextFragment.TaskFragment getWelcomeOutput(String initialOutputText) {
+    private static @NotNull ContextFragment.TaskFragment getWelcomeOutput(IContextManager contextManager, String initialOutputText) {
         var messages = List.<ChatMessage>of(Messages.customSystem(initialOutputText));
-        return new ContextFragment.TaskFragment(messages, "Welcome");
+        return new ContextFragment.TaskFragment(contextManager, messages, "Welcome");
     }
 
     /**
      * Constructor for initial empty context with empty output. Tests only
      */
-    Context(IContextManager contextManager) {
-        this(contextManager, "placeholder");
+    Context(@NotNull IContextManager contextManager) { // Made package-private and kept @NotNull
+        this(Objects.requireNonNull(contextManager, "contextManager cannot be null"), "placeholder");
     }
 
     private Context(int id,
-                    IContextManager contextManager,
+                    @NotNull IContextManager contextManager,
                     List<ContextFragment.ProjectPathFragment> editableFiles,
                     List<ContextFragment.PathFragment> readonlyFiles,
                     List<ContextFragment.VirtualFragment> virtualFragments,
@@ -102,7 +102,7 @@ public class Context {
                     Future<String> action)
     {
         assert id > 0;
-        assert contextManager != null;
+        // contextManager is asserted non-null by the caller or public constructor
         assert editableFiles != null;
         assert readonlyFiles != null;
         assert virtualFragments != null;
@@ -110,7 +110,7 @@ public class Context {
         assert originalContents != null;
         assert action != null;
         this.id = id;
-        this.contextManager = contextManager;
+        this.contextManager = Objects.requireNonNull(contextManager, "contextManager cannot be null in private constructor");
         this.editableFiles = List.copyOf(editableFiles);
         this.readonlyFiles = List.copyOf(readonlyFiles);
         this.virtualFragments = List.copyOf(virtualFragments);
@@ -123,7 +123,7 @@ public class Context {
     /**
      * Creates a new Context with an additional set of editable files. Rebuilds autoContext if toggled on.
      */
-    public Context addEditableFiles(Collection<ContextFragment.ProjectPathFragment> paths) {
+    public Context addEditableFiles(Collection<ContextFragment.ProjectPathFragment> paths) { // IContextManager is already member
         var toAdd = paths.stream().filter(fragment -> !editableFiles.contains(fragment)).toList();
         if (toAdd.isEmpty()) {
             return this;
@@ -138,7 +138,7 @@ public class Context {
         return getWithFragments(newEditable, readonlyFiles, virtualFragments, action);
     }
 
-    public Context addReadonlyFiles(Collection<ContextFragment.PathFragment> paths) {
+    public Context addReadonlyFiles(Collection<ContextFragment.PathFragment> paths) { // IContextManager is already member
         var toAdd = paths.stream().filter(fragment -> !readonlyFiles.contains(fragment)).toList();
         if (toAdd.isEmpty()) {
             return this;
@@ -153,7 +153,7 @@ public class Context {
         return getWithFragments(editableFiles, newReadOnly, virtualFragments, action);
     }
 
-    public Context removeEditableFiles(List<ContextFragment.PathFragment> fragments) {
+    public Context removeEditableFiles(List<ContextFragment.PathFragment> fragments) { // IContextManager is already member
         var newEditable = new ArrayList<>(editableFiles);
         newEditable.removeAll(fragments);
         if (newEditable.equals(editableFiles)) {
@@ -167,7 +167,7 @@ public class Context {
         return getWithFragments(newEditable, readonlyFiles, virtualFragments, action);
     }
 
-    public Context removeReadonlyFiles(List<? extends ContextFragment.PathFragment> fragments) {
+    public Context removeReadonlyFiles(List<? extends ContextFragment.PathFragment> fragments) { // IContextManager is already member
         List<ContextFragment.PathFragment> newReadOnly = new ArrayList<>(readonlyFiles);
         newReadOnly.removeAll(fragments);
         if (newReadOnly.equals(readonlyFiles)) {
@@ -181,7 +181,7 @@ public class Context {
         return getWithFragments(editableFiles, newReadOnly, virtualFragments, action);
     }
 
-    public Context removeVirtualFragments(List<? extends ContextFragment.VirtualFragment> fragments) {
+    public Context removeVirtualFragments(List<? extends ContextFragment.VirtualFragment> fragments) { // IContextManager is already member
         var newFragments = new ArrayList<>(virtualFragments);
         newFragments.removeAll(fragments);
         if (newFragments.equals(virtualFragments)) {
@@ -195,7 +195,7 @@ public class Context {
         return getWithFragments(editableFiles, readonlyFiles, newFragments, action);
     }
 
-    public Context addVirtualFragment(ContextFragment.VirtualFragment fragment) {
+    public Context addVirtualFragment(ContextFragment.VirtualFragment fragment) { // IContextManager is already member
         var newFragments = new ArrayList<>(virtualFragments);
         newFragments.add(fragment);
 
@@ -206,7 +206,7 @@ public class Context {
     /**
      * Adds a virtual fragment and uses the same future for both fragment description and action
      */
-    public Context addPasteFragment(ContextFragment.PasteTextFragment fragment, Future<String> summaryFuture) {
+    public Context addPasteFragment(ContextFragment.PasteTextFragment fragment, Future<String> summaryFuture) { // IContextManager is already member
         var newFragments = new ArrayList<>(virtualFragments);
         newFragments.add(fragment);
 
@@ -222,7 +222,7 @@ public class Context {
         return withFragments(editableFiles, readonlyFiles, newFragments, actionFuture);
     }
 
-    public Context removeBadFragment(ContextFragment f) {
+    public Context removeBadFragment(ContextFragment f) { // IContextManager is already member
         if (f instanceof ContextFragment.PathFragment pf) {
             var inEditable = editableFiles.contains(pf);
             var inReadonly = readonlyFiles.contains(pf);
@@ -262,8 +262,7 @@ public class Context {
     /**
      * 1) Gather all classes from each fragment.
      * 2) Compute PageRank with those classes as seeds, requesting up to 2*MAX_AUTO_CONTEXT_FILES
-     * 3) Build a multiline skeleton text for the top autoContextFileCount results
-     * 4) Return the new AutoContext instance
+     * 3) Return a SkeletonFragment constructed with the FQNs of the top results.
      */
     public SkeletonFragment buildAutoContext(int topK) throws InterruptedException {
         IAnalyzer analyzer;
@@ -272,18 +271,18 @@ public class Context {
         // Collect ineligible classnames from fragments not eligible for auto-context
         var ineligibleSources = Streams.concat(editableFiles.stream(), readonlyFiles.stream(), virtualFragments.stream())
                 .filter(f -> !f.isEligibleForAutoContext())
-                .flatMap(f -> f.sources(analyzer).stream())
+                .flatMap(f -> f.sources().stream()) // No analyzer
                 .collect(Collectors.toSet());
 
         // Collect initial seeds
         var weightedSeeds = new HashMap<String, Double>();
         // editable files have a weight of 1.0, each
-        editableFiles.stream().flatMap(f -> f.sources(analyzer).stream()).forEach(unit -> {
+        editableFiles.stream().flatMap(f -> f.sources().stream()).forEach(unit -> { // No analyzer
             weightedSeeds.put(unit.fqName(), 1.0);
         });
         // everything else splits a weight of 1.0
         Streams.concat(readonlyFiles.stream(), virtualFragments.stream())
-                .flatMap(f -> f.sources(analyzer).stream())
+                .flatMap(f -> f.sources().stream()) // No analyzer
                 .forEach(unit ->
                          {
                              weightedSeeds.merge(unit.fqName(), 1.0 / (readonlyFiles.size() + virtualFragments.size()), Double::sum);
@@ -291,17 +290,17 @@ public class Context {
 
         // If no seeds, we can't compute pagerank
         if (weightedSeeds.isEmpty()) {
-            return new SkeletonFragment(Map.of());
+            // Pass contextManager to SkeletonFragment constructor
+            return new SkeletonFragment(contextManager, List.of(), ContextFragment.SummaryType.CLASS_SKELETON); // Empty skeleton fragment
         }
 
-        return buildAutoContext(analyzer, weightedSeeds, ineligibleSources, topK);
+        return buildAutoContextFragment(contextManager, analyzer, weightedSeeds, ineligibleSources, topK);
     }
 
-    public static SkeletonFragment buildAutoContext(IAnalyzer analyzer, Map<String, Double> weightedSeeds, Set<CodeUnit> ineligibleSources, int topK) {
+    public static SkeletonFragment buildAutoContextFragment(IContextManager contextManager, IAnalyzer analyzer, Map<String, Double> weightedSeeds, Set<CodeUnit> ineligibleSources, int topK) {
         var pagerankResults = AnalyzerUtil.combinedPagerankFor(analyzer, weightedSeeds);
 
-        // build skeleton map
-        var skeletonMap = new HashMap<CodeUnit, String>();
+        List<String> targetFqns = new ArrayList<>();
         for (var codeUnit : pagerankResults) {
             var fqcn = codeUnit.fqName();
             var sourceFileOption = analyzer.getFileFor(fqcn);
@@ -329,17 +328,21 @@ public class Context {
             }
 
             if (eligible) {
-                 var opt = analyzer.getSkeleton(fqcn);
-                 if (opt.isPresent()) {
-                     skeletonMap.put(codeUnit, opt.get());
-                 }
+                // Check if skeleton exists before adding, to ensure it's a valid target for summary
+                if (analyzer.getSkeleton(fqcn).isPresent()) {
+                    targetFqns.add(fqcn);
+                }
             }
-            if (skeletonMap.size() >= topK) {
+            if (targetFqns.size() >= topK) {
                 break;
             }
         }
-
-        return new SkeletonFragment(skeletonMap);
+        if (targetFqns.isEmpty()) {
+            // Pass contextManager to SkeletonFragment constructor
+            return new SkeletonFragment(contextManager, List.of(), ContextFragment.SummaryType.CLASS_SKELETON); // Empty
+        }
+        // Pass contextManager to SkeletonFragment constructor
+        return new SkeletonFragment(contextManager, targetFqns, ContextFragment.SummaryType.CLASS_SKELETON);
     }
 
     // ---------------------------------------------------------
@@ -549,7 +552,7 @@ public class Context {
 
         // Then conversation history
         if (!taskHistory.isEmpty()) {
-            result.add(new HistoryFragment(taskHistory));
+            result.add(new HistoryFragment(contextManager, taskHistory));
         }
 
         // then read-only

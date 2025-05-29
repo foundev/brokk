@@ -759,7 +759,7 @@ public class Chrome implements AutoCloseable, IConsoleIO, IContextManager.Contex
             }
 
             // Handle text fragments
-            String content = fragment.text(); // Content derived from fragment's specific text() method
+            String content = fragment.text(); // No analyzer
             String syntaxStyle = fragment.syntaxStyle(); // Syntax style from fragment
 
             if (fragment instanceof ContextFragment.GitFileFragment gff) {
@@ -811,7 +811,7 @@ public class Chrome implements AutoCloseable, IConsoleIO, IContextManager.Contex
                 showPreviewFrame(contextManager, title, previewPanel);
             }
 
-        } catch (IOException ex) { // IOException mainly from fragment.text()
+        } catch (IOException | InterruptedException ex) { // Added InterruptedException for fragment.text()
             toolErrorRaw("Error reading fragment content: " + ex.getMessage());
             logger.error("Error reading fragment content for preview", ex);
         } catch (Exception ex) {

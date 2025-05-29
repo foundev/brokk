@@ -6,6 +6,7 @@ import dev.langchain4j.data.message.SystemMessage;
 import dev.langchain4j.data.message.UserMessage;
 import io.github.jbellis.brokk.context.ContextFragment;
 
+import java.io.IOException;
 import java.util.ArrayList;
 import java.util.List;
 
@@ -47,9 +48,22 @@ public final class QuickEditPrompts {
         %s
         ```
         </source>
-        """.stripIndent().formatted(relatedCode.format(), fileContents));
+        """.stripIndent().formatted(formatRelatedCode(relatedCode), fileContents));
 
         return List.of(um, new AiMessage("I will update the target code in the source file to implement your instructions."));
+    }
+
+    private String formatRelatedCode(ContextFragment.SkeletonFragment relatedCode) {
+        try {
+            return relatedCode.format();
+        } catch (IOException | InterruptedException e) {
+            // Log and return a placeholder or error message
+            // This should be rare for SkeletonFragment if its dynamic content fetching is robust
+            // or if pre-computed data is used and doesn't involve I/O that can fail here.
+            // For now, returning a simple error message.
+            System.err.println("Error formatting related code for quick edit: " + e.getMessage());
+            return "[Error formatting related code]";
+        }
     }
 
     public String formatInstructions(String target, String instructions) {

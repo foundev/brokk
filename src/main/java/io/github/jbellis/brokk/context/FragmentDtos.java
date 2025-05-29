@@ -138,44 +138,31 @@ public class FragmentDtos {
     }
     
     /**
-     * DTO for SkeletonFragment - contains mapping of code units to their skeleton representations.
-     * Uses a list of pairs instead of a map to avoid Jackson key serialization issues.
+     * DTO for SkeletonFragment - contains target identifiers (FQ class names or file paths) and summary type.
      */
-    public record SkeletonFragmentDto(int id, List<SkeletonEntryDto> skeletons) implements VirtualFragmentDto {
+    public record SkeletonFragmentDto(int id, List<String> targetIdentifiers, String summaryType) implements VirtualFragmentDto {
         public SkeletonFragmentDto {
-            skeletons = skeletons != null ? List.copyOf(skeletons) : List.of();
-        }
-    }
-    
-    /**
-     * Helper record for SkeletonFragment entries to avoid Map key serialization issues.
-     */
-    public record SkeletonEntryDto(CodeUnitDto codeUnit, String skeleton) {
-        public SkeletonEntryDto {
-            if (codeUnit == null) {
-                throw new IllegalArgumentException("codeUnit cannot be null");
+            if (targetIdentifiers == null || targetIdentifiers.isEmpty()) {
+                throw new IllegalArgumentException("targetIdentifiers cannot be null or empty");
             }
-            if (skeleton == null) {
-                throw new IllegalArgumentException("skeleton cannot be null");
+            targetIdentifiers = List.copyOf(targetIdentifiers);
+            if (summaryType == null || summaryType.isEmpty()) {
+                throw new IllegalArgumentException("summaryType cannot be null or empty");
             }
         }
     }
-    
+
     /**
-     * DTO for UsageFragment - contains target identifier, related classes and code.
+     * DTO for UsageFragment - contains target identifier.
      */
-    public record UsageFragmentDto(int id, String targetIdentifier, Set<CodeUnitDto> classes, String code) implements VirtualFragmentDto {
+    public record UsageFragmentDto(int id, String targetIdentifier) implements VirtualFragmentDto {
         public UsageFragmentDto {
-            if (targetIdentifier == null) {
-                throw new IllegalArgumentException("targetIdentifier cannot be null");
+            if (targetIdentifier == null || targetIdentifier.isEmpty()) {
+                throw new IllegalArgumentException("targetIdentifier cannot be null or empty");
             }
-            if (code == null) {
-                throw new IllegalArgumentException("code cannot be null");
-            }
-            classes = classes != null ? Set.copyOf(classes) : Set.of();
         }
     }
-    
+
     /**
      * DTO for GitFileFragment - represents a specific revision of a file from Git history.
      */
@@ -243,23 +230,19 @@ public class FragmentDtos {
     }
     
     /**
-     * DTO for CallGraphFragment - contains call graph analysis data.
+     * DTO for CallGraphFragment - contains method name, depth, and graph type (callee/caller).
      */
-    public record CallGraphFragmentDto(int id, String type, String targetIdentifier, Set<CodeUnitDto> classes, String code) implements VirtualFragmentDto {
+    public record CallGraphFragmentDto(int id, String methodName, int depth, boolean isCalleeGraph) implements VirtualFragmentDto {
         public CallGraphFragmentDto {
-            if (type == null) {
-                throw new IllegalArgumentException("type cannot be null");
+            if (methodName == null || methodName.isEmpty()) {
+                throw new IllegalArgumentException("methodName cannot be null or empty");
             }
-            if (targetIdentifier == null) {
-                throw new IllegalArgumentException("targetIdentifier cannot be null");
+            if (depth <= 0) {
+                throw new IllegalArgumentException("depth must be positive");
             }
-            if (code == null) {
-                throw new IllegalArgumentException("code cannot be null");
-            }
-            classes = classes != null ? Set.copyOf(classes) : Set.of();
         }
     }
-    
+
     /**
      * DTO for HistoryFragment - contains task history entries.
      */

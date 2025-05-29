@@ -142,7 +142,7 @@ public class ArchitectAgent {
         }
 
         // TODO label this Architect
-        io.setLlmOutput(new ContextFragment.TaskFragment(List.of(Messages.customSystem(instructions)), "Code (Architect)"));
+        io.setLlmOutput(new ContextFragment.TaskFragment(contextManager, List.of(Messages.customSystem(instructions)), "Code (Architect)"));
         var result = new CodeAgent(contextManager, contextManager.getCodeModel()).runSession(instructions, true);
         var stopDetails = result.stopDetails();
         var reason = stopDetails.reason();
@@ -208,7 +208,7 @@ public class ArchitectAgent {
         logger.debug("callSearchAgent invoked with query: {}", query);
 
         // Instantiate and run SearchAgent
-        io.setLlmOutput(new ContextFragment.TaskFragment(List.of(Messages.customSystem(query)), "Search (Architect)"));
+        io.setLlmOutput(new ContextFragment.TaskFragment(contextManager, List.of(Messages.customSystem(query)), "Search (Architect)"));
         var searchAgent = new SearchAgent(query, contextManager, model, toolRegistry, searchAgentId.getAndIncrement());
         var result = searchAgent.execute();
         if (result.stopDetails().reason() == SessionResult.StopReason.LLM_ERROR) {
@@ -220,7 +220,7 @@ public class ArchitectAgent {
             return result.stopDetails().toString();
         }
 
-        var relevantClasses = result.output().sources(contextManager.getAnalyzer()).stream()
+        var relevantClasses = result.output().sources().stream()
                 .map(CodeUnit::fqName)
                 .collect(Collectors.joining(","));
         var stringResult = """
@@ -389,7 +389,7 @@ public class ArchitectAgent {
                 var toolResult = toolRegistry.executeTool(this, answerReq);
                 logger.debug("Project final answer: {}", toolResult.resultText());
                 return new SessionResult("Architect: " + goal,
-                                         List.of(new AiMessage(toolResult.resultText())),
+                                         new ContextFragment.TaskFragment(contextManager, List.of(new AiMessage(toolResult.resultText())), goal),
                                          Map.of(),
                                          new SessionResult.StopDetails(SessionResult.StopReason.SUCCESS, toolResult.resultText()));
             }
@@ -398,7 +398,7 @@ public class ArchitectAgent {
                 var toolResult = toolRegistry.executeTool(this, abortReq);
                 logger.debug("Project aborted: {}", toolResult.resultText());
                 return new SessionResult("Architect: " + goal,
-                                         List.of(new AiMessage(toolResult.resultText())),
+                                         new ContextFragment.TaskFragment(contextManager, List.of(new AiMessage(toolResult.resultText())), goal),
                                          Map.of(),
                                          new SessionResult.StopDetails(SessionResult.StopReason.LLM_ABORTED, toolResult.resultText()));
             }
@@ -479,10 +479,11 @@ public class ArchitectAgent {
     }
 
     private @NotNull SessionResult llmErrorResult() {
-        return new SessionResult("Architect: " + goal,
+        return new SessionResult(contextManager,
+                                 "Architect: " + goal,
                                  List.of(),
                                  Map.of(),
-                                 SessionResult.StopReason.LLM_ERROR);
+                                 new SessionResult.StopDetails(SessionResult.StopReason.LLM_ERROR));
     }
 
     /**

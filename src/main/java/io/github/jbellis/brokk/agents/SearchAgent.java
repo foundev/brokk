@@ -206,8 +206,8 @@ public class SearchAgent {
             String text;
             try {
                 text = f.text();
-            } catch (IOException e) {
-                contextManager.removeBadFragment(f, e);
+            } catch (IOException | InterruptedException e) { // Add InterruptedException
+                contextManager.removeBadFragment(f, new IOException(e)); // Wrap InterruptedException
                 return null;
             }
             return """
@@ -215,7 +215,7 @@ public class SearchAgent {
                     %s
                     </fragment>
                     """.stripIndent().formatted(f.description(),
-                                                (f.sources(analyzer).stream().map(CodeUnit::fqName).collect(Collectors.joining(", "))),
+                                                (f.sources().stream().map(CodeUnit::fqName).collect(Collectors.joining(", "))), // No analyzer
                                                 text);
         }).filter(Objects::nonNull).collect(Collectors.joining("\n\n"));
         if (!contextWithClasses.isBlank()) {
@@ -385,7 +385,7 @@ public class SearchAgent {
 
     private SessionResult errorResult(SessionResult.StopDetails details, String explanation) {
         return new SessionResult("Search: " + query,
-                                 new ContextFragment.TaskFragment(List.of(new UserMessage(query), new AiMessage(explanation)), query), Map.of(),
+                                 new ContextFragment.TaskFragment(contextManager, List.of(new UserMessage(query), new AiMessage(explanation)), query), Map.of(),
                                  details);
     }
 
@@ -1259,9 +1259,9 @@ public class SearchAgent {
 
         io.llmOutput("\n# Answer\n%s".formatted(explanationText), ChatMessageType.AI);
         var sessionName = "Search: " + query;
-        var fragment = new ContextFragment.SearchFragment(sessionName, List.copyOf(io.getLlmRawMessages()), coalesced);
+        var fragment = new ContextFragment.SearchFragment(contextManager, sessionName, List.copyOf(io.getLlmRawMessages()), coalesced);
         return new SessionResult(sessionName,
-                                 fragment, Map.of(),
+                                 fragment, Map.of(), // SearchFragment doesn't modify files
                                  new SessionResult.StopDetails(SessionResult.StopReason.SUCCESS));
     }
 

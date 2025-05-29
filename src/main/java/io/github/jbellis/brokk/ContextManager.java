@@ -548,7 +548,9 @@ public class ContextManager implements IContextManager, AutoCloseable {
     @Override
     public void editFiles(Collection<ProjectFile> files)
     {
-        var proposedEditableFragments = files.stream().map(ContextFragment.ProjectPathFragment::new).toList();
+        var proposedEditableFragments = files.stream()
+                .map(pf -> new ContextFragment.ProjectPathFragment(pf, this)) // Pass IContextManager
+                .toList();
         editFiles(proposedEditableFragments);
     }
 
@@ -581,10 +583,12 @@ public class ContextManager implements IContextManager, AutoCloseable {
     public void addReadOnlyFiles(Collection<? extends BrokkFile> files)
     {
         // Create the new fragments to be added as read-only
-        var proposedReadOnlyFragments = files.stream().map(ContextFragment::toPathFragment).toList();
+        var proposedReadOnlyFragments = files.stream()
+                .map(bf -> ContextFragment.toPathFragment(bf, this)) // Ensure this lambda is applied
+                .toList();
         // Find existing editable fragments that correspond to these files
         var currentEditableFiles = topContext().editableFiles().collect(Collectors.toSet());
-        var filesToReadSet = files.stream().map(ContextFragment::toPathFragment).map(PathFragment::file).collect(Collectors.toSet());
+        var filesToReadSet = files.stream().map(bf -> ContextFragment.toPathFragment(bf, this)).map(PathFragment::file).collect(Collectors.toSet());
         var existingEditableFragmentsToRemove = currentEditableFiles.stream()
                 .filter(pf -> filesToReadSet.contains(pf.file()))
                 .map(PathFragment.class::cast) // Cast to the required supertype
@@ -737,11 +741,11 @@ public class ContextManager implements IContextManager, AutoCloseable {
      */
     public void addPastedImageFragment(java.awt.Image image) {
         // Submit task to get image description asynchronously
-        Future<String> descriptionFuture = submitSummarizePastedImage(image); // Note: submitSummarizePastedImage needs to be defined
+        Future<String> descriptionFuture = submitSummarizePastedImage(image); 
 
         // Add the PasteImageFragment immediately, the description will update when the future completes
         pushContext(ctx -> {
-            var fragment = new ContextFragment.PasteImageFragment(image, descriptionFuture);
+            var fragment = new ContextFragment.PasteImageFragment(this, image, descriptionFuture); // Pass IContextManager
             // While PasteImageFragment itself inherits from VirtualFragment, let's use the specific addVirtualFragment
             // method for consistency, as it handles adding to the correct internal list.
             return ctx.addVirtualFragment(fragment);
@@ -787,81 +791,40 @@ public class ContextManager implements IContextManager, AutoCloseable {
      */
     public void usageForIdentifier(String identifier)
     {
-        IAnalyzer analyzer;
-        analyzer = getAnalyzerUninterrupted();
-        var uses = analyzer.getUses(identifier);
-        if (uses.isEmpty()) {
-            io.systemOutput("No uses found for " + identifier);
-            return;
-        }
-        var result = AnalyzerUtil.processUsages(analyzer, uses);
-        if (result.code().isEmpty()) {
-            io.systemOutput("No relevant uses found for " + identifier);
-            return;
-        }
-        var combined = result.code();
-        var fragment = new ContextFragment.UsageFragment(identifier, result.sources(), combined);
+        // The UsageFragment will now dynamically fetch its content.
+        var fragment = new ContextFragment.UsageFragment(this, identifier); // Pass IContextManager
         pushContext(ctx -> ctx.addVirtualFragment(fragment));
+        io.systemOutput("Added dynamic usage analysis for " + identifier);
     }
 
-    public void addCallersForMethod(String methodName, int depth, Map<String, List<CallSite>> callgraph)
+    public void addCallersForMethod(String methodName, int depth, Map<String, List<CallSite>> callgraph) // callgraph param no longer used directly for construction
     {
+        // The CallGraphFragment will now dynamically fetch its content.
+        // The callgraph map passed in is the result of a pre-fetch, typically from a UI action.
+        // We still check it to see if there's anything to even try and display dynamically.
         if (callgraph == null || callgraph.isEmpty()) {
-            io.systemOutput("No callers found for " + methodName);
+            io.systemOutput("No callers found for " + methodName + " (pre-check).");
             return;
         }
 
-        String formattedCallGraph = AnalyzerUtil.formatCallGraph(callgraph, methodName, true);
-        if (formattedCallGraph.isEmpty()) {
-            io.systemOutput("No callers found for " + methodName);
-            return;
-        }
-
-        // Extract the class from the method name for sources
-        Set<CodeUnit> sources = new HashSet<>();
-        String className = ContextFragment.toClassname(methodName);
-        // Use getDefinition to find the class CodeUnit and add it to sources
-        getAnalyzerUninterrupted().getDefinition(className)
-                .filter(CodeUnit::isClass)
-                .ifPresent(sources::add);
-
-        var fragment = new ContextFragment.CallGraphFragment("Callers (depth " + depth + ")", methodName, sources, formattedCallGraph);
+        var fragment = new ContextFragment.CallGraphFragment(this, methodName, depth, false); // false for callers, pass IContextManager
         pushContext(ctx -> ctx.addVirtualFragment(fragment));
-
-        int totalCallSites = callgraph.values().stream().mapToInt(List::size).sum();
-        io.systemOutput("Added call graph with " + totalCallSites + " call sites for callers of " + methodName + " with depth " + depth);
+        io.systemOutput("Added dynamic call graph for callers of " + methodName + " with depth " + depth);
     }
 
     /**
      * callees for method
      */
-    public void calleesForMethod(String methodName, int depth, Map<String, List<CallSite>> callgraph)
+    public void calleesForMethod(String methodName, int depth, Map<String, List<CallSite>> callgraph) // callgraph param no longer used directly for construction
     {
+        // The CallGraphFragment will now dynamically fetch its content.
         if (callgraph == null || callgraph.isEmpty()) {
-            io.systemOutput("No callees found for " + methodName);
+            io.systemOutput("No callees found for " + methodName + " (pre-check).");
             return;
         }
-
-        String formattedCallGraph = AnalyzerUtil.formatCallGraph(callgraph, methodName, false);
-        if (formattedCallGraph.isEmpty()) {
-            io.systemOutput("No callees found for " + methodName);
-            return;
-        }
-
-        // Extract the class from the method name for sources
-        Set<CodeUnit> sources = new HashSet<>();
-        String className = ContextFragment.toClassname(methodName);
-        // Use getDefinition to find the class CodeUnit and add it to sources
-        getAnalyzerUninterrupted().getDefinition(className)
-                .filter(CodeUnit::isClass)
-                .ifPresent(sources::add);
-
-        // The output is similar to UsageFragment, so we'll use that
-        var fragment = new ContextFragment.CallGraphFragment("Callees (depth " + depth + ")", methodName, sources, formattedCallGraph);
+        var fragment = new ContextFragment.CallGraphFragment(this, methodName, depth, true); // true for callees, pass IContextManager
         pushContext(ctx -> ctx.addVirtualFragment(fragment));
-
-        int totalCallSites = callgraph.values().stream().mapToInt(List::size).sum();
-        io.systemOutput("Added call graph with " + totalCallSites + " call sites for methods called by " + methodName + " with depth " + depth);
+        io.systemOutput("Added dynamic call graph for methods called by " + methodName + " with depth " + depth);
     }
 
     /**
@@ -872,34 +835,31 @@ public class ContextManager implements IContextManager, AutoCloseable {
         assert stacktrace != null;
 
         var exception = stacktrace.getExceptionType();
-        var content = new StringBuilder();
+        // StacktraceFragment remains non-dynamic as its content is based on a fixed stacktrace text
+        // and pre-analyzed methods.
         var sources = new HashSet<CodeUnit>();
-
-        IAnalyzer analyzer;
-        analyzer = getAnalyzerUninterrupted();
+        var content = new StringBuilder();
+        IAnalyzer localAnalyzer = getAnalyzerUninterrupted(); // Analyzer needed for initial processing
 
         for (var element : stacktrace.getFrames()) {
             var methodFullName = element.getClassName() + "." + element.getMethodName();
-            var methodSource = analyzer.getMethodSource(methodFullName);
+            var methodSource = localAnalyzer.getMethodSource(methodFullName);
             if (methodSource.isPresent()) {
                 String className = ContextFragment.toClassname(methodFullName);
-                // Use getDefinition to find the class CodeUnit and add it to sources
-                analyzer.getDefinition(className)
-                        .filter(CodeUnit::isClass) // Ensure it's a class
-                        .ifPresent(sources::add); // Add the CodeUnit directly
-
+                localAnalyzer.getDefinition(className)
+                             .filter(CodeUnit::isClass)
+                             .ifPresent(sources::add);
                 content.append(methodFullName).append(":\n");
                 content.append(methodSource.get()).append("\n\n");
             }
         }
+
         if (content.isEmpty()) {
             io.toolErrorRaw("No relevant methods found in stacktrace -- adding as text");
             return false;
         }
-        pushContext(ctx -> {
-            var fragment = new ContextFragment.StacktraceFragment(sources, stacktrace.getOriginalText(), exception, content.toString());
-            return ctx.addVirtualFragment(fragment);
-        });
+        var fragment = new ContextFragment.StacktraceFragment(this, sources, stacktrace.getOriginalText(), exception, content.toString()); // Pass IContextManager
+        pushContext(ctx -> ctx.addVirtualFragment(fragment));
         return true;
     }
 
@@ -918,47 +878,38 @@ public class ContextManager implements IContextManager, AutoCloseable {
             return false;
         }
 
-        // Combine skeletons from both files and specific classes
+        // Create SkeletonFragments based on input type (files or classes)
+        // The fragments will dynamically fetch content.
 
-        // Process files: get skeletons for all classes within each file in parallel
-        Map<CodeUnit, String> skeletonsFromFiles = files.parallelStream()
-            .map(file -> {
-                try {
-                    return analyzer.getSkeletons(file);
-                } catch (Exception e) {
-                    logger.warn("Failed to get skeletons for file {}: {}", file, e.getMessage());
-                    return Collections.<CodeUnit, String>emptyMap();
-                }
-            })
-            .flatMap(map -> map.entrySet().stream())
-            .collect(Collectors.toMap(
-                    Map.Entry::getKey,
-                    Map.Entry::getValue,
-                    (v1, v2) -> v1 // In case of duplicate keys (shouldn't happen)
-            ));
-        var allSkeletons = new HashMap<>(skeletonsFromFiles);
-
-        // Process specific classes/symbols
-        if (!classes.isEmpty()) {
-            var classSkeletons = AnalyzerUtil.getSkeletonStrings(analyzer, classes);
-            allSkeletons.putAll(classSkeletons);
+        boolean summariesAdded = false;
+        if (files != null && !files.isEmpty()) {
+            List<String> filePaths = files.stream()
+                                          .map(ProjectFile::toString)
+                                          .collect(Collectors.toList());
+            var fileSummaryFragment = new ContextFragment.SkeletonFragment(this, filePaths, ContextFragment.SummaryType.FILE_SKELETONS); // Pass IContextManager
+            addVirtualFragment(fileSummaryFragment);
+            io.systemOutput("Added dynamic summaries for files: " + joinFilesForOutput(files));
+            summariesAdded = true;
         }
 
-        if (allSkeletons.isEmpty()) {
-            // No skeletons could be generated from the provided files or classes
-            return false;
+        if (classes != null && !classes.isEmpty()) {
+            List<String> classFqns = classes.stream()
+                                            .map(CodeUnit::fqName)
+                                            .collect(Collectors.toList());
+            var classSummaryFragment = new ContextFragment.SkeletonFragment(this, classFqns, ContextFragment.SummaryType.CLASS_SKELETON); // Pass IContextManager
+            addVirtualFragment(classSummaryFragment);
+            io.systemOutput("Added dynamic summaries for classes: " + classFqns.stream().collect(Collectors.joining(", ")));
+            summariesAdded = true;
         }
-
-        // Create and add the fragment
-        var skeletonFragment = new ContextFragment.SkeletonFragment(allSkeletons);
-        addVirtualFragment(skeletonFragment);
-
-        io.systemOutput("Summarized " + joinForOutput(List.of(skeletonFragment)));
+        if (!summariesAdded) {
+             io.toolErrorRaw("No files or classes provided to summarize.");
+             return false;
+        }
         return true;
     }
 
     private String joinForOutput(Collection<? extends ContextFragment> fragments) {
-        return joinFilesForOutput(fragments.stream().flatMap(f -> f.files(project).stream()).collect(Collectors.toSet()));
+        return joinFilesForOutput(fragments.stream().flatMap(f -> f.files().stream()).collect(Collectors.toSet()));
     }
 
     private static String joinFilesForOutput(Collection<? extends BrokkFile> files) {
@@ -1135,7 +1086,7 @@ public class ContextManager implements IContextManager, AutoCloseable {
                     try {
                         if (fragment.isText()) {
                             // Handle text-based fragments
-                            String formatted = fragment.format();
+                            String formatted = fragment.format(); // No analyzer
                             if (formatted != null && !formatted.isBlank()) {
                                 readOnlyTextFragments.append(formatted).append("\n\n");
                             }
@@ -1147,22 +1098,22 @@ public class ContextManager implements IContextManager, AutoCloseable {
                                 var l4jImage = ImageUtil.toL4JImage(fragment.image()); // Assumes ImageUtil helper
                                 readOnlyImageFragments.add(ImageContent.from(l4jImage));
                                 // Add a placeholder in the text part for reference
-                                readOnlyTextFragments.append(fragment.format()).append("\n\n");
-                            } catch (IOException e) {
+                                readOnlyTextFragments.append(fragment.format()).append("\n\n"); // No analyzer
+                            } catch (IOException | InterruptedException e) {
                                 logger.error("Failed to process image fragment for LLM message", e);
-                                removeBadFragment(fragment, e); // Remove problematic fragment
+                                removeBadFragment(fragment, new IOException(e)); // Wrap if InterruptedException
                             }
                         } else {
                             // Handle non-text, non-image fragments (e.g., HistoryFragment, TaskFragment)
                             // Just add their formatted representation as text
-                            String formatted = fragment.format();
+                            String formatted = fragment.format(); // No analyzer
                             if (formatted != null && !formatted.isBlank()) {
                                 readOnlyTextFragments.append(formatted).append("\n\n");
                             }
                         }
-                    } catch (IOException e) {
+                    } catch (IOException | InterruptedException e) {
                         // General formatting error for non-image fragments
-                        removeBadFragment(fragment, e);
+                        removeBadFragment(fragment, new IOException(e)); // Wrap if InterruptedException
                     }
                 });
 
@@ -1201,12 +1152,12 @@ public class ContextManager implements IContextManager, AutoCloseable {
         var editableTextFragments = new StringBuilder();
         c.getEditableFragments().forEach(fragment -> {
             try {
-                String formatted = fragment.format();
+                String formatted = fragment.format(); // No analyzer
                 if (formatted != null && !formatted.isBlank()) {
                     editableTextFragments.append(formatted).append("\n\n");
                 }
-            } catch (IOException e) {
-                removeBadFragment(fragment, e);
+            } catch (IOException | InterruptedException e) {
+                removeBadFragment(fragment, new IOException(e)); // Wrap if InterruptedException
             }
         });
 
@@ -1285,8 +1236,8 @@ public class ContextManager implements IContextManager, AutoCloseable {
         // optional: related classes
         String topClassesText = "";
         if (includeRelatedClasses && getAnalyzerWrapper().isCpg()) {
-            var ac = topContext().buildAutoContext(10);
-            String topClassesRaw = ac.text();
+            var acFragment = topContext().buildAutoContext(10); // Returns SkeletonFragment
+            String topClassesRaw = acFragment.text(); // No analyzer
             if (!topClassesRaw.isBlank()) {
                 topClassesText = """
                                <related_classes>
@@ -1331,7 +1282,7 @@ public class ContextManager implements IContextManager, AutoCloseable {
 
         // --- Process Read-Only Fragments ---
         var summaries = Streams.concat(c.getReadOnlyFragments(), c.getEditableFragments())
-                .map(fragment -> fragment.formatSummary(analyzer))
+                .map(ContextFragment::formatSummary) // No analyzer
                 .filter(s -> !s.isBlank())
                 .collect(Collectors.joining("\n"));
 
@@ -1363,7 +1314,7 @@ public class ContextManager implements IContextManager, AutoCloseable {
         }
 
         ContextFragment.UsageFragment uf = (ContextFragment.UsageFragment) cf;
-        var files = uf.files(project).stream().map(ProjectFile::toString).sorted().collect(Collectors.joining(", "));
+        var files = uf.files().stream().map(ProjectFile::toString).sorted().collect(Collectors.joining(", ")); // No analyzer
         return "[%s] (%s)".formatted(files, uf.description());
     }
 
@@ -1413,17 +1364,17 @@ public class ContextManager implements IContextManager, AutoCloseable {
             return newContext;
         }
 
-        var cf = new ContextFragment.HistoryFragment(newContext.getTaskHistory());
-        int tokenCount = Messages.getApproximateTokens(cf.format());
+        var cf = new ContextFragment.HistoryFragment(this, newContext.getTaskHistory()); // Pass IContextManager
+        int tokenCount = Messages.getApproximateTokens(cf.format()); // HistoryFragment.format uses text()
         if (tokenCount > 32 * 1024) {
             // Show a dialog asking if we should compress the history
             SwingUtilities.invokeLater(() -> {
                 int choice = io.showConfirmDialog("""
                                                   The conversation history is getting long (%,d lines or about %,d tokens).
                                                   Compressing it can improve performance and reduce cost.
-                                                  
+
                                                   Compress history now?
-                                                  """.formatted(cf.format().split("\n").length, tokenCount),
+                                                  """.formatted(cf.format().split("\n").length, tokenCount), // No args for format
                                                   "Compress History?",
                                                   JOptionPane.YES_NO_OPTION,
                                                   JOptionPane.QUESTION_MESSAGE);
@@ -1452,22 +1403,19 @@ public class ContextManager implements IContextManager, AutoCloseable {
         }
     }
 
-    private String formattedOrNull(ContextFragment fragment)
+    private String formattedOrNull(ContextFragment fragment) // Removed IAnalyzer analyzer
     {
         try {
-            return fragment.format();
-        } catch (IOException e) {
-            removeBadFragment(fragment, e);
+            return fragment.format(); // No analyzer
+        } catch (IOException | InterruptedException e) {
+            removeBadFragment(fragment, new IOException(e)); // Wrap if InterruptedException
             return null;
         }
     }
 
-    public void removeBadFragment(ContextFragment f, IOException th)
+    public void removeBadFragment(ContextFragment f, IOException th) // IOException could wrap InterruptedException
     {
         io.toolErrorRaw("Removing unreadable fragment " + f.description());
-        // removeBadFragment takes IOException, but we caught Exception. Wrap it.
-        // Ideally removeBadFragment would take Exception or Throwable.
-        IOException wrapper = (th instanceof IOException ioe) ? ioe : new IOException("Error processing fragment: " + th.getMessage(), th);
         pushContext(c -> c.removeBadFragment(f));
     }
 
@@ -1630,8 +1578,8 @@ public class ContextManager implements IContextManager, AutoCloseable {
                 .filter(ContextFragment::isText)
                 .map(f -> {
                     try {
-                        return f.text();
-                    } catch (IOException e) {
+                        return f.text(); // No analyzer
+                    } catch (IOException | InterruptedException e) {
                         return "";
                     }
                 })
@@ -1810,6 +1758,7 @@ public class ContextManager implements IContextManager, AutoCloseable {
         TaskEntry newEntry = topContext().createTaskEntry(result);
         var finalEntry = compress ? compressHistory(newEntry) : newEntry;
         Future<String> actionFuture = submitSummarizeTaskForConversation(action);
+        // TaskFragment in result.output() is already created with IContextManager by the agent
         var newContext = pushContext(ctx -> ctx.addHistoryEntry(finalEntry, result.output(), actionFuture, originalContents));
         return newContext.getTaskHistory().getLast();
     }

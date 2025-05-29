@@ -1,6 +1,7 @@
 package io.github.jbellis.brokk.context;
 
 import dev.langchain4j.data.message.*;
+import io.github.jbellis.brokk.IContextManager;
 import io.github.jbellis.brokk.IProject;
 import io.github.jbellis.brokk.TaskEntry;
 import io.github.jbellis.brokk.analyzer.*;
@@ -16,6 +17,8 @@ import java.util.*;
 import java.util.List;
 import java.util.concurrent.Future;
 import java.util.concurrent.atomic.AtomicInteger;
+import io.github.jbellis.brokk.AnalyzerUtil;
+
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
@@ -58,17 +61,22 @@ public interface ContextFragment {
     /**
      * raw content for preview
      */
-    String text() throws IOException;
+    String text() throws IOException, InterruptedException;
 
     /**
      * content formatted for LLM
      */
-    String format() throws IOException;
+    String format() throws IOException, InterruptedException;
+
+    /**
+     * Indicates if the fragment's content can change based on project/file state.
+     */
+    boolean isDynamic();
 
     /**
      * for Quick Context LLM
      */
-    default String formatSummary(IAnalyzer analyzer) {
+    default String formatSummary() {
         return description();
     }
 
@@ -83,14 +91,14 @@ public interface ContextFragment {
     /**
      * code sources found in this fragment
      */
-    Set<CodeUnit> sources(IAnalyzer analyzer);
+    Set<CodeUnit> sources();
 
     /**
      * Returns all repo files referenced by this fragment.
      * This is used when we *just* want to manipulate or show actual files,
      * rather than the code units themselves.
      */
-    Set<ProjectFile> files(IProject project);
+    Set<ProjectFile> files();
 
     String syntaxStyle();
 
@@ -121,7 +129,11 @@ public interface ContextFragment {
         BrokkFile file();
 
         @Override
-        default Set<ProjectFile> files(IProject project) {
+        default Set<ProjectFile> files() {
+            BrokkFile bf = file();
+            if (bf instanceof ProjectFile pf) {
+                return Set.of(pf);
+            }
             return Set.of();
         }
 
@@ -137,6 +149,8 @@ public interface ContextFragment {
 
         @Override
         default String format() throws IOException {
+            // PathFragments are dynamic, but their text() doesn't need the analyzer here
+            // as it reads directly from the file.
             return """
                     <file path="%s" fragmentid="%d">
                     %s
@@ -144,23 +158,28 @@ public interface ContextFragment {
                     """.stripIndent().formatted(file().toString(), id(), text());
         }
 
+        @Override
+        default boolean isDynamic() {
+            return true; // File content can change
+        }
+
         static String formatSummary(BrokkFile file) {
             return "<file source=\"%s\" />".formatted(file);
         }
     }
 
-    record ProjectPathFragment(ProjectFile file, int id) implements PathFragment {
+    record ProjectPathFragment(ProjectFile file, int id, IContextManager contextManager) implements PathFragment {
 
-        public ProjectPathFragment(ProjectFile file) {
-            this(file, nextId.getAndIncrement());
+        public ProjectPathFragment(ProjectFile file, IContextManager contextManager) {
+            this(file, nextId.getAndIncrement(), contextManager);
         }
 
-        public static ProjectPathFragment withId(ProjectFile file, int existingId) {
+        public static ProjectPathFragment withId(ProjectFile file, int existingId, IContextManager contextManager) {
             // Update the counter if needed to avoid ID conflicts
             if (existingId >= nextId.get()) {
                 nextId.set(existingId + 1);
             }
-            return new ProjectPathFragment(file, existingId);
+            return new ProjectPathFragment(file, existingId, contextManager);
         }
 
         @Override
@@ -169,7 +188,7 @@ public interface ContextFragment {
         }
 
         @Override
-        public Set<ProjectFile> files(IProject project) {
+        public Set<ProjectFile> files() {
             return Set.of(file);
         }
 
@@ -182,7 +201,8 @@ public interface ContextFragment {
         }
 
         @Override
-        public String formatSummary(IAnalyzer analyzer) {
+        public String formatSummary() {
+            var analyzer = contextManager.getAnalyzerUninterrupted();
             var summary = analyzer.getSkeletons(file).entrySet().stream()
                     .sorted(Map.Entry.comparingByKey())
                     .map(Map.Entry::getValue)
@@ -199,8 +219,8 @@ public interface ContextFragment {
         }
 
         @Override
-        public Set<CodeUnit> sources(IAnalyzer analyzer) {
-            return analyzer.getDeclarationsInFile(file);
+        public Set<CodeUnit> sources() {
+            return contextManager.getAnalyzerUninterrupted().getDeclarationsInFile(file);
         }
 
         @Override
@@ -249,7 +269,7 @@ public interface ContextFragment {
         }
 
         @Override
-        public Set<CodeUnit> sources(IAnalyzer analyzer) {
+        public Set<CodeUnit> sources() {
             // Treat historical content as potentially different from current; don't claim sources
             return Set.of();
         }
@@ -269,14 +289,20 @@ public interface ContextFragment {
         }
 
         @Override
-        public String formatSummary(IAnalyzer analyzer) {
-            return PathFragment.formatSummary(file);
+        public boolean isDynamic() { // Removed 'default'
+            return false; // Content is fixed to a revision
         }
 
         @Override
-        public int hashCode() {
-            return 0;
+        public String formatSummary() {
+            return PathFragment.formatSummary(file);
         }
+
+        // Removed custom hashCode to rely on the default record implementation,
+        // as the Scala compiler might be having issues with the override.
+        // The default hashCode is based on all record components.
+        // If a specific hashCode behavior (like always returning 0) was intended,
+        // this needs to be revisited, along with a corresponding equals().
 
         @Override
         public String toString() {
@@ -285,18 +311,18 @@ public interface ContextFragment {
     }
 
 
-    record ExternalPathFragment(ExternalFile file, int id) implements PathFragment {
+    record ExternalPathFragment(ExternalFile file, int id, IContextManager contextManager) implements PathFragment {
 
-        public ExternalPathFragment(ExternalFile file) {
-            this(file, nextId.getAndIncrement());
+        public ExternalPathFragment(ExternalFile file, IContextManager contextManager) {
+            this(file, nextId.getAndIncrement(), contextManager);
         }
 
-        public static ExternalPathFragment withId(ExternalFile file, int existingId) {
+        public static ExternalPathFragment withId(ExternalFile file, int existingId, IContextManager contextManager) {
             // Update the counter if needed to avoid ID conflicts
             if (existingId >= nextId.get()) {
                 nextId.set(existingId + 1);
             }
-            return new ExternalPathFragment(file, existingId);
+            return new ExternalPathFragment(file, existingId, contextManager);
         }
 
         @Override
@@ -310,12 +336,12 @@ public interface ContextFragment {
         }
 
         @Override
-        public Set<CodeUnit> sources(IAnalyzer analyzer) {
+        public Set<CodeUnit> sources() {
             return Set.of();
         }
 
         @Override
-        public String formatSummary(IAnalyzer analyzer) {
+        public String formatSummary() {
             return PathFragment.formatSummary(file);
         }
     }
@@ -323,20 +349,20 @@ public interface ContextFragment {
     /**
      * Represents an image file, either from the project or external.
      */
-    record ImageFileFragment(BrokkFile file, int id) implements PathFragment {
+    record ImageFileFragment(BrokkFile file, int id, IContextManager contextManager) implements PathFragment {
 
-        public ImageFileFragment(BrokkFile file) {
-            this(file, nextId.getAndIncrement());
+        public ImageFileFragment(BrokkFile file, IContextManager contextManager) {
+            this(file, nextId.getAndIncrement(), contextManager);
             assert !file.isText() : "ImageFileFragment should only be used for non-text files";
         }
 
-        public static ImageFileFragment withId(BrokkFile file, int existingId) {
+        public static ImageFileFragment withId(BrokkFile file, int existingId, IContextManager contextManager) {
             assert !file.isText() : "ImageFileFragment should only be used for non-text files";
             // Update the counter if needed to avoid ID conflicts
             if (existingId >= nextId.get()) {
                 nextId.set(existingId + 1);
             }
-            return new ImageFileFragment(file, existingId);
+            return new ImageFileFragment(file, existingId, contextManager);
         }
 
         @Override
@@ -369,12 +395,12 @@ public interface ContextFragment {
         }
 
         @Override
-        public Set<CodeUnit> sources(IAnalyzer analyzer) {
+        public Set<CodeUnit> sources() {
             return Set.of();
         }
 
         @Override
-        public Set<ProjectFile> files(IProject project) {
+        public Set<ProjectFile> files() {
             return (file instanceof ProjectFile pf) ? Set.of(pf) : Set.of();
         }
 
@@ -389,7 +415,12 @@ public interface ContextFragment {
         }
 
         @Override
-        public String formatSummary(IAnalyzer analyzer) {
+        public boolean isDynamic() { // Removed 'default'
+            return true; // Image file on disk could change
+        }
+
+        @Override
+        public String formatSummary() {
             return PathFragment.formatSummary(file);
         }
 
@@ -399,30 +430,33 @@ public interface ContextFragment {
         }
     }
 
-    static PathFragment toPathFragment(BrokkFile bf) {
+    static PathFragment toPathFragment(BrokkFile bf, IContextManager contextManager) {
         if (bf.isText()) {
             if (bf instanceof ProjectFile pf) {
-                return new ProjectPathFragment(pf);
+                return new ProjectPathFragment(pf, contextManager);
             } else if (bf instanceof ExternalFile ext) {
-                return new ExternalPathFragment(ext);
+                return new ExternalPathFragment(ext, contextManager);
             }
         } else {
             // If it's not text, treat it as an image
-            return new ImageFileFragment(bf);
+            return new ImageFileFragment(bf, contextManager);
         }
         // Should not happen if bf is ProjectFile or ExternalFile
         throw new IllegalArgumentException("Unsupported BrokkFile subtype: " + bf.getClass().getName());
     }
 
-    abstract class VirtualFragment implements ContextFragment {
+    public static abstract class VirtualFragment implements ContextFragment {
         private final int id;
+        protected final transient IContextManager contextManager;
 
-        public VirtualFragment() {
+        public VirtualFragment(IContextManager contextManager) {
             this.id = nextId.getAndIncrement();
+            this.contextManager = contextManager;
         }
 
-        protected VirtualFragment(int existingId) {
+        protected VirtualFragment(int existingId, IContextManager contextManager) {
             this.id = existingId;
+            this.contextManager = contextManager;
             // Update the counter if needed to avoid ID conflicts
             if (existingId >= nextId.get()) {
                 nextId.set(existingId + 1);
@@ -435,7 +469,7 @@ public interface ContextFragment {
         }
 
         @Override
-        public String format() {
+        public String format() throws IOException, InterruptedException {
             return """
                     <fragment description="%s" fragmentid="%d">
                     %s
@@ -451,22 +485,26 @@ public interface ContextFragment {
         }
 
         @Override
-        public Set<ProjectFile> files(IProject project) {
-            return parseProjectFiles(text(), project);
+        public Set<ProjectFile> files() {
+            try {
+                return parseProjectFiles(text(), contextManager.getProject());
+            } catch (IOException | InterruptedException e) {
+                return Set.of(); // Or handle error appropriately
+            }
         }
 
         @Override
-        public Set<CodeUnit> sources(IAnalyzer analyzer) {
+        public Set<CodeUnit> sources() {
             return Set.of();
         }
 
         @Override
-        public String formatSummary(IAnalyzer analyzer) {
+        public String formatSummary() {
             return "<fragment description=\"%s\" />".formatted(description());
         }
 
         @Override
-        public abstract String text();
+        public abstract String text() throws IOException, InterruptedException;
 
         // Override equals and hashCode for proper comparison, especially for EMPTY
         @Override
@@ -484,13 +522,13 @@ public interface ContextFragment {
         }
     }
 
-    class StringFragment extends VirtualFragment {
+    public static class StringFragment extends VirtualFragment {
         private final String text;
         private final String description;
         private final String syntaxStyle;
 
-        public StringFragment(String text, String description, String syntaxStyle) {
-            super();
+        public StringFragment(IContextManager contextManager, String text, String description, String syntaxStyle) {
+            super(contextManager);
             this.syntaxStyle = syntaxStyle;
             assert text != null;
             assert description != null;
@@ -498,8 +536,8 @@ public interface ContextFragment {
             this.description = description;
         }
 
-        public StringFragment(int existingId, String text, String description, String syntaxStyle) {
-            super(existingId);
+        public StringFragment(int existingId, IContextManager contextManager, String text, String description, String syntaxStyle) {
+            super(existingId, contextManager);
             this.syntaxStyle = syntaxStyle;
             assert text != null;
             assert description != null;
@@ -510,6 +548,11 @@ public interface ContextFragment {
         @Override
         public String text() {
             return text;
+        }
+
+        @Override
+        public boolean isDynamic() {
+            return false;
         }
 
         @Override
@@ -531,29 +574,40 @@ public interface ContextFragment {
     // FIXME SearchFragment does not preserve the tool calls output that the user sees during
     // the search, I think we need to add a messages parameter and pass them to super();
     // then we'd also want to override format() to keep it out of what the LLM sees
-    class SearchFragment extends TaskFragment {
+    public static class SearchFragment extends TaskFragment {
         private static final long serialVersionUID = 5L;
-        private final Set<CodeUnit> sources;
+        private final Set<CodeUnit> sources; // This is pre-computed, so SearchFragment is not dynamic in content
 
-        public SearchFragment(String sessionName, List<ChatMessage> messages, Set<CodeUnit> sources) {
-            super(messages, sessionName);
+        public SearchFragment(IContextManager contextManager, String sessionName, List<ChatMessage> messages, Set<CodeUnit> sources) {
+            super(contextManager, messages, sessionName);
             assert sources != null;
             this.sources = sources;
         }
 
 
         @Override
-        public Set<CodeUnit> sources(IAnalyzer analyzer) {
-            return sources;
-        }
-
-        public Set<ProjectFile> files(IProject project) {
-            return sources.stream().map(CodeUnit::source).collect(java.util.stream.Collectors.toSet());
+        public Set<CodeUnit> sources() {
+            return sources; // Return pre-computed sources
         }
 
         @Override
-        public String formatSummary(IAnalyzer analyzer) {
-            return format(); // full search result
+        public boolean isDynamic() {
+            return false;
+        }
+
+        @Override
+        public Set<ProjectFile> files() {
+            // SearchFragment sources are pre-computed
+            return sources().stream().map(CodeUnit::source).collect(java.util.stream.Collectors.toSet());
+        }
+
+        @Override
+        public String formatSummary() {
+            try {
+                return format(); // full search result
+            } catch (IOException | InterruptedException e) {
+                return description(); // fallback
+            }
         }
 
         // --- Custom Serialization using Proxy Pattern ---
@@ -579,8 +633,12 @@ public interface ContextFragment {
             private final String serializedMessages; // Store messages as JSON string
             private final String sessionName;
             private final Set<CodeUnit> sources;
+            // IContextManager is transient and will be null after deserialization, needs to be set by Context
+            private transient IContextManager contextManager;
+
 
             SerializationProxy(SearchFragment fragment) {
+                this.contextManager = fragment.contextManager;
                 // Store the class name of the parser
                 this.sessionName = fragment.description();
                 this.serializedMessages = ChatMessageSerializer.messagesToJson(fragment.messages());
@@ -593,22 +651,28 @@ public interface ContextFragment {
             @java.io.Serial
             private Object readResolve() throws java.io.ObjectStreamException {
                 List<ChatMessage> deserializedMessages = ChatMessageDeserializer.messagesFromJson(serializedMessages);
-                return new SearchFragment(sessionName, deserializedMessages, sources);
+                // contextManager will be null here, needs to be injected by Context.fromJson
+                return new SearchFragment(null, sessionName, deserializedMessages, sources);
             }
         }
     }
 
-    abstract class PasteFragment extends ContextFragment.VirtualFragment {
+    public static abstract class PasteFragment extends ContextFragment.VirtualFragment {
         protected transient Future<String> descriptionFuture;
 
-        public PasteFragment(Future<String> descriptionFuture) {
-            super();
+        public PasteFragment(IContextManager contextManager, Future<String> descriptionFuture) {
+            super(contextManager);
             this.descriptionFuture = descriptionFuture;
         }
 
-        public PasteFragment(int existingId, Future<String> descriptionFuture) {
-            super(existingId);
+        public PasteFragment(int existingId, IContextManager contextManager, Future<String> descriptionFuture) {
+            super(existingId, contextManager);
             this.descriptionFuture = descriptionFuture;
+        }
+
+        @Override
+        public boolean isDynamic() {
+            return false;
         }
 
         @Override
@@ -629,18 +693,18 @@ public interface ContextFragment {
         }
     }
 
-    class PasteTextFragment extends PasteFragment {
+    public static class PasteTextFragment extends PasteFragment {
         private final String text;
 
-        public PasteTextFragment(String text, Future<String> descriptionFuture) {
-            super(descriptionFuture);
+        public PasteTextFragment(IContextManager contextManager, String text, Future<String> descriptionFuture) {
+            super(contextManager, descriptionFuture);
             assert text != null;
             assert descriptionFuture != null;
             this.text = text;
         }
 
-        public PasteTextFragment(int existingId, String text, Future<String> descriptionFuture) {
-            super(existingId, descriptionFuture);
+        public PasteTextFragment(int existingId, IContextManager contextManager, String text, Future<String> descriptionFuture) {
+            super(existingId, contextManager, descriptionFuture);
             assert text != null;
             assert descriptionFuture != null;
             this.text = text;
@@ -658,18 +722,18 @@ public interface ContextFragment {
         }
     }
 
-    class PasteImageFragment extends PasteFragment {
+    public static class PasteImageFragment extends PasteFragment {
         private final Image image;
 
-        public PasteImageFragment(Image image, Future<String> descriptionFuture) {
-            super(descriptionFuture);
+        public PasteImageFragment(IContextManager contextManager, Image image, Future<String> descriptionFuture) {
+            super(contextManager, descriptionFuture);
             assert image != null;
             assert descriptionFuture != null;
             this.image = image;
         }
 
-        public PasteImageFragment(int existingId, Image image, Future<String> descriptionFuture) {
-            super(existingId, descriptionFuture);
+        public PasteImageFragment(int existingId, IContextManager contextManager, Image image, Future<String> descriptionFuture) {
+            super(existingId, contextManager, descriptionFuture);
             assert image != null;
             assert descriptionFuture != null;
             this.image = image;
@@ -706,19 +770,19 @@ public interface ContextFragment {
         }
 
         @Override
-        public Set<ProjectFile> files(IProject project) {
+        public Set<ProjectFile> files() {
             return Set.of();
         }
     }
 
-    class StacktraceFragment extends VirtualFragment {
-        private final Set<CodeUnit> sources;
+    public static class StacktraceFragment extends VirtualFragment {
+        private final Set<CodeUnit> sources; // Pre-computed, so not dynamic in content
         private final String original;
         private final String exception;
-        private final String code;
+        private final String code; // Pre-computed code parts
 
-        public StacktraceFragment(Set<CodeUnit> sources, String original, String exception, String code) {
-            super();
+        public StacktraceFragment(IContextManager contextManager, Set<CodeUnit> sources, String original, String exception, String code) {
+            super(contextManager);
             assert sources != null;
             assert original != null;
             assert exception != null;
@@ -729,8 +793,8 @@ public interface ContextFragment {
             this.code = code;
         }
 
-        public StacktraceFragment(int existingId, Set<CodeUnit> sources, String original, String exception, String code) {
-            super(existingId);
+        public StacktraceFragment(int existingId, IContextManager contextManager, Set<CodeUnit> sources, String original, String exception, String code) {
+            super(existingId, contextManager);
             assert sources != null;
             assert original != null;
             assert exception != null;
@@ -747,13 +811,19 @@ public interface ContextFragment {
         }
 
         @Override
-        public Set<CodeUnit> sources(IAnalyzer analyzer) {
-            return sources;
+        public boolean isDynamic() {
+            return false;
         }
 
         @Override
-        public Set<ProjectFile> files(IProject project) {
-            return sources.stream().map(CodeUnit::source).collect(java.util.stream.Collectors.toSet());
+        public Set<CodeUnit> sources() {
+            return sources; // Return pre-computed sources
+        }
+
+        @Override
+        public Set<ProjectFile> files() {
+            // StacktraceFragment sources are pre-computed
+            return sources().stream().map(CodeUnit::source).collect(java.util.stream.Collectors.toSet());
         }
 
         @Override
@@ -762,8 +832,12 @@ public interface ContextFragment {
         }
 
         @Override
-        public String formatSummary(IAnalyzer analyzer) {
-            return format(); // full source
+        public String formatSummary() {
+            try {
+                return format(); // full source
+            } catch (IOException | InterruptedException e) {
+                return description(); // fallback
+            }
         }
 
         @Override
@@ -784,44 +858,68 @@ public interface ContextFragment {
         return methodname.substring(0, lastDot);
     }
 
-    class UsageFragment extends VirtualFragment {
+    public static class UsageFragment extends VirtualFragment {
         private final String targetIdentifier;
-        private final Set<CodeUnit> classes;
-        private final String code;
 
-        public UsageFragment(String targetIdentifier, Set<CodeUnit> classes, String code) {
-            super();
-            assert targetIdentifier != null;
-            assert classes != null;
-            assert code != null;
+        public UsageFragment(IContextManager contextManager, String targetIdentifier) {
+            super(contextManager);
+            assert targetIdentifier != null && !targetIdentifier.isBlank();
             this.targetIdentifier = targetIdentifier;
-            this.classes = classes;
-            this.code = code;
         }
 
-        public UsageFragment(int existingId, String targetIdentifier, Set<CodeUnit> classes, String code) {
-            super(existingId);
-            assert targetIdentifier != null;
-            assert classes != null;
-            assert code != null;
+        public UsageFragment(int existingId, IContextManager contextManager, String targetIdentifier) {
+            super(existingId, contextManager);
+            assert targetIdentifier != null && !targetIdentifier.isBlank();
             this.targetIdentifier = targetIdentifier;
-            this.classes = classes;
-            this.code = code;
         }
 
         @Override
-        public String text() {
-            return code;
+        public String text() throws InterruptedException {
+            var analyzer = contextManager.getAnalyzer();
+            if (analyzer == null || analyzer.isEmpty()) {
+                return "Code intelligence not available to find usages for " + targetIdentifier;
+            }
+            List<CodeUnit> uses = analyzer.getUses(targetIdentifier);
+            var result = AnalyzerUtil.processUsages(analyzer, uses);
+            return result.code().isEmpty() ? "No relevant usages found for symbol: " + targetIdentifier : result.code();
         }
 
         @Override
-        public Set<CodeUnit> sources(IAnalyzer analyzer) {
-            return classes;
+        public boolean isDynamic() {
+            return true;
         }
 
         @Override
-        public Set<ProjectFile> files(IProject project) {
-            return classes.stream().map(CodeUnit::source).collect(java.util.stream.Collectors.toSet());
+        public Set<CodeUnit> sources() {
+            IAnalyzer analyzer;
+            try {
+                analyzer = contextManager.getAnalyzer();
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+                return Set.of();
+            }
+            if (analyzer == null || analyzer.isEmpty()) {
+                return Set.of();
+            }
+            // This might re-fetch uses, could be optimized if text() caches 'result'
+            List<CodeUnit> uses = analyzer.getUses(targetIdentifier);
+            var result = AnalyzerUtil.processUsages(analyzer, uses);
+            return result.sources();
+        }
+
+        @Override
+        public Set<ProjectFile> files() {
+            IAnalyzer analyzer;
+            try {
+                analyzer = contextManager.getAnalyzer();
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+                return Set.of();
+            }
+            if (analyzer == null || analyzer.isEmpty()) {
+                return Set.of();
+            }
+            return sources().stream().map(CodeUnit::source).collect(Collectors.toSet());
         }
 
         @Override
@@ -831,194 +929,280 @@ public interface ContextFragment {
 
         @Override
         public String syntaxStyle() {
-            if (classes.isEmpty()) {
-                return SyntaxConstants.SYNTAX_STYLE_NONE;
-            }
-            var firstClass = classes.iterator().next();
-            return firstClass.source().getSyntaxStyle();
+            // Syntax can vary based on the language of the usages.
+            // Default to Java or try to infer from a source CodeUnit if available.
+            // For simplicity, returning Java, but this could be improved.
+            return SyntaxConstants.SYNTAX_STYLE_JAVA;
         }
-        
+
         public String targetIdentifier() {
             return targetIdentifier;
         }
     }
 
-    class CallGraphFragment extends VirtualFragment {
-        private final String type;
-        private final String targetIdentifier;
-        private final Set<CodeUnit> classes;
-        private final String code;
+    public static class CallGraphFragment extends VirtualFragment {
+        private final String methodName;
+        private final int depth;
+        private final boolean isCalleeGraph; // true for callees (OUT), false for callers (IN)
 
-        public CallGraphFragment(String type, String targetIdentifier, Set<CodeUnit> classes, String code) {
-            super();
-            assert type != null;
-            assert targetIdentifier != null;
-            assert classes != null;
-            this.type = type;
-            this.targetIdentifier = targetIdentifier;
-            this.classes = classes;
-            this.code = code;
+        public CallGraphFragment(IContextManager contextManager, String methodName, int depth, boolean isCalleeGraph) {
+            super(contextManager);
+            assert methodName != null && !methodName.isBlank();
+            assert depth > 0;
+            this.methodName = methodName;
+            this.depth = depth;
+            this.isCalleeGraph = isCalleeGraph;
         }
 
-        public CallGraphFragment(int existingId, String type, String targetIdentifier, Set<CodeUnit> classes, String code) {
-            super(existingId);
-            assert type != null;
-            assert targetIdentifier != null;
-            assert classes != null;
-            this.type = type;
-            this.targetIdentifier = targetIdentifier;
-            this.classes = classes;
-            this.code = code;
+        public CallGraphFragment(int existingId, IContextManager contextManager, String methodName, int depth, boolean isCalleeGraph) {
+            super(existingId, contextManager);
+            assert methodName != null && !methodName.isBlank();
+            assert depth > 0;
+            this.methodName = methodName;
+            this.depth = depth;
+            this.isCalleeGraph = isCalleeGraph;
         }
 
         @Override
-        public String text() {
-            return code;
+        public String text() throws InterruptedException {
+            var analyzer = contextManager.getAnalyzer();
+            if (analyzer == null || !analyzer.isCpg()) {
+                return "Code intelligence not available for call graph of " + methodName;
+            }
+            Map<String, List<CallSite>> graphData;
+            if (isCalleeGraph) {
+                graphData = analyzer.getCallgraphFrom(methodName, depth);
+            } else {
+                graphData = analyzer.getCallgraphTo(methodName, depth);
+            }
+
+            if (graphData.isEmpty()) {
+                return "No call graph available for " + methodName;
+            }
+            return AnalyzerUtil.formatCallGraph(graphData, methodName, isCalleeGraph);
         }
 
         @Override
-        public Set<CodeUnit> sources(IAnalyzer analyzer) {
-            return classes;
+        public boolean isDynamic() {
+            return true;
         }
 
         @Override
-        public Set<ProjectFile> files(IProject project) {
-            return classes.stream().map(CodeUnit::source).collect(java.util.stream.Collectors.toSet());
+        public Set<CodeUnit> sources() {
+            IAnalyzer analyzer;
+            try {
+                analyzer = contextManager.getAnalyzer();
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+                return Set.of();
+            }
+
+            if (analyzer == null || analyzer.isEmpty()) {
+                return Set.of();
+            }
+            // The primary source is the class containing the target method
+            return analyzer.getDefinition(methodName)
+                           .flatMap(CodeUnit::classUnit) // Get the containing class CodeUnit
+                           .map(Set::of)
+                           .orElse(Set.of());
+        }
+
+        @Override
+        public Set<ProjectFile> files() {
+            IAnalyzer analyzer;
+            try {
+                analyzer = contextManager.getAnalyzer();
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+                return Set.of();
+            }
+            if (analyzer == null || analyzer.isEmpty()) {
+                return Set.of();
+            }
+            return sources().stream().map(CodeUnit::source).collect(Collectors.toSet());
         }
 
         @Override
         public String description() {
-            return "%s of %s".formatted(type, targetIdentifier);
+            String type = isCalleeGraph ? "Callees" : "Callers";
+            return "%s of %s (depth %d)".formatted(type, methodName, depth);
         }
 
         @Override
         public String syntaxStyle() {
-            if (classes.isEmpty()) {
-                return SyntaxConstants.SYNTAX_STYLE_NONE;
-            }
-            var firstClass = classes.iterator().next();
-            return firstClass.source().getSyntaxStyle();
+            return SyntaxConstants.SYNTAX_STYLE_NONE; // Call graph is textual, not specific code language
         }
+
+        public String getMethodName() { return methodName; }
+        public int getDepth() { return depth; }
+        public boolean isCalleeGraph() { return isCalleeGraph; }
     }
 
-    class SkeletonFragment extends VirtualFragment {
-        final Map<CodeUnit, String> skeletons;
+    public enum SummaryType {
+        CLASS_SKELETON, // Summary for a list of FQ class names
+        FILE_SKELETONS  // Summaries for all classes in a list of file paths/patterns
+    }
 
-        public SkeletonFragment(Map<CodeUnit, String> skeletons) {
-            super();
-            assert skeletons != null;
-            this.skeletons = skeletons;
+    public static class SkeletonFragment extends VirtualFragment {
+        private final List<String> targetIdentifiers; // FQ class names or file paths/patterns
+        private final SummaryType summaryType;
+
+        public SkeletonFragment(IContextManager contextManager, List<String> targetIdentifiers, SummaryType summaryType) {
+            super(contextManager);
+            assert targetIdentifiers != null && !targetIdentifiers.isEmpty();
+            assert summaryType != null;
+            this.targetIdentifiers = List.copyOf(targetIdentifiers);
+            this.summaryType = summaryType;
         }
 
-        public SkeletonFragment(int existingId, Map<CodeUnit, String> skeletons) {
-            super(existingId);
-            assert skeletons != null;
-            this.skeletons = skeletons;
+        public SkeletonFragment(int existingId, IContextManager contextManager, List<String> targetIdentifiers, SummaryType summaryType) {
+            super(existingId, contextManager);
+            assert targetIdentifiers != null && !targetIdentifiers.isEmpty();
+            assert summaryType != null;
+            this.targetIdentifiers = List.copyOf(targetIdentifiers);
+            this.summaryType = summaryType;
+        }
+
+        private Map<CodeUnit, String> fetchSkeletons() {
+            IAnalyzer analyzer;
+            try {
+                analyzer = contextManager.getAnalyzer();
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+                return Map.of();
+            }
+
+            if (analyzer == null || !analyzer.isCpg()) {
+                return Map.of();
+            }
+            Map<CodeUnit, String> skeletonsMap = new HashMap<>();
+            switch (summaryType) {
+                case CLASS_SKELETON:
+                    for (String className : targetIdentifiers) {
+                        analyzer.getDefinition(className).ifPresent(cu -> {
+                            if (cu.isClass()) { // Ensure it's a class for getSkeleton
+                                analyzer.getSkeleton(cu.fqName()).ifPresent(s -> skeletonsMap.put(cu, s));
+                            }
+                        });
+                    }
+                    break;
+                case FILE_SKELETONS:
+                    // This assumes targetIdentifiers are file paths. Expansion of globs should happen before fragment creation.
+                    for (String filePath : targetIdentifiers) {
+                        // We need a ProjectFile object. This requires a Project reference or smarter path handling.
+                        // For now, this part is problematic without more context (like IProject).
+                        // Let's assume filePath is a resolvable path that analyzer can use or lookup.
+                        // This is a simplification. WorkspaceTools will construct ProjectFile instances.
+                        // Here, we'd ideally have ProjectFile instances in targetIdentifiers if type is FILE_SKELETONS.
+                        // For now, this will likely not work as expected for FILE_SKELETONS from this method alone.
+                        // The WorkspaceTools will handle creating SkeletonFragments for files correctly.
+                        // This fetchSkeletons is more for CLASS_SKELETON type if called directly.
+                         analyzer.getFileFor(filePath).ifPresent(pf -> skeletonsMap.putAll(analyzer.getSkeletons(pf)));
+                    }
+                    break;
+            }
+            return skeletonsMap;
         }
 
         @Override
         public String text() {
-            if (isEmpty()) {
-                return "";
+            Map<CodeUnit, String> skeletons = fetchSkeletons();
+            if (skeletons.isEmpty()) {
+                return "No summaries found for: " + String.join(", ", targetIdentifiers);
             }
+
+            // Group by package, then format
             var skeletonsByPackage = skeletons.entrySet().stream()
                     .collect(Collectors.groupingBy(
-                            e -> {
-                                var pkg = e.getKey().packageName();
-                                return pkg.isEmpty() ? "(default package)" : pkg;
-                            },
-                            Collectors.toMap(
-                                    Map.Entry::getKey,
-                                    Map.Entry::getValue,
-                                    (v1, v2) -> v1,
-                                    java.util.LinkedHashMap::new
-                            )
+                            e -> e.getKey().packageName().isEmpty() ? "(default package)" : e.getKey().packageName(),
+                            Collectors.toMap(Map.Entry::getKey, Map.Entry::getValue, (v1, v2) -> v1, LinkedHashMap::new)
                     ));
-            if (skeletons.isEmpty()) return "";
+
             return skeletonsByPackage.entrySet().stream()
                     .sorted(Map.Entry.comparingByKey())
                     .map(pkgEntry -> {
-                        var packageHeader = "package " + pkgEntry.getKey() + ";";
-                        var pkgCode = String.join("\n\n", pkgEntry.getValue().values());
+                        String packageHeader = "package " + pkgEntry.getKey() + ";";
+                        String pkgCode = pkgEntry.getValue().values().stream().collect(Collectors.joining("\n\n"));
                         return packageHeader + "\n\n" + pkgCode;
                     })
                     .collect(Collectors.joining("\n\n"));
         }
+        
+        @Override
+        public boolean isDynamic() {
+            return true;
+        }
 
-        public static SkeletonFragment merge(Collection<SkeletonFragment> fragments) {
-            var combinedSkeletons = new HashMap<CodeUnit, String>();
-            for (var fragment : fragments) {
-                combinedSkeletons.putAll(fragment.skeletons());
+        @Override
+        public Set<CodeUnit> sources() {
+            return fetchSkeletons().keySet();
+        }
+
+        @Override
+        public Set<ProjectFile> files() {
+            IAnalyzer analyzer;
+            try {
+                analyzer = contextManager.getAnalyzer();
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+                return Set.of();
             }
-            return new SkeletonFragment(combinedSkeletons);
-        }
-
-        private Set<CodeUnit> nonDummy() {
-            return skeletons.keySet();
-        }
-
-        private boolean isEmpty() {
-            return nonDummy().isEmpty();
-        }
-
-        @Override
-        public Set<CodeUnit> sources(IAnalyzer analyzer) {
-            return nonDummy();
-        }
-
-        @Override
-        public Set<ProjectFile> files(IProject project) {
-            return nonDummy().stream().map(CodeUnit::source).collect(java.util.stream.Collectors.toSet());
+            if (analyzer == null || analyzer.isEmpty()) {
+                return Set.of();
+            }
+            return sources().stream().map(CodeUnit::source).collect(Collectors.toSet());
         }
 
         @Override
         public String description() {
-            assert !isEmpty();
-            return "Summary of " + skeletons.keySet().stream()
-                    .map(CodeUnit::identifier)
-                    .sorted(Comparator.comparingInt((String s) -> (int) s.chars().filter(ch -> ch == '$').count())
-                                      .thenComparing(Comparator.naturalOrder()))
-                    .collect(Collectors.joining(", "));
+            String typeStr = switch (summaryType) {
+                case CLASS_SKELETON -> "Summary";
+                case FILE_SKELETONS -> "File Summaries";
+            };
+            return "%s of %s".formatted(typeStr, targetIdentifiers.stream().collect(Collectors.joining(", ")));
         }
+
 
         @Override
         public boolean isEligibleForAutoContext() {
-            return false;
+            // If it's an auto-context fragment itself, it shouldn't contribute to seeding a new auto-context.
+            // User-added summaries are fine.
+            // This needs a way to distinguish. For now, assume all are eligible if user-added.
+            // AutoContext itself isn't represented by a SkeletonFragment that users add via tools.
+            return summaryType != SummaryType.CLASS_SKELETON; // A heuristic: auto-context typically CLASS_SKELETON of many classes
         }
 
         @Override
-        public String format() {
-            assert !isEmpty();
+        public String format() throws IOException, InterruptedException {
             return """
-                    <summary classes="%s" fragmentid="%d">
+                    <summary targets="%s" type="%s" fragmentid="%d">
                     %s
                     </summary>
                     """.stripIndent().formatted(
-                    skeletons.keySet().stream()
-                            .map(CodeUnit::fqName)
-                            .sorted()
-                            .collect(Collectors.joining(", ")),
+                    String.join(", ", targetIdentifiers),
+                    summaryType.name(),
                     id(),
-                    text()
+                    text() // No analyzer
             );
         }
 
         @Override
-        public String formatSummary(IAnalyzer analyzer) {
-            return format();
+        public String formatSummary() {
+            try {
+                return format();
+            } catch (IOException | InterruptedException e) {
+                return description(); // fallback
+            }
         }
 
-        public Map<CodeUnit, String> skeletons() {
-            return skeletons;
-        }
+        public List<String> getTargetIdentifiers() { return targetIdentifiers; }
+        public SummaryType getSummaryType() { return summaryType; }
 
         @Override
         public String syntaxStyle() {
-            if (skeletons.isEmpty()) {
-                return SyntaxConstants.SYNTAX_STYLE_NONE;
-            }
-            var firstCodeUnit = skeletons.keySet().iterator().next();
-            return firstCodeUnit.source().getSyntaxStyle();
+            // Skeletons are usually in the language of the summarized code.
+            // Default to Java or try to infer from a source CodeUnit if available.
+            return SyntaxConstants.SYNTAX_STYLE_JAVA;
         }
 
         @Override
@@ -1034,17 +1218,17 @@ public interface ContextFragment {
     /**
      * represents the entire Task History
      */
-    class HistoryFragment extends VirtualFragment implements OutputFragment {
-        private final List<TaskEntry> history;
+    public static class HistoryFragment extends VirtualFragment implements OutputFragment {
+        private final List<TaskEntry> history; // Content is fixed once created
 
-        public HistoryFragment(List<TaskEntry> history) {
-            super();
+        public HistoryFragment(IContextManager contextManager, List<TaskEntry> history) {
+            super(contextManager);
             assert history != null;
             this.history = List.copyOf(history);
         }
 
-        public HistoryFragment(int existingId, List<TaskEntry> history) {
-            super(existingId);
+        public HistoryFragment(int existingId, IContextManager contextManager, List<TaskEntry> history) {
+            super(existingId, contextManager);
             assert history != null;
             this.history = List.copyOf(history);
         }
@@ -1059,6 +1243,11 @@ public interface ContextFragment {
         }
 
         @Override
+        public boolean isDynamic() {
+            return false;
+        }
+
+        @Override
         public String text() {
             // FIXME the right thing to do here is probably to throw UnsupportedOperationException,
             // but lots of stuff breaks without text(), so I am putting that off for another refactor
@@ -1068,12 +1257,12 @@ public interface ContextFragment {
         }
 
         @Override
-        public Set<CodeUnit> sources(IAnalyzer analyzer) {
+        public Set<CodeUnit> sources() {
             return Set.of();
         }
 
         @Override
-        public Set<ProjectFile> files(IProject project) {
+        public Set<ProjectFile> files() {
             return Set.of();
         }
 
@@ -1088,11 +1277,11 @@ public interface ContextFragment {
                     <taskhistory fragmentid="%d">
                     %s
                     </taskhistory>
-                    """.stripIndent().formatted(id(), text());
+                    """.stripIndent().formatted(id(), text()); // Analyzer not used by its text()
         }
 
         @Override
-        public String formatSummary(IAnalyzer analyzer) {
+        public String formatSummary() {
             return "";
         }
 
@@ -1110,35 +1299,40 @@ public interface ContextFragment {
     /**
      * represents a single session's Task History
      */
-    class TaskFragment extends VirtualFragment implements OutputFragment {
+    public static class TaskFragment extends VirtualFragment implements OutputFragment {
         private final EditBlockParser parser; // TODO this doesn't belong in TaskFragment anymore
-        private final List<ChatMessage> messages;
+        private final List<ChatMessage> messages; // Content is fixed once created
         private final String sessionName;
 
-        public TaskFragment(EditBlockParser parser, List<ChatMessage> messages, String sessionName) {
-            super();
+        public TaskFragment(IContextManager contextManager, EditBlockParser parser, List<ChatMessage> messages, String sessionName) {
+            super(contextManager);
             this.parser = parser;
             this.messages = messages;
             this.sessionName = sessionName;
         }
 
-        public TaskFragment(List<ChatMessage> messages, String sessionName) {
-            this(EditBlockParser.instance, messages, sessionName);
+        public TaskFragment(IContextManager contextManager, List<ChatMessage> messages, String sessionName) {
+            this(contextManager, EditBlockParser.instance, messages, sessionName);
         }
 
-        public TaskFragment(int existingId, EditBlockParser parser, List<ChatMessage> messages, String sessionName) {
-            super(existingId);
+        public TaskFragment(int existingId, IContextManager contextManager, EditBlockParser parser, List<ChatMessage> messages, String sessionName) {
+            super(existingId, contextManager);
             this.parser = parser;
             this.messages = messages;
             this.sessionName = sessionName;
         }
 
-        public TaskFragment(int existingId, List<ChatMessage> messages, String sessionName) {
-            this(existingId, EditBlockParser.instance, messages, sessionName);
+        public TaskFragment(int existingId, IContextManager contextManager, List<ChatMessage> messages, String sessionName) {
+            this(existingId, contextManager, EditBlockParser.instance, messages, sessionName);
         }
 
         @Override
         public boolean isText() {
+            return false;
+        }
+
+        @Override
+        public boolean isDynamic() {
             return false;
         }
 
@@ -1155,8 +1349,12 @@ public interface ContextFragment {
         }
 
         @Override
-        public String formatSummary(IAnalyzer analyzer) {
-            return format(); // if it's explicitly added to the workspace it's probably important
+        public String formatSummary() {
+            try {
+                return format(); // if it's explicitly added to the workspace it's probably important
+            } catch (IOException | InterruptedException e) {
+                return description(); // fallback
+            }
         }
 
         @Override

@@ -156,7 +156,7 @@ public final class ContextMenuUtils {
         JMenuItem showContentsItem = new JMenuItem("Show Contents");
         showContentsItem.addActionListener(e1 -> {
             if (targetRef.getRepoFile() != null) {
-                chrome.openFragmentPreview(new ContextFragment.ProjectPathFragment(targetRef.getRepoFile()));
+                chrome.openFragmentPreview(new ContextFragment.ProjectPathFragment(targetRef.getRepoFile(), cm));
             }
         });
         menu.add(showContentsItem);

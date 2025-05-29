@@ -172,8 +172,11 @@ public class ContextAgent {
                 }
                 totalTokens += Messages.getApproximateTokens(content);
             } else if (fragment instanceof ContextFragment.SkeletonFragment skeletonFragment) {
-                String skeletonsText = String.join("\n", skeletonFragment.skeletons().values());
-                totalTokens += Messages.getApproximateTokens(skeletonsText);
+                // SkeletonFragment.text() computes the combined skeletons.
+                // This might re-fetch if called multiple times, but for token calculation it's acceptable once.
+                // ContextFragment.SkeletonFragment.text() does not throw IOException or InterruptedException
+                // as per its current implementation (it catches InterruptedException internally from getAnalyzer).
+                totalTokens += Messages.getApproximateTokens(skeletonFragment.text());
             } else {
                 logger.warn("Unhandled ContextFragment type for token calculation: {}", fragment.getClass());
             }
@@ -203,14 +206,30 @@ public class ContextAgent {
         var skeletonFragments = grouped.getOrDefault(ContextFragment.SkeletonFragment.class, List.of()).stream()
                 .map(ContextFragment.SkeletonFragment.class::cast)
                 .toList();
+
         if (!skeletonFragments.isEmpty()) {
-            // Merge multiple SkeletonFragments into one before adding
-            var combinedSkeletons = skeletonFragments.stream()
-                    .flatMap(sf -> sf.skeletons().entrySet().stream())
-                    .collect(Collectors.toMap(Map.Entry::getKey, Map.Entry::getValue, (v1, v2) -> v1)); // Keep first on duplicate key
-            if (!combinedSkeletons.isEmpty()) {
-                debug("Adding combined SkeletonFragment for classes: {}", combinedSkeletons.keySet().stream().map(CodeUnit::identifier).collect(Collectors.joining(", ")));
-                contextManager.addVirtualFragment(new ContextFragment.SkeletonFragment(combinedSkeletons));
+            // For CLASS_SKELETON, collect all target FQNs.
+            // For FILE_SKELETONS, collect all target file paths.
+            // Create one fragment per type.
+            List<String> classTargetFqns = skeletonFragments.stream()
+                    .filter(sf -> sf.getSummaryType() == ContextFragment.SummaryType.CLASS_SKELETON)
+                    .flatMap(sf -> sf.getTargetIdentifiers().stream())
+                    .distinct()
+                    .toList();
+
+            List<String> fileTargetPaths = skeletonFragments.stream()
+                    .filter(sf -> sf.getSummaryType() == ContextFragment.SummaryType.FILE_SKELETONS)
+                    .flatMap(sf -> sf.getTargetIdentifiers().stream())
+                    .distinct()
+                    .toList();
+
+            if (!classTargetFqns.isEmpty()) {
+                debug("Adding combined SkeletonFragment for classes: {}", classTargetFqns);
+                contextManager.addVirtualFragment(new ContextFragment.SkeletonFragment(contextManager, classTargetFqns, ContextFragment.SummaryType.CLASS_SKELETON));
+            }
+            if (!fileTargetPaths.isEmpty()) {
+                debug("Adding combined SkeletonFragment for files: {}", fileTargetPaths);
+                contextManager.addVirtualFragment(new ContextFragment.SkeletonFragment(contextManager, fileTargetPaths, ContextFragment.SummaryType.FILE_SKELETONS));
             }
         }
 
@@ -268,7 +287,9 @@ public class ContextAgent {
         }
 
         var prunedFiles = filenameResult.fragments.stream()
-                .flatMap(f -> f.files(contextManager.getProject()).stream())
+                .flatMap(f -> f.files().stream()) // No analyzer
+                .filter(ProjectFile.class::isInstance) // Ensure it's a ProjectFile
+                .map(ProjectFile.class::cast)       // Cast to ProjectFile
                 .toList();
 
         if (prunedFiles.isEmpty()) {
@@ -308,14 +329,26 @@ public class ContextAgent {
                                                       boolean allowSkipPruning) throws InterruptedException {
         Map<CodeUnit, String> rawSummaries;
         var ctx = contextManager.topContext();
-        var codeInWorkspace = ctx.allFragments().flatMap(f -> f.sources(analyzer).stream()).findAny().isPresent();
+        var codeInWorkspace = ctx.allFragments().flatMap(f -> f.sources().stream()).findAny().isPresent();
 
         if (codeInWorkspace && !deepScan) {
             // If the workspace isn't empty, use pagerank candidates for Quick context
             var ac = contextManager.topContext().buildAutoContext(50);
-            debug("Non-empty workspace; using pagerank candidates {}",
-                  ac.skeletons().keySet().stream().map(CodeUnit::identifier).collect(Collectors.joining(",")));
-            rawSummaries = ac.skeletons();
+            // fetchSkeletons() is private in SkeletonFragment. We need to use its sources() or text().
+            // For now, let's get the target FQNs and then fetch summaries for them.
+            List<String> targetFqns = ac.getTargetIdentifiers();
+            debug("Non-empty workspace; using pagerank candidates (target FQNs: {})", String.join(",", targetFqns));
+
+            // Create a temporary map for rawSummaries from these targetFqns
+            Map<CodeUnit, String> tempSummaries = new HashMap<>();
+            for (String fqn : targetFqns) {
+                analyzer.getDefinition(fqn).ifPresent(cu -> {
+                    if (cu.isClass()) {
+                        analyzer.getSkeleton(fqn).ifPresent(skel -> tempSummaries.put(cu, skel));
+                    }
+                });
+            }
+            rawSummaries = tempSummaries;
         } else {
             // Scan all the files
             rawSummaries = getProjectSummaries(filesToConsider);
@@ -326,7 +359,7 @@ public class ContextAgent {
 
         boolean withinLimit = deepScan || rawSummaries.size() <= QUICK_TOPK;
         if (allowSkipPruning && summaryTokens <= skipPruningBudget && withinLimit) {
-            var fragments = skeletonPerSummary(rawSummaries);
+            var fragments = skeletonPerSummary(contextManager, rawSummaries);
             return new RecommendationResult(true, fragments, "Using all summaries within budget and limits (skip pruning).");
         }
 
@@ -373,19 +406,22 @@ public class ContextAgent {
               recommendedFiles.size(), recommendedContentTokens, totalRecommendedTokens);
 
         // Create fragments
-        var skeletonFragments = skeletonPerSummary(recommendedSummaries);
+        var skeletonFragments = skeletonPerSummary(contextManager, recommendedSummaries);
         var pathFragments = recommendedFiles.stream()
-                .map(f -> (ContextFragment) new ContextFragment.ProjectPathFragment(f))
+                .map(f -> (ContextFragment) new ContextFragment.ProjectPathFragment(f, contextManager))
                 .toList();
         var combinedStream = Stream.concat(skeletonFragments.stream(), pathFragments.stream());
         // deduplicate for Quick context
         if (!deepScan) {
             var project = contextManager.getProject();
             var existingFiles = contextManager.topContext().allFragments()
-                    .flatMap(f -> f.files(project).stream())
+                    .flatMap(f -> f.files().stream()) 
                     .collect(Collectors.toSet());
             combinedStream = combinedStream
-                    .filter(f -> !existingFiles.containsAll(f.files(project)));
+                    .filter(f -> {
+                        Set<ProjectFile> fragmentFiles = f.files();
+                        return fragmentFiles.stream().noneMatch(existingFiles::contains);
+                    });
         }
         var combinedFragments = combinedStream.toList();
 
@@ -395,9 +431,9 @@ public class ContextAgent {
     /**
      * one SkeletonFragment per summary so ArchitectAgent can easily ask user which ones to include
      */
-    private static @NotNull List<ContextFragment> skeletonPerSummary(Map<CodeUnit, String> relevantSummaries) {
+    private static @NotNull List<ContextFragment> skeletonPerSummary(IContextManager contextManager, Map<CodeUnit, String> relevantSummaries) {
         return relevantSummaries.entrySet().stream()
-                .map(entry -> (ContextFragment) new ContextFragment.SkeletonFragment(Map.of(entry.getKey(), entry.getValue())))
+                .map(entry -> (ContextFragment) new ContextFragment.SkeletonFragment(contextManager, List.of(entry.getKey().fqName()), ContextFragment.SummaryType.CLASS_SKELETON))
                 .toList();
     }
 
@@ -442,8 +478,9 @@ public class ContextAgent {
 
     private boolean isClassInWorkspace(CodeUnit cls) {
         return contextManager.topContext().allFragments()
-                .anyMatch(f -> f instanceof ContextFragment.SkeletonFragment &&
-                        ((ContextFragment.SkeletonFragment)f).skeletons().containsKey(cls));
+                .anyMatch(f -> f instanceof ContextFragment.SkeletonFragment sf &&
+                        sf.getTargetIdentifiers().contains(cls.fqName()) && // Check if class FQN is among targets
+                        sf.getSummaryType() == ContextFragment.SummaryType.CLASS_SKELETON); // Ensure it's a class summary
     }
 
     private LlmRecommendation askLlmToRecommendContext(List<String> filenames,
@@ -747,16 +784,22 @@ public class ContextAgent {
         boolean withinLimit = deepScan || filesToConsider.size() <= QUICK_TOPK; // Use QUICK_TOPK here
         if (allowSkipPruning && contentTokens <= skipPruningBudget && withinLimit) {
             var fragments = filesToConsider.stream()
-                    .map(f -> (ContextFragment) new ContextFragment.ProjectPathFragment(f))
+                    .map(f -> (ContextFragment) new ContextFragment.ProjectPathFragment(f, contextManager))
                     .toList();
             // Need to filter here too for quick mode if skipping LLM
             if (!deepScan) {
                  var project = contextManager.getProject();
                  var existingFiles = contextManager.topContext().allFragments()
-                         .flatMap(f -> f.files(project).stream())
+                         .flatMap(f -> f.files().stream()) 
                          .collect(Collectors.toSet());
                  fragments = fragments.stream()
-                         .filter(frag -> !existingFiles.contains(((ContextFragment.ProjectPathFragment)frag).file()))
+                         .filter(frag -> {
+                             // Ensure frag is ProjectPathFragment and then get its file
+                             if (frag instanceof ContextFragment.ProjectPathFragment ppf) {
+                                 return !existingFiles.contains(ppf.file());
+                             }
+                             return true; // Or handle other fragment types if necessary
+                         })
                          .toList();
             }
             return new RecommendationResult(true, fragments, "Using all file contents within budget and limits (skip pruning).");

@@ -1204,7 +1204,7 @@ public class GitPullRequestsTab extends JPanel {
                     logger.warn("Could not determine syntax style for PR diff: {}", e.getMessage());
                 }
                 
-                var fragment = new StringFragment(diff, description, syntaxStyle);
+                var fragment = new StringFragment(contextManager, diff, description, syntaxStyle);
                 SwingUtilities.invokeLater(() -> chrome.openFragmentPreview(fragment));
                 chrome.systemOutput("Opened diff for PR #" + pr.getNumber() + " in preview panel");
             } catch (Exception ex) {

@@ -32,12 +32,14 @@ public record TaskEntry(int sequence, ContextFragment.TaskFragment log, String s
      * The remaining messages (AI responses, tool calls/results) are stored in the `log`.
      * The TaskEntry starts uncompressed.
      */
+    // IContextManager is not needed here, TaskFragment itself will get it via SessionResult.output()
+    // which is created with a contextManager in the agents
     public static TaskEntry fromSession(int sequence, SessionResult result) {
         assert result != null;
         return new TaskEntry(sequence, result.output(), null);
     }
 
-    public static TaskEntry fromCompressed(int sequence, String compressedLog) {
+    public static TaskEntry fromCompressed(int sequence, String compressedLog) { // IContextManager not needed for compressed
         return new TaskEntry(sequence, null, compressedLog);
     }
 

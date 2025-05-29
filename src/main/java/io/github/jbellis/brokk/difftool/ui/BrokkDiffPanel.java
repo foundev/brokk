@@ -184,7 +184,7 @@ public class BrokkDiffPanel extends JPanel implements PropertyChangeListener {
             String diffText = String.join("\n", unifiedDiff);
 
             var description = "Captured Diff: %s vs %s".formatted(this.leftSource.title(), this.rightSource.title());
-            var fragment = new ContextFragment.StringFragment(diffText, description, SyntaxConstants.SYNTAX_STYLE_JAVA);
+            var fragment = new ContextFragment.StringFragment(contextManager, diffText, description, SyntaxConstants.SYNTAX_STYLE_JAVA);
             contextManager.addVirtualFragment(fragment);
             contextManager.getIo().systemOutput("Added captured diff to context: " + description);
         });

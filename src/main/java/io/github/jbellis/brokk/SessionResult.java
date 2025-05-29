@@ -23,23 +23,26 @@ public record SessionResult(String actionDescription,
         assert stopDetails != null;
     }
 
-    public SessionResult(String actionDescription,
+    public SessionResult(IContextManager contextManager, String actionDescription,
                          List<ChatMessage> uiMessages,
                          Map<ProjectFile, String> originalContents,
                          StopDetails stopDetails)
     {
         this(actionDescription,
-             new ContextFragment.TaskFragment(uiMessages, actionDescription),
+             new ContextFragment.TaskFragment(contextManager, uiMessages, actionDescription),
              originalContents,
              stopDetails);
     }
 
-    public SessionResult(String actionDescription,
+    public SessionResult(IContextManager contextManager, String actionDescription,
                          List<ChatMessage> uiMessages,
                          Map<ProjectFile, String> originalContents,
                          StopReason simpleReason)
     {
-        this(actionDescription, uiMessages, originalContents, new StopDetails(simpleReason));
+        this(actionDescription,
+             new ContextFragment.TaskFragment(contextManager, uiMessages, actionDescription),
+             originalContents,
+             new StopDetails(simpleReason));
     }
 
     /**

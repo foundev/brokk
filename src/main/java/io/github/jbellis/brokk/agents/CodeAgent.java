@@ -307,7 +307,7 @@ public class CodeAgent {
         // Prepare messages for TaskEntry log: filter raw messages and keep S/R blocks verbatim
         var finalMessages = forArchitect ? List.copyOf(io.getLlmRawMessages()) : prepareMessagesForTaskEntryLog();
         return new SessionResult("Code: " + finalActionDescription,
-                                 new ContextFragment.TaskFragment(finalMessages, userInput),
+                                 new ContextFragment.TaskFragment(contextManager, finalMessages, userInput),
                                  originalContents,
                                  stopDetails);
     }
@@ -596,10 +596,8 @@ public class CodeAgent {
         var analyzer = contextManager.getAnalyzer();
 
         // Use up to 5 related classes as context
-        var seeds = analyzer.getDeclarationsInFile(file).stream()
-                .filter(CodeUnit::isClass)
-                .collect(Collectors.toMap(CodeUnit::fqName, cls -> 1.0));
-        var relatedCode = Context.buildAutoContext(analyzer, seeds, Set.of(), 5);
+        // buildAutoContext is an instance method on Context, or a static helper on ContextFragment for SkeletonFragment directly
+        var relatedCode = contextManager.topContext().buildAutoContext(5);
 
         String fileContents;
         try {
@@ -644,7 +642,7 @@ public class CodeAgent {
 
         // Return SessionResult containing conversation and original content
         return new SessionResult("Quick Edit: " + file.getFileName(),
-                                 pendingHistory,
+                                 new ContextFragment.TaskFragment(contextManager, pendingHistory, "Quick Edit: " + file.getFileName()),
                                  originalContents,
                                  stopDetails);
     }

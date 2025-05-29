@@ -1017,9 +1017,9 @@ public class InstructionsPanel extends JPanel implements IContextManager.Context
             }
 
             var fileRefs = recommendations.fragments().stream()
-                    .flatMap(f -> f.files(contextManager.getProject()).stream())
+                    .flatMap(f -> f.files().stream()) // No analyzer
                     .distinct()
-                    .map(pf -> new FileReferenceData(pf.getFileName(), pf.toString(), pf))
+                    .map(pf -> new FileReferenceData(pf.getFileName(), pf.toString(), (ProjectFile) pf)) // Cast to ProjectFile
                     .toList();
             if (fileRefs.isEmpty()) {
                 logger.debug("Task {} found no relevant files.", myGen);
@@ -1283,10 +1283,11 @@ public class InstructionsPanel extends JPanel implements IContextManager.Context
                 // Check if the response is valid before adding to history
                 if (aiResponse.text() != null && !aiResponse.text().isBlank()) {
                     // Construct SessionResult for 'Ask'
-                    var sessionResult = new SessionResult("Ask: " + question,
+                    var sessionResult = new SessionResult(contextManager,
+                                                          "Ask: " + question,
                                                           List.copyOf(chrome.getLlmRawMessages()),
                                                           Map.of(), // No undo contents for Ask
-                                                          SessionResult.StopReason.SUCCESS);
+                                                          new SessionResult.StopDetails(SessionResult.StopReason.SUCCESS));
                     chrome.setSkipNextUpdateOutputPanelOnContextChange(true);
                     contextManager.addToHistory(sessionResult, false);
                     chrome.systemOutput("Ask command complete!");
@@ -1299,20 +1300,20 @@ public class InstructionsPanel extends JPanel implements IContextManager.Context
         } catch (InterruptedException e) {
             chrome.systemOutput("Ask command cancelled!");
             // Check if we have any partial output to save
-            maybeAddInterruptedResult("Ask", question);
+                maybeAddInterruptedResult("Ask", question);
+            }
         }
-    }
 
-    private void maybeAddInterruptedResult(String action, String input) {
-        if (chrome.getLlmRawMessages().stream().anyMatch(m -> m instanceof AiMessage)) {
-            logger.debug(action + " command cancelled with partial results");
-            var sessionResult = new SessionResult("%s (Cancelled): %s".formatted(action, input),
-                                                  new TaskFragment(List.copyOf(chrome.getLlmRawMessages()), input),
-                                                  Map.of(),
-                                                  new SessionResult.StopDetails(SessionResult.StopReason.INTERRUPTED));
-            chrome.getContextManager().addToHistory(sessionResult, false);
+        private void maybeAddInterruptedResult(String action, String input) {
+            if (chrome.getLlmRawMessages().stream().anyMatch(m -> m instanceof AiMessage)) {
+                logger.debug(action + " command cancelled with partial results");
+                var sessionResult = new SessionResult("%s (Cancelled): %s".formatted(action, input),
+                                                      new TaskFragment(chrome.getContextManager(), List.copyOf(chrome.getLlmRawMessages()), input),
+                                                      Map.of(),
+                                                      new SessionResult.StopDetails(SessionResult.StopReason.INTERRUPTED));
+                chrome.getContextManager().addToHistory(sessionResult, false);
+            }
         }
-    }
 
     /**
      * Executes the core logic for the "Agent" command.
@@ -1398,9 +1399,9 @@ public class InstructionsPanel extends JPanel implements IContextManager.Context
         // Add to context history with the action message (which includes success/failure)
         final String finalActionMessage = actionMessage; // Effectively final for lambda
         contextManager.pushContext(ctx -> {
-            var parsed = new TaskFragment(List.copyOf(chrome.getLlmRawMessages()), finalActionMessage);
-            return ctx.withParsedOutput(parsed, CompletableFuture.completedFuture(finalActionMessage));
-        });
+            var parsed = new TaskFragment(chrome.getContextManager(), List.copyOf(chrome.getLlmRawMessages()), finalActionMessage);
+                return ctx.withParsedOutput(parsed, CompletableFuture.completedFuture(finalActionMessage));
+            });
     }
 
     // --- Action Handlers ---
@@ -1567,7 +1568,7 @@ public class InstructionsPanel extends JPanel implements IContextManager.Context
         var cm = chrome.getContextManager();
         // need to set the correct parser here since we're going to append to the same fragment during the action
         String finalAction = (action + " MODE").toUpperCase();
-        chrome.setLlmOutput(new ContextFragment.TaskFragment(cm.getParserForWorkspace(), List.of(new UserMessage(finalAction, input)), input));
+        chrome.setLlmOutput(new ContextFragment.TaskFragment(cm, cm.getParserForWorkspace(), List.of(new UserMessage(finalAction, input)), input));
         return cm.submitUserTask(finalAction, true, () -> {
             try {
                 chrome.showOutputSpinner("Executing " + action + " command...");

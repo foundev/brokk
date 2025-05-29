@@ -1071,7 +1071,8 @@ public class PreviewTextPanel extends JPanel {
                 // Create the SessionResult representing the net change
                 String actionDescription = "Edited " + file;
                 quickEditMessages.add(Messages.customSystem("# Diff of changes\n\n```%s```".formatted(unifiedDiff)));
-                var saveResult = new SessionResult(actionDescription,
+                var saveResult = new SessionResult(contextManager,
+                                                   actionDescription,
                                                    quickEditMessages,
                                                    Map.of(file, contentBeforeFirstSave),
                                                    SessionResult.StopReason.SUCCESS);

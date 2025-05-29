@@ -164,7 +164,7 @@ public class WorkspaceTools {
         // Use the ContextManager's method to add the string fragment
         String description = "Content from " + urlString;
         // ContextManager handles pushing the context update
-        var fragment = new ContextFragment.StringFragment(content, description, SyntaxConstants.SYNTAX_STYLE_NONE);
+        var fragment = new ContextFragment.StringFragment(contextManager, content, description, SyntaxConstants.SYNTAX_STYLE_NONE); // Pass contextManager
         contextManager.pushContext(ctx -> ctx.addVirtualFragment(fragment));
 
         return "Added content from URL [%s] as a read-only text fragment.".formatted(urlString);
@@ -186,7 +186,7 @@ public class WorkspaceTools {
         }
 
         // Use the ContextManager's method to add the string fragment
-        var fragment = new ContextFragment.StringFragment(content, description, SyntaxConstants.SYNTAX_STYLE_NONE);
+        var fragment = new ContextFragment.StringFragment(contextManager, content, description, SyntaxConstants.SYNTAX_STYLE_NONE); // Pass contextManager
         contextManager.pushContext(ctx -> ctx.addVirtualFragment(fragment));
 
         return "Added text '%s'.".formatted(description);
@@ -258,16 +258,13 @@ public class WorkspaceTools {
             return "Cannot add usages: symbol cannot be empty";
         }
 
-        List<CodeUnit> uses = getAnalyzer().getUses(symbol);
-        var result = AnalyzerUtil.processUsages(getAnalyzer(), uses);
-        if (result.code().isEmpty()) {
-            return "No relevant usages found for symbol: " + symbol;
-        }
-
-        var fragment = new ContextFragment.UsageFragment(symbol, result.sources(), result.code());
+        // Create UsageFragment with only the target symbol.
+        // The fragment itself will compute the usages when its text() or sources() is called.
+        var fragment = new ContextFragment.UsageFragment(contextManager, symbol); // Pass contextManager
         contextManager.addVirtualFragment(fragment);
 
-        return "Added usages for symbol '%s'.".formatted(symbol);
+        // The message indicates addition; actual fetching confirmation happens when fragment is rendered/used.
+        return "Added dynamic usage analysis for symbol '%s'.".formatted(symbol);
     }
 
     @Tool(value = """
@@ -285,40 +282,19 @@ public class WorkspaceTools {
             return "Cannot add summary: class names list is empty";
         }
 
-        var skeletonsData = AnalyzerUtil.getClassSkeletonsData(getAnalyzer(), classNames);
-        if (skeletonsData.isEmpty()) {
-            return "No summaries found for classes: " + String.join(", ", classNames);
+        // Coalesce inner classes to their top-level parents if both are requested or found.
+        // This is simpler if we just pass all requested FQNs to SkeletonFragment
+        // and let its text() / sources() handle fetching and eventual coalescing if needed during display.
+        // For now, just pass the direct list.
+        List<String> distinctClassNames = classNames.stream().distinct().toList();
+        if (distinctClassNames.isEmpty()) {
+             return "Cannot add summary: class names list resolved to empty";
         }
 
-        // We need to filter CodeUnits potentially added by the Util method if they are inner classes whose parent is also present
-        // Re-apply the coalescing logic here, or rely on the caller providing coalesced names? Let's apply here for safety.
-        // However, getClassSkeletonsData returns Map<CodeUnit, String>, so we need to adapt.
-        Set<CodeUnit> unitsWithSkeletons = skeletonsData.keySet();
-        Set<CodeUnit> coalescedUnits = unitsWithSkeletons.stream()
-                .filter(cu -> {
-                    String name = cu.fqName();
-                    if (!name.contains("$")) return true; // Keep non-inner classes
-                    String parent = name.substring(0, name.indexOf('$'));
-                    // Keep if the parent skeleton is *not* also in the map
-                    return unitsWithSkeletons.stream().noneMatch(other -> other.fqName().equals(parent));
-                })
-                .collect(Collectors.toSet());
-
-        // Filter the original map based on coalesced units
-        Map<CodeUnit, String> coalescedSkeletons = skeletonsData.entrySet().stream()
-                .filter(entry -> coalescedUnits.contains(entry.getKey()))
-                .collect(Collectors.toMap(Map.Entry::getKey, Map.Entry::getValue));
-
-        if (coalescedSkeletons.isEmpty()) {
-            // This could happen if only inner classes were requested and their parents were also found
-            return "No primary summaries found after coalescing for classes: " + String.join(", ", classNames);
-        }
-
-        var fragment = new ContextFragment.SkeletonFragment(coalescedSkeletons);
+        var fragment = new ContextFragment.SkeletonFragment(contextManager, distinctClassNames, ContextFragment.SummaryType.CLASS_SKELETON); // Pass contextManager
         contextManager.addVirtualFragment(fragment);
 
-        String addedClasses = coalescedSkeletons.keySet().stream().map(CodeUnit::fqName).sorted().collect(Collectors.joining(", "));
-        return "Added summaries for %d class(es): [%s]".formatted(coalescedSkeletons.size(), addedClasses);
+        return "Added dynamic class summaries for: [%s]".formatted(String.join(", ", distinctClassNames));
     }
 
     @Tool(value = """
@@ -339,38 +315,22 @@ public class WorkspaceTools {
 
         var analyzer = getAnalyzer();
         var project = contextManager.getProject();
-        List<ProjectFile> projectFiles = filePaths.stream()
+        List<String> resolvedFilePaths = filePaths.stream() // Changed variable name and type
                 .flatMap(pattern -> Completions.expandPath(project, pattern).stream())
                 .filter(ProjectFile.class::isInstance)
                 .map(ProjectFile.class::cast)
+                .map(ProjectFile::toString) // Store paths as strings
                 .distinct()
                 .toList();
 
-        if (projectFiles.isEmpty()) {
+        if (resolvedFilePaths.isEmpty()) {
             return "No project files found matching the provided patterns: " + String.join(", ", filePaths);
         }
 
-        Map<CodeUnit, String> allSkeletons = new HashMap<>();
-        List<String> filesProcessed = new ArrayList<>();
-        for (var file : projectFiles) {
-            var skeletonsInFile = analyzer.getSkeletons(file);
-            if (!skeletonsInFile.isEmpty()) {
-                allSkeletons.putAll(skeletonsInFile);
-                filesProcessed.add(file.toString());
-            } else {
-                logger.debug("No skeletons found in file: {}", file);
-            }
-        }
-
-        if (allSkeletons.isEmpty()) {
-            return "No class summaries found in the matched files: " + String.join(", ", filesProcessed.stream().sorted().toList());
-        }
-
-        var fragment = new ContextFragment.SkeletonFragment(allSkeletons);
+        var fragment = new ContextFragment.SkeletonFragment(contextManager, resolvedFilePaths, ContextFragment.SummaryType.FILE_SKELETONS); // Pass contextManager
         contextManager.addVirtualFragment(fragment);
 
-        String addedClasses = allSkeletons.keySet().stream().map(CodeUnit::identifier).sorted().collect(Collectors.joining(", "));
-        return "Added summaries for " + addedClasses;
+        return "Added dynamic file summaries for: [%s]".formatted(String.join(", ", resolvedFilePaths.stream().sorted().toList()));
     }
 
     @Tool(value = """
@@ -399,7 +359,7 @@ public class WorkspaceTools {
             String sourceCodeWithHeader = entry.getValue();
             String description = "Source for method " + methodName;
             // Create and add the fragment
-            var fragment = new ContextFragment.StringFragment(sourceCodeWithHeader, description, SyntaxConstants.SYNTAX_STYLE_JAVA);
+            var fragment = new ContextFragment.StringFragment(contextManager, sourceCodeWithHeader, description, SyntaxConstants.SYNTAX_STYLE_JAVA); // Pass contextManager
             contextManager.addVirtualFragment(fragment);
             count++;
         }
@@ -503,31 +463,10 @@ public class WorkspaceTools {
             return "Cannot add call graph: depth must be positive";
         }
 
-        var graphData = getAnalyzer().getCallgraphTo(methodName, depth);
-        if (graphData.isEmpty()) {
-            return "No call graph available (callers) for method: " + methodName;
-        }
-
-        String formattedGraph = AnalyzerUtil.formatCallGraph(graphData, methodName, false); // false = callers (arrows point TO method)
-        if (formattedGraph.isEmpty()) {
-            // Should not happen if graphData is not empty, but check defensively
-            return "Failed to format non-empty call graph (callers) for method: " + methodName;
-        }
-
-        // Extract the class from the method name for sources using getDefinition
-        Set<CodeUnit> sources = new HashSet<>();
-        String className = ContextFragment.toClassname(methodName);
-        getAnalyzer().getDefinition(className)
-                .filter(CodeUnit::isClass)
-                .ifPresent(sources::add);
-
-        // Use CallGraphFragment to represent the call graph
-        String type = "Callers (depth " + depth + ")";
-        var fragment = new ContextFragment.CallGraphFragment(type, methodName, sources, formattedGraph);
+        var fragment = new ContextFragment.CallGraphFragment(contextManager, methodName, depth, false); // false for callers, pass contextManager
         contextManager.addVirtualFragment(fragment);
 
-        int totalCallSites = graphData.values().stream().mapToInt(List::size).sum();
-        return "Added call graph fragment (%d sites) for callers of '%s' (depth %d).".formatted(totalCallSites, methodName, depth);
+        return "Added dynamic call graph (callers) for '%s' (depth %d).".formatted(methodName, depth);
     }
 
     @Tool(value = """
@@ -549,27 +488,10 @@ public class WorkspaceTools {
             return "Cannot add call graph: depth must be positive";
         }
 
-        var graphData = getAnalyzer().getCallgraphFrom(methodName, depth);
-        if (graphData.isEmpty()) {
-            return "No call graph available (callees) for method: " + methodName;
-        }
-
-        String formattedGraph = AnalyzerUtil.formatCallGraph(graphData, methodName, true); // true = callees (arrows point FROM method)
-        if (formattedGraph.isEmpty()) {
-            // Should not happen if graphData is not empty, but check defensively
-            return "Failed to format non-empty call graph (callees) for method: " + methodName;
-        }
-
-        // Extract the class from the method name for sources
-        Set<CodeUnit> sources = new HashSet<>();
-        getAnalyzer().getDefinition(methodName).ifPresent(cu -> sources.add(cu));
-        // Use UsageFragment to represent the call graph
-        String type = "Callees (depth " + depth + ")";
-        var fragment = new ContextFragment.CallGraphFragment(type, methodName, sources, formattedGraph);
+        var fragment = new ContextFragment.CallGraphFragment(contextManager, methodName, depth, true); // true for callees, pass contextManager
         contextManager.addVirtualFragment(fragment);
 
-        int totalCallSites = graphData.values().stream().mapToInt(List::size).sum();
-        return "Added call graph fragment (%d sites) for callees of '%s' (depth %d).".formatted(totalCallSites, methodName, depth);
+        return "Added dynamic call graph (callees) for '%s' (depth %d).".formatted(methodName, depth);
     }
 
     // --- Helper Methods ---

@@ -254,7 +254,7 @@ public class VoiceInputButton extends JButton {
                         var analyzer = contextManager.getAnalyzerWrapper().getNonBlocking();
                         if (analyzer != null) {
                             var sources = contextManager.topContext().allFragments()
-                                    .flatMap(f -> f.sources(analyzer).stream())
+                                    .flatMap(f -> f.sources().stream())
                                     .collect(Collectors.toSet());
 
                             // Get full symbols first
@@ -262,7 +262,7 @@ public class VoiceInputButton extends JButton {
 
                             // Extract short names from sources and returned symbols
                             symbolsForTranscription = sources.stream()
-                                    .map(CodeUnit::shortName)
+                                    .map(CodeUnit::shortName) // This is now Set<CodeUnit>
                                     .collect(Collectors.toSet());
                             fullSymbols.stream()
                                     .map(s -> {

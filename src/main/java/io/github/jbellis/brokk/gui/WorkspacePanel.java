@@ -349,7 +349,7 @@ public class WorkspacePanel extends JPanel {
                                 // Default: Show "All References" actions, enabled based on file presence and track status
                                 var project = contextManager.getProject();
                                 Set<BrokkFile> allFiles = selectedFragments.stream()
-                                        .flatMap(frag -> frag.files(project).stream())
+                                        .flatMap(frag -> frag.files().stream())
                                         .collect(Collectors.toSet());
 
                                 boolean allFilesAreTrackedProjectFiles = !allFiles.isEmpty() && allFiles.stream().allMatch(f ->
@@ -649,7 +649,7 @@ public class WorkspacePanel extends JPanel {
             // Build file references
             List<TableUtils.FileReferenceList.FileReferenceData> fileReferences = new ArrayList<>();
             if (!(frag instanceof ContextFragment.ProjectPathFragment)) {
-                fileReferences = frag.files(contextManager.getProject())
+                fileReferences = frag.files()
                         .stream()
                         .map(file -> new TableUtils.FileReferenceList.FileReferenceData(file.getFileName(), file.toString(), file))
                         .distinct()
@@ -755,8 +755,8 @@ public class WorkspacePanel extends JPanel {
      */
     private String getTextSafe(ContextFragment fragment) {
         try {
-            return fragment.text();
-        } catch (IOException e) {
+            return fragment.text(); // No analyzer
+        } catch (IOException | InterruptedException e) {
             String msg;
             if (e instanceof CharacterCodingException) {
                 msg = "Unable to read fragment `%s` (probable non-text data)".formatted(fragment.description());
@@ -765,7 +765,7 @@ public class WorkspacePanel extends JPanel {
             }
             logger.debug(msg, e);
             chrome.systemOutput(msg);
-            contextManager.removeBadFragment(fragment, e);
+            contextManager.removeBadFragment(fragment, new IOException(e.getMessage(), e)); // Wrap InterruptedException
             return "";
         }
     }
@@ -790,10 +790,10 @@ public class WorkspacePanel extends JPanel {
             if (fileRef.getRepoFile() != null) {
                 performContextActionAsync(
                         ContextAction.EDIT,
-                        List.of(new ContextFragment.ProjectPathFragment(fileRef.getRepoFile()))
+                        List.of(new ContextFragment.ProjectPathFragment(fileRef.getRepoFile(), contextManager)) // Pass contextManager
                 );
             } else {
-                chrome.toolErrorRaw("Cannot edit file: " + fileRef.getFullPath() + " - no ProjectFile available"); // Corrected message
+                chrome.toolErrorRaw("Cannot edit file: " + fileRef.getFullPath() + " - no ProjectFile available");
             }
         });
         // Disable if no git, file isn't a ProjectFile, or file isn't tracked
@@ -821,10 +821,10 @@ public class WorkspacePanel extends JPanel {
             if (fileRef.getRepoFile() != null) {
                 performContextActionAsync(
                         ContextAction.READ,
-                        List.of(new ContextFragment.ProjectPathFragment(fileRef.getRepoFile()))
+                        List.of(new ContextFragment.ProjectPathFragment(fileRef.getRepoFile(), contextManager)) // Pass contextManager
                 );
             } else {
-                chrome.toolErrorRaw("Cannot read file: " + fileRef.getFullPath() + " - no ProjectFile available"); // Corrected message
+                chrome.toolErrorRaw("Cannot read file: " + fileRef.getFullPath() + " - no ProjectFile available");
             }
         });
         return readItem;
@@ -846,10 +846,10 @@ public class WorkspacePanel extends JPanel {
             if (fileRef.getRepoFile() != null) {
                 performContextActionAsync(
                         ContextAction.SUMMARIZE,
-                        List.of(new ContextFragment.ProjectPathFragment(fileRef.getRepoFile()))
+                        List.of(new ContextFragment.ProjectPathFragment(fileRef.getRepoFile(), contextManager)) // Pass contextManager
                 );
             } else {
-                chrome.toolErrorRaw("Cannot summarize: " + fileRef.getFullPath() + " - ProjectFile information not available"); // Corrected message
+                chrome.toolErrorRaw("Cannot summarize: " + fileRef.getFullPath() + " - ProjectFile information not available");
             }
         });
         return summarizeItem;
@@ -1056,16 +1056,18 @@ public class WorkspacePanel extends JPanel {
         } else {
             // Edit files from selected fragments
             var files = new HashSet<ProjectFile>();
-            for (var fragment : selectedFragments) {
-                files.addAll(fragment.files(project));
-            }
+            selectedFragments.stream()
+                             .flatMap(fragment -> fragment.files().stream()) // Corrected: No analyzer
+                             .filter(ProjectFile.class::isInstance)
+                             .map(ProjectFile.class::cast)
+                             .forEach(files::add);
             contextManager.editFiles(files); 
         }
     }
 
     /** Read Action: Allows selecting Files (internal/external) */
     private void doReadAction(List<? extends ContextFragment> selectedFragments) { // Use wildcard
-        var project = contextManager.getProject(); 
+        var project = contextManager.getProject();
         if (selectedFragments.isEmpty()) {
             // Show dialog allowing ONLY file selection (internal + external)
             // TODO when we can extract a single class from a source file, enable classes as well
@@ -1078,15 +1080,15 @@ public class WorkspacePanel extends JPanel {
                 return;
             }
 
-            contextManager.addReadOnlyFiles(selection.files()); 
-            chrome.systemOutput("Added " + selection.files().size() + " file(s) as read-only context."); 
+            contextManager.addReadOnlyFiles(selection.files());
+            chrome.systemOutput("Added " + selection.files().size() + " file(s) as read-only context.");
         } else {
             // Add files from selected fragments
             var files = new HashSet<BrokkFile>();
             for (var fragment : selectedFragments) {
-                files.addAll(fragment.files(project));
+                files.addAll(fragment.files()); // No analyzer
             }
-            contextManager.addReadOnlyFiles(files); 
+            contextManager.addReadOnlyFiles(files);
         }
     }
 
@@ -1124,9 +1126,9 @@ public class WorkspacePanel extends JPanel {
             var sb = new StringBuilder();
             for (var frag : selectedFragments) {
                 try {
-                    sb.append(frag.text()).append("\n\n");
-                } catch (IOException e) {
-                    contextManager.removeBadFragment(frag, e);
+                    sb.append(frag.text()).append("\n\n"); // No analyzer
+                } catch (IOException | InterruptedException e) {
+                    contextManager.removeBadFragment(frag, new IOException(e.getMessage(), e)); // Wrap InterruptedException
                     var msg = "Error reading fragment `%s`".formatted(frag.description());
                     logger.debug(msg, e);
                     chrome.toolErrorRaw(msg);
@@ -1263,7 +1265,7 @@ public class WorkspacePanel extends JPanel {
             Future<String> summaryFuture = contextManager.submitSummarizePastedText(content);
             String finalContent = content;
             contextManager.pushContext(ctx -> {
-                var fragment = new ContextFragment.PasteTextFragment(finalContent, summaryFuture);
+                var fragment = new ContextFragment.PasteTextFragment(contextManager, finalContent, summaryFuture); // Pass contextManager
                 return ctx.addVirtualFragment(fragment);
             });
 
@@ -1359,7 +1361,7 @@ public class WorkspacePanel extends JPanel {
                     selectedFiles.add(ppf.file());
                 } else {
                     // Otherwise, add the sources (which should be classes/symbols)
-                    selectedClasses.addAll(frag.sources(contextManager.getAnalyzerUninterrupted()));
+                    selectedClasses.addAll(frag.sources()); // No analyzer
                 }
             }
         }

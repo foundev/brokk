@@ -374,13 +374,13 @@ public class BuildAgent {
                         cm.topContext().editableFiles(),
                         cm.topContext().readonlyFiles()
                       )
-                      .flatMap(fragment -> fragment.files(cm.getProject()).stream());
+                      .flatMap(fragment -> fragment.files().stream()); // No analyzer
 
             // Get ProjectFiles specifically from SkeletonFragments among all virtual fragments
             Stream<ProjectFile> projectFilesFromSkeletons =
                 cm.topContext().virtualFragments()
                     .filter(vf -> vf instanceof ContextFragment.SkeletonFragment)
-                    .flatMap(skeletonFragment -> skeletonFragment.files(cm.getProject()).stream());
+                    .flatMap(skeletonFragment -> skeletonFragment.files().stream()); // No analyzer
 
             // Combine all relevant ProjectFiles into a single set for checking against test files
             var workspaceFiles =
