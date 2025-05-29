@@ -32,8 +32,7 @@ public class BufferDiffPanel extends AbstractContentPanel implements ThemeAware
 
     @NotNull
     private final BrokkDiffPanel mainPanel;
-    // Mutable so existing panels can react to live theme changes
-    private boolean isDarkTheme;
+    private GuiTheme guiTheme;
 
     // Instead of JMRevision:
     private Patch<String> patch; // from JMDiffNode
@@ -52,15 +51,10 @@ public class BufferDiffPanel extends AbstractContentPanel implements ThemeAware
     private ScrollSynchronizer scrollSynchronizer;
     private JSplitPane splitPane;
 
-    public BufferDiffPanel(BrokkDiffPanel mainPanel)
-    {
-        this(mainPanel, false);
-    }
-
-    public BufferDiffPanel(BrokkDiffPanel mainPanel, boolean isDarkTheme)
+    public BufferDiffPanel(BrokkDiffPanel mainPanel, GuiTheme theme)
     {
         this.mainPanel = mainPanel;
-        this.isDarkTheme = isDarkTheme;
+        this.guiTheme = theme;
         // Let the mainPanel keep a reference to us for toolbar/undo/redo interplay
         mainPanel.setBufferDiffPanel(this);
         init();
@@ -156,11 +150,6 @@ public class BufferDiffPanel extends AbstractContentPanel implements ThemeAware
             return titles.get(0);
         }
         return titles.get(0) + "-" + titles.get(1);
-    }
-
-    public boolean isDarkTheme()
-    {
-        return isDarkTheme;
     }
 
     /**
@@ -570,5 +559,9 @@ public class BufferDiffPanel extends AbstractContentPanel implements ThemeAware
 
         // Repaint diff connectors, revision bars, etc.
         reDisplay();
+    }
+
+    public GuiTheme getTheme() {
+        return guiTheme;
     }
 }

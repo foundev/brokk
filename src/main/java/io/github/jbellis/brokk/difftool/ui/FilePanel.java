@@ -25,6 +25,7 @@ import java.awt.event.FocusEvent;
 import java.awt.event.FocusListener;
 import java.util.List;
 
+import io.github.jbellis.brokk.gui.ThemeAware;
 import org.fife.ui.rsyntaxtextarea.RSyntaxTextArea;
 import org.fife.ui.rsyntaxtextarea.SyntaxConstants;
 import javax.swing.SwingUtilities;
@@ -33,7 +34,7 @@ import io.github.jbellis.brokk.gui.GuiTheme;
 import io.github.jbellis.brokk.util.SyntaxDetector;
 import org.jetbrains.annotations.NotNull;
 
-public class FilePanel implements BufferDocumentChangeListenerIF {
+public class FilePanel implements BufferDocumentChangeListenerIF, ThemeAware {
     private static final int MAXSIZE_CHANGE_DIFF = 1000;
 
     @NotNull
@@ -96,9 +97,8 @@ public class FilePanel implements BufferDocumentChangeListenerIF {
         // Setup a one-time timer to refresh the UI after 100ms
         timer = new Timer(100, refresh());
         timer.setRepeats(false);
-
-        // Apply current theme
-        GuiTheme.loadRSyntaxTheme(diffPanel.isDarkTheme()).ifPresent(theme ->
+        // Apply syntax theme but don't trigger reDisplay yet (no diff data available)
+        GuiTheme.loadRSyntaxTheme(diffPanel.getTheme().isDarkTheme()).ifPresent(theme ->
                 theme.apply(editor)
         );
 
@@ -190,7 +190,8 @@ public class FilePanel implements BufferDocumentChangeListenerIF {
         removeHighlights();
         paintSearchHighlights();
         paintRevisionHighlights();
-        getHighlighter().repaint();
+        // Repaint the editor to trigger the composite highlighter's paint chain
+        editor.repaint();
     }
 
     /**
@@ -199,6 +200,7 @@ public class FilePanel implements BufferDocumentChangeListenerIF {
      */
     private void paintRevisionHighlights()
     {
+        assert SwingUtilities.isEventDispatchThread() : "NOT ON EDT";
         var doc = bufferDocument;
         if (doc == null) return;
 
@@ -214,6 +216,19 @@ public class FilePanel implements BufferDocumentChangeListenerIF {
                 new HighlightRevised(delta).highlight();
             }
         }
+    }
+
+    @Override
+    public void applyTheme(GuiTheme guiTheme) {
+        // Apply current theme
+        GuiTheme.loadRSyntaxTheme(guiTheme.isDarkTheme()).ifPresent(theme -> {
+            // Apply theme to the composite highlighter (which will forward to JMHighlighter)
+            if (editor.getHighlighter() instanceof ThemeAware) {
+                ((ThemeAware) editor.getHighlighter()).applyTheme(guiTheme);
+            }
+            theme.apply(editor);
+            reDisplay();
+        });
     }
 
     abstract class AbstractHighlight {
@@ -238,7 +253,7 @@ public class FilePanel implements BufferDocumentChangeListenerIF {
             boolean isEndAndNewline = isEndAndLastNewline(toOffset);
 
             // Decide color. For Insert vs Delete vs Change we do:
-            var isDark = diffPanel.isDarkTheme();
+            var isDark = diffPanel.getTheme().isDarkTheme();
             var type = delta.getType(); // DeltaType.INSERT, DELETE, CHANGE
             var painter = switch (type) {
                 case INSERT ->
@@ -411,7 +426,6 @@ public class FilePanel implements BufferDocumentChangeListenerIF {
                     style = SyntaxDetector.fromExtension(ext);
                 }
             }
-            System.out.println("H1 Buffer " + fileName + " -> " + style);
         }
 
         // --------------------------- Heuristic 2 -----------------------------

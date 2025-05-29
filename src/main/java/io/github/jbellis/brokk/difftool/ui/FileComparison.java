@@ -3,6 +3,7 @@ package io.github.jbellis.brokk.difftool.ui;
 import io.github.jbellis.brokk.difftool.node.FileNode;
 import io.github.jbellis.brokk.difftool.node.JMDiffNode;
 import io.github.jbellis.brokk.difftool.node.StringNode;
+import io.github.jbellis.brokk.gui.GuiTheme;
 
 import javax.imageio.ImageIO;
 import javax.swing.*;
