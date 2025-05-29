@@ -286,8 +286,7 @@ public class Chrome implements AutoCloseable, IConsoleIO, IContextManager.Contex
         String currentTheme = Project.getTheme();
         logger.trace("Applying theme from project settings: {}", currentTheme);
         boolean isDark = THEME_DARK.equalsIgnoreCase(currentTheme);
-        themeManager.applyTheme(isDark);
-        historyOutputPanel.updateTheme(isDark);
+        switchTheme(isDark);
     }
 
     /**
@@ -385,14 +384,6 @@ public class Chrome implements AutoCloseable, IConsoleIO, IContextManager.Contex
     public void switchTheme(boolean isDark) {
         themeManager.applyTheme(isDark);
         historyOutputPanel.updateTheme(isDark);
-        for (Window window : Window.getWindows()) {
-            if (window instanceof JFrame && window != frame) {
-                Container contentPane = ((JFrame) window).getContentPane();
-                if (contentPane instanceof PreviewTextPanel) {
-                    ((PreviewTextPanel) contentPane).updateTheme(themeManager);
-                }
-            }
-        }
     }
 
     @Override

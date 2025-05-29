@@ -105,34 +105,38 @@ public class GuiTheme {
     }
     
     /**
-     * Applies theme to all RSyntaxTextArea components in a frame
+     * Applies the syntax theme to every relevant component contained in the
+     * supplied frame.
      */
     private void applyThemeToFrame(JFrame frame, Theme theme) {
-        // Apply to direct components
-        for (Component c : frame.getContentPane().getComponents()) {
-            if (c instanceof RSyntaxTextArea) {
-                theme.apply((RSyntaxTextArea) c);
-            } else if (c instanceof JScrollPane) {
-                Component view = ((JScrollPane) c).getViewport().getView();
-                if (view instanceof RSyntaxTextArea) {
-                    theme.apply((RSyntaxTextArea) view);
-                }
-            } else {
-                // Recursively look for nested components
-                findAndApplyTheme(c, theme);
-            }
-        }
+        applyThemeRecursively(frame.getContentPane(), theme);
     }
-    
+
     /**
-     * Recursively finds RSyntaxTextArea components and applies theme
+     * Recursive depth-first traversal of the Swing component hierarchy that honours the
+     * {@link io.github.jbellis.brokk.gui.ThemeAware} contract.
      */
-    private void findAndApplyTheme(Component component, Theme theme) {
-        if (component instanceof RSyntaxTextArea) {
-            theme.apply((RSyntaxTextArea) component);
-        } else if (component instanceof Container) {
-            for (Component child : ((Container) component).getComponents()) {
-                findAndApplyTheme(child, theme);
+    private void applyThemeRecursively(Component component, Theme theme) {
+        if (component == null) {
+            return;
+        }
+
+        // 1. Give ThemeAware components first crack at theming themselves
+        if (component instanceof ThemeAware aware) {
+            aware.applyTheme(this, theme);
+        } else if (component instanceof RSyntaxTextArea area) {
+            // 2. Plain RSyntaxTextArea
+            theme.apply(area);
+        } else if (component instanceof JScrollPane scrollPane) {
+            // 3. Handle the common case of RSyntaxTextArea wrapped in a JScrollPane
+            Component view = scrollPane.getViewport().getView();
+            applyThemeRecursively(view, theme);
+        }
+
+        // 4. Recurse into child components (if any)
+        if (component instanceof Container container) {
+            for (Component child : container.getComponents()) {
+                applyThemeRecursively(child, theme);
             }
         }
     }
