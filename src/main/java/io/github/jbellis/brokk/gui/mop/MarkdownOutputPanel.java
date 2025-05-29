@@ -75,7 +75,7 @@ public class MarkdownOutputPanel extends JPanel implements Scrollable, ThemeAwar
 
 
     @Override
-    public void applyTheme(GuiTheme guiTheme, Theme syntaxTheme) {
+    public void applyTheme(GuiTheme guiTheme) {
         updateTheme(guiTheme.isDarkTheme());
     }
 

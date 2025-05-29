@@ -103,7 +103,7 @@ public class GuiTheme {
                 if (window instanceof JDialog dialog) {
                     // 1. ThemeAware dialogs can theme themselves
                     if (dialog instanceof ThemeAware aware) {
-                        aware.applyTheme(this, theme);
+                        aware.applyTheme(this);
                     }
                     applyThemeRecursively(dialog.getContentPane(), theme);
                 }
@@ -130,7 +130,7 @@ public class GuiTheme {
 
         switch (component) {
             // 1. Give ThemeAware components first crack at theming themselves
-            case ThemeAware aware -> aware.applyTheme(this, theme);
+            case ThemeAware aware -> aware.applyTheme(this);
             // 2. Plain RSyntaxTextArea
             case RSyntaxTextArea area -> theme.apply(area);
             // 3. Handle the common case of RSyntaxTextArea wrapped in a JScrollPane

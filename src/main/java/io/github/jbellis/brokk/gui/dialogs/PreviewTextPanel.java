@@ -291,7 +291,7 @@ public class PreviewTextPanel extends JPanel implements ThemeAware {
      * {@link GuiTheme#applyCurrentThemeToComponent}.
      */
     @Override
-    public void applyTheme(GuiTheme guiTheme, Theme syntaxTheme) {
+    public void applyTheme(GuiTheme guiTheme) {
         guiTheme.applyCurrentThemeToComponent(textArea);
     }
 

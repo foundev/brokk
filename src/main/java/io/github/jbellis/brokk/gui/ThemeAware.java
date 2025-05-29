@@ -15,8 +15,6 @@ public interface ThemeAware {
      * @param guiTheme    reference to the central theme manager (handy for
      *                    delegating to helper methods such as
      *                    {@link GuiTheme#applyCurrentThemeToComponent})
-     * @param syntaxTheme a pre-loaded RSyntaxTextArea {@link Theme}.
-     *                    Implementations may ignore it and do their own thing.
      */
-    void applyTheme(GuiTheme guiTheme, Theme syntaxTheme);
+    void applyTheme(GuiTheme guiTheme);
 }

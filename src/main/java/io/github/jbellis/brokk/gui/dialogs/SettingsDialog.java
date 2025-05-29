@@ -985,7 +985,7 @@ public class SettingsDialog extends JDialog implements ThemeAware {
     }
 
     @Override
-    public void applyTheme(GuiTheme guiTheme, Theme syntaxTheme) {
+    public void applyTheme(GuiTheme guiTheme) {
         var previousSize = SettingsDialog.this.getSize();
         SwingUtilities.updateComponentTreeUI(SettingsDialog.this);
         SettingsDialog.this.setSize(previousSize); // Restore previous size
