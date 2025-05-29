@@ -793,7 +793,7 @@ public class Project implements IProject, AutoCloseable {
                 return context;
             }
         } catch (Throwable e) {
-            logger.error("Error loading context: {}", e.getMessage());
+            logger.error("Error loading context", e);
             clearSavedContext();
         }
         return null;
