@@ -381,7 +381,6 @@ public class Chrome implements AutoCloseable, IConsoleIO, IContextManager.Contex
 
     public void switchTheme(boolean isDark) {
         themeManager.applyTheme(isDark);
-        historyOutputPanel.updateTheme(isDark);
     }
 
     @Override
