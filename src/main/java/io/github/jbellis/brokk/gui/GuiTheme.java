@@ -61,7 +61,7 @@ public class GuiTheme {
             }
             
             // Apply theme to RSyntaxTextArea components
-            applyRSyntaxThemeAsync(themeName);
+            applyThemeAsync(themeName);
             
             // Update the UI
             SwingUtilities.updateComponentTreeUI(frame);
@@ -84,7 +84,7 @@ public class GuiTheme {
      * Applies the appropriate theme to all RSyntaxTextArea components
      * @param themeName "dark" or "light"
      */
-    public void applyRSyntaxThemeAsync(String themeName) {
+    private void applyThemeAsync(String themeName) {
         String themeResource = "/org/fife/ui/rsyntaxtextarea/themes/%s".formatted(themeName.equals(THEME_DARK) ? "dark.xml" : "default.xml");
         Theme theme;
         try {
@@ -97,8 +97,15 @@ public class GuiTheme {
         // Apply to all RSyntaxTextArea components in open windows
         SwingUtilities.invokeLater(() -> {
             for (Window window : Window.getWindows()) {
-                if (window instanceof JFrame) {
-                    applyThemeToFrame((JFrame) window, theme);
+                if (window instanceof JFrame win) {
+                    applyThemeToFrame(win, theme);
+                }
+                if (window instanceof JDialog dialog) {
+                    // 1. ThemeAware dialogs can theme themselves
+                    if (dialog instanceof ThemeAware aware) {
+                        aware.applyTheme(this, theme);
+                    }
+                    applyThemeRecursively(dialog.getContentPane(), theme);
                 }
             }
         });
@@ -121,16 +128,17 @@ public class GuiTheme {
             return;
         }
 
-        // 1. Give ThemeAware components first crack at theming themselves
-        if (component instanceof ThemeAware aware) {
-            aware.applyTheme(this, theme);
-        } else if (component instanceof RSyntaxTextArea area) {
+        switch (component) {
+            // 1. Give ThemeAware components first crack at theming themselves
+            case ThemeAware aware -> aware.applyTheme(this, theme);
             // 2. Plain RSyntaxTextArea
-            theme.apply(area);
-        } else if (component instanceof JScrollPane scrollPane) {
+            case RSyntaxTextArea area -> theme.apply(area);
             // 3. Handle the common case of RSyntaxTextArea wrapped in a JScrollPane
-            Component view = scrollPane.getViewport().getView();
-            applyThemeRecursively(view, theme);
+            case JScrollPane scrollPane -> {
+                Component view = scrollPane.getViewport().getView();
+                applyThemeRecursively(view, theme);
+            }
+            default -> { }
         }
 
         // 4. Recurse into child components (if any)
