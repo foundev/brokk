@@ -804,10 +804,7 @@ public class ContextManager implements IContextManager, AutoCloseable {
         pushContext(ctx -> ctx.addVirtualFragment(fragment));
     }
 
-    /**
-     * callers for method
-     */
-    public void callersForMethod(String methodName, int depth, Map<String, List<CallSite>> callgraph)
+    public void addCallersForMethod(String methodName, int depth, Map<String, List<CallSite>> callgraph)
     {
         if (callgraph == null || callgraph.isEmpty()) {
             io.systemOutput("No callers found for " + methodName);

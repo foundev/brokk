@@ -926,7 +926,7 @@ public class WorkspacePanel extends JPanel {
                     chrome.systemOutput("No method selected.");
                 } else {
 
-                    contextManager.callersForMethod(dialog.getSelectedMethod(), dialog.getDepth(), dialog.getCallGraph());
+                    contextManager.addCallersForMethod(dialog.getSelectedMethod(), dialog.getDepth(), dialog.getCallGraph());
                 }
             } catch (CancellationException cex) {
                 chrome.systemOutput("Method selection canceled.");
