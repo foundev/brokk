@@ -1,11 +1,10 @@
-package io.github.jbellis.brokk.dto;
+package io.github.jbellis.brokk.context;
 
 import com.fasterxml.jackson.annotation.JsonTypeInfo;
 import com.fasterxml.jackson.annotation.JsonTypeInfo.As;
 import com.fasterxml.jackson.annotation.JsonTypeInfo.Id;
 
 import java.util.List;
-import java.util.Map;
 import java.util.Set;
 
 /**

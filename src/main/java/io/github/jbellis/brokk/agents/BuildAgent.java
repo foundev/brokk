@@ -12,6 +12,7 @@ import io.github.jbellis.brokk.IContextManager;
 import io.github.jbellis.brokk.Llm;
 import io.github.jbellis.brokk.Project;
 import io.github.jbellis.brokk.analyzer.ProjectFile;
+import io.github.jbellis.brokk.context.ContextFragment;
 import io.github.jbellis.brokk.git.GitRepo;
 import io.github.jbellis.brokk.tools.ToolExecutionResult;
 import io.github.jbellis.brokk.tools.ToolRegistry;
@@ -379,7 +380,7 @@ public class BuildAgent {
             // Get ProjectFiles specifically from SkeletonFragments among all virtual fragments
             Stream<ProjectFile> projectFilesFromSkeletons =
                 cm.topContext().virtualFragments()
-                    .filter(vf -> vf instanceof io.github.jbellis.brokk.ContextFragment.SkeletonFragment)
+                    .filter(vf -> vf instanceof ContextFragment.SkeletonFragment)
                     .flatMap(skeletonFragment -> skeletonFragment.files(cm.getProject()).stream());
 
             // Combine all relevant ProjectFiles into a single set for checking against test files

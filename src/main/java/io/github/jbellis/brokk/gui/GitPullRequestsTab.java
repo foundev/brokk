@@ -2,6 +2,7 @@ package io.github.jbellis.brokk.gui;
 
 import io.github.jbellis.brokk.ContextManager;
 import io.github.jbellis.brokk.GitHubAuth;
+import io.github.jbellis.brokk.context.ContextFragment;
 import io.github.jbellis.brokk.git.GitRepo;
 import io.github.jbellis.brokk.git.ICommitInfo;
 import org.apache.logging.log4j.LogManager;
@@ -1189,7 +1190,7 @@ public class GitPullRequestsTab extends JPanel {
                 }
 
                 String description = "PR #" + pr.getNumber() + " (" + pr.getTitle() + ") diff vs " + baseBranchName + "@{" + prBaseSha.substring(0, 7) + "}";
-                var fragment = new io.github.jbellis.brokk.ContextFragment.StringFragment(diff, description, SyntaxConstants.SYNTAX_STYLE_JAVA);
+                var fragment = new ContextFragment.StringFragment(diff, description, SyntaxConstants.SYNTAX_STYLE_JAVA);
                 SwingUtilities.invokeLater(() -> chrome.openFragmentPreview(fragment));
                 chrome.systemOutput("Opened diff for PR #" + pr.getNumber() + " in preview panel");
             } catch (Exception ex) {

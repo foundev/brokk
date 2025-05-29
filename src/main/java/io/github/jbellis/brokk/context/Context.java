@@ -1,15 +1,17 @@
-package io.github.jbellis.brokk;
+package io.github.jbellis.brokk.context;
 
 import com.google.common.collect.Streams;
 import dev.langchain4j.data.message.ChatMessage;
-import io.github.jbellis.brokk.ContextFragment.HistoryFragment;
-import io.github.jbellis.brokk.ContextFragment.SkeletonFragment;
+import io.github.jbellis.brokk.AnalyzerUtil;
+import io.github.jbellis.brokk.IContextManager;
+import io.github.jbellis.brokk.SessionResult;
+import io.github.jbellis.brokk.TaskEntry;
+import io.github.jbellis.brokk.context.ContextFragment.HistoryFragment;
+import io.github.jbellis.brokk.context.ContextFragment.SkeletonFragment;
 import io.github.jbellis.brokk.analyzer.JoernAnalyzer;
 import io.github.jbellis.brokk.analyzer.CodeUnit;
 import io.github.jbellis.brokk.analyzer.IAnalyzer;
 import io.github.jbellis.brokk.analyzer.ProjectFile;
-import io.github.jbellis.brokk.dto.ContextDto;
-import io.github.jbellis.brokk.dto.ContextMapper;
 import io.github.jbellis.brokk.util.Json;
 import io.github.jbellis.brokk.util.Messages;
 import org.apache.logging.log4j.LogManager;
@@ -599,7 +601,7 @@ public class Context {
      * Serializes this Context to JSON using the DTO layer.
      */
     public String toJson() {
-        return Json.toJson(ContextMapper.toDto(this));
+        return Json.toJson(DtoMapper.toDto(this));
     }
     
     /**
@@ -607,7 +609,7 @@ public class Context {
      */
     public static Context fromJson(String json, IContextManager mgr) {
         var dto = Json.fromJson(json, ContextDto.class);
-        return ContextMapper.fromDto(dto, mgr);
+        return DtoMapper.fromDto(dto, mgr);
     }
 
     /**

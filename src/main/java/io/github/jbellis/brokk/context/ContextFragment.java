@@ -1,6 +1,8 @@
-package io.github.jbellis.brokk;
+package io.github.jbellis.brokk.context;
 
 import dev.langchain4j.data.message.*;
+import io.github.jbellis.brokk.IProject;
+import io.github.jbellis.brokk.TaskEntry;
 import io.github.jbellis.brokk.analyzer.*;
 import io.github.jbellis.brokk.prompts.EditBlockParser;
 import io.github.jbellis.brokk.util.Messages;
@@ -589,10 +591,6 @@ public interface ContextFragment {
         public PasteFragment(int existingId, Future<String> descriptionFuture) {
             super(existingId);
             this.descriptionFuture = descriptionFuture;
-        }
-
-        public Future<String> getDescriptionFuture() {
-            return descriptionFuture;
         }
 
         @Override

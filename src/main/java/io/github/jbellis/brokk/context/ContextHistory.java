@@ -1,5 +1,6 @@
-package io.github.jbellis.brokk;
+package io.github.jbellis.brokk.context;
 
+import io.github.jbellis.brokk.IConsoleIO;
 import io.github.jbellis.brokk.analyzer.ProjectFile;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;

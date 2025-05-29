@@ -1,6 +1,6 @@
-package io.github.jbellis.brokk.dto;
+package io.github.jbellis.brokk.context;
 
-import io.github.jbellis.brokk.dto.FragmentDtos.*;
+import io.github.jbellis.brokk.context.FragmentDtos.*;
 import java.util.List;
 
 /**
