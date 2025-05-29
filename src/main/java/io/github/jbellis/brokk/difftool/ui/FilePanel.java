@@ -410,10 +410,11 @@ public class FilePanel implements BufferDocumentChangeListenerIF {
                     style = SyntaxDetector.fromExtension(ext);
                 }
             }
+            System.out.println("H1 Buffer " + fileName + " -> " + style);
         }
 
         // --------------------------- Heuristic 2 -----------------------------
-        if (SyntaxConstants.SYNTAX_STYLE_NONE.equals(style) && diffPanel != null) {
+        if (SyntaxConstants.SYNTAX_STYLE_NONE.equals(style)) {
             var otherPanel = BufferDocumentIF.ORIGINAL.equals(name)
                              ? diffPanel.getFilePanel(BufferDiffPanel.RIGHT)
                              : diffPanel.getFilePanel(BufferDiffPanel.LEFT);
