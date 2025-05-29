@@ -307,7 +307,8 @@ public class FilePanel implements BufferDocumentChangeListenerIF {
     }
 
 
-    private JMHighlighter getHighlighter() {
+    /** Package-clients (e.g. BufferDiffPanel) need to query the composite highlighter. */
+    public JMHighlighter getHighlighter() {
         return jmHighlighter;
     }
 
