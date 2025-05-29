@@ -11,6 +11,8 @@ public interface ThemeAware {
 
     /**
      * Called by {@link GuiTheme} when the global theme changes.
+     * Implementations should call SwingUtilities.updateComponentTreeUI(this) on themselves
+     * This method is always called on the EDT
      *
      * @param guiTheme    reference to the central theme manager (handy for
      *                    delegating to helper methods such as

@@ -110,6 +110,7 @@ public class MarkdownOutputPanel extends JPanel implements Scrollable, ThemeAwar
         // Extract existing messages to re-add them, which will apply the new theme
         var currentMessages = bubbles.stream().map(Bubble::message).toList();
         setText(currentMessages); // This will clear and re-add, applying the new theme
+        SwingUtilities.updateComponentTreeUI(this);
 
         revalidate();
         repaint();

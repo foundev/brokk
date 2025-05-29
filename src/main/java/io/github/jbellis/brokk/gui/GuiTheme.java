@@ -104,7 +104,7 @@ public class GuiTheme {
                         if (dialog instanceof ThemeAware aware) {
                             aware.applyTheme(this);
                         }
-                        applyThemeRecursively(dialog.getContentPane(), theme);
+                        applyThemeToComponent(dialog.getContentPane(), theme);
                     }
                 }
             })
@@ -133,14 +133,16 @@ public class GuiTheme {
      * supplied frame.
      */
     private void applyThemeToFrame(JFrame frame, Theme theme) {
-        applyThemeRecursively(frame.getContentPane(), theme);
+        assert SwingUtilities.isEventDispatchThread() : "applyThemeToFrame must be called on EDT";
+        applyThemeToComponent(frame.getContentPane(), theme);
     }
 
     /**
      * Recursive depth-first traversal of the Swing component hierarchy that honours the
      * {@link io.github.jbellis.brokk.gui.ThemeAware} contract.
      */
-    private void applyThemeRecursively(Component component, Theme theme) {
+    private void applyThemeToComponent(Component component, Theme theme) {
+        assert SwingUtilities.isEventDispatchThread() : "applyThemeToComponent must be called on EDT";
         if (component == null) {
             return;
         }
@@ -153,7 +155,7 @@ public class GuiTheme {
             // 3. Handle the common case of RSyntaxTextArea wrapped in a JScrollPane
             case JScrollPane scrollPane -> {
                 Component view = scrollPane.getViewport().getView();
-                applyThemeRecursively(view, theme);
+                applyThemeToComponent(view, theme);
             }
             default -> { }
         }
@@ -161,7 +163,7 @@ public class GuiTheme {
         // 4. Recurse into child components (if any)
         if (component instanceof Container container) {
             for (Component child : container.getComponents()) {
-                applyThemeRecursively(child, theme);
+                applyThemeToComponent(child, theme);
             }
         }
     }
