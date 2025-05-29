@@ -61,23 +61,6 @@ public class DtoMapper {
      * Converts a ContextDto back to a Context domain object.
      */
     public static Context fromDto(ContextDto dto, IContextManager mgr) {
-        // First collect all IDs to ensure the counter is properly set
-        var allIds = new ArrayList<Integer>();
-        
-        // Collect IDs from all fragment types
-        dto.editableFiles().forEach(f -> allIds.add(f.id()));
-        dto.readonlyFiles().forEach(f -> allIds.add(getIdFromPathFragment(f)));
-        dto.virtualFragments().forEach(f -> allIds.add(getIdFromVirtualFragment(f)));
-        dto.taskHistory().stream()
-            .filter(t -> t.log() != null)
-            .forEach(t -> allIds.add(t.log().id()));
-        
-        // Update the counter to ensure no ID conflicts
-        if (!allIds.isEmpty()) {
-            int maxId = allIds.stream().mapToInt(Integer::intValue).max().orElse(0);
-            ContextFragment.setNextId(maxId + 1);
-        }
-        
         var context = new Context(mgr, "Restored from DTO");
         
         // Convert editable files
@@ -123,9 +106,7 @@ public class DtoMapper {
         // Convert virtual fragments
         for (var virtualDto : dto.virtualFragments()) {
             var fragment = fromVirtualFragmentDto(virtualDto);
-            if (fragment != null) {
-                context = context.addVirtualFragment(fragment);
-            }
+            context = context.addVirtualFragment(fragment);
         }
         
         // Convert task history
@@ -143,30 +124,6 @@ public class DtoMapper {
         return context;
     }
     
-    private static int getIdFromPathFragment(PathFragmentDto dto) {
-        return switch (dto) {
-            case ProjectFileDto pfd -> pfd.id();
-            case ExternalFileDto efd -> efd.id();
-            case ImageFileDto ifd -> ifd.id();
-            case GitFileFragmentDto gfd -> gfd.id();
-        };
-    }
-    
-    private static int getIdFromVirtualFragment(VirtualFragmentDto dto) {
-        return switch (dto) {
-            case SearchFragmentDto sfd -> sfd.id();
-            case TaskFragmentDto tfd -> tfd.id();
-            case StringFragmentDto sfd -> sfd.id();
-            case SkeletonFragmentDto sfd -> sfd.id();
-            case UsageFragmentDto ufd -> ufd.id();
-            case PasteTextFragmentDto ptfd -> ptfd.id();
-            case PasteImageFragmentDto pifd -> pifd.id();
-            case StacktraceFragmentDto stfd -> stfd.id();
-            case CallGraphFragmentDto cgfd -> cgfd.id();
-            case HistoryFragmentDto hfd -> hfd.id();
-        };
-    }
-    
     private static ProjectFileDto toProjectFileDto(ContextFragment.ProjectPathFragment fragment) {
         var file = fragment.file();
         return new ProjectFileDto(fragment.id(), file.getRoot().toString(), file.getRelPath().toString());
@@ -179,7 +136,7 @@ public class DtoMapper {
                 yield new ProjectFileDto(projectFragment.id(), pf.getRoot().toString(), pf.getRelPath().toString());
             }
             case ContextFragment.ExternalPathFragment externalFragment -> {
-                var ef = (ExternalFile) externalFragment.file();
+                var ef = externalFragment.file();
                 yield new ExternalFileDto(externalFragment.id(), ef.getPath().toString());
             }
             case ContextFragment.GitFileFragment gitFileFragment -> {

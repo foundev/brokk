@@ -789,7 +789,6 @@ public class Project implements IProject, AutoCloseable {
             // Then load the context
             String contextData = workspaceProps.getProperty("context");
             if (contextData != null && !contextData.isEmpty()) {
-                // Always assume JSON format now
                 Context context = Context.fromJson(contextData, contextManager);
                 logger.debug("Loaded context from JSON with {} fragments", context.allFragments().count());
                 return context;

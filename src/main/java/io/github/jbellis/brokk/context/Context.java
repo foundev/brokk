@@ -680,4 +680,39 @@ public class Context {
                            null,
                            CompletableFuture.completedFuture("Reset context and history to historical state"));
     }
+
+    /**
+     * Calculates the maximum ID from all fragments and task history in this context.
+     * Used to ensure proper ID sequencing when deserializing contexts.
+     */
+    public int getMaxId() {
+        var maxId = 0;
+        
+        // Check editable files
+        maxId = Math.max(maxId, editableFiles.stream()
+                .mapToInt(f -> f.id())
+                .max()
+                .orElse(0));
+        
+        // Check readonly files  
+        maxId = Math.max(maxId, readonlyFiles.stream()
+                .mapToInt(f -> f.id())
+                .max()
+                .orElse(0));
+        
+        // Check virtual fragments
+        maxId = Math.max(maxId, virtualFragments.stream()
+                .mapToInt(f -> f.id())
+                .max()
+                .orElse(0));
+        
+        // Check task history
+        maxId = Math.max(maxId, taskHistory.stream()
+                .filter(t -> t.log() != null)
+                .mapToInt(t -> t.log().id())
+                .max()
+                .orElse(0));
+        
+        return maxId;
+    }
 }

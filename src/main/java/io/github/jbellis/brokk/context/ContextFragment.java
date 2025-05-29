@@ -22,21 +22,21 @@ import java.util.stream.Stream;
 public interface ContextFragment {
     // Static counter for all fragments
     // TODO reset this on new session (when we have sessions)
-    AtomicInteger NEXT_ID = new AtomicInteger(1);
+    AtomicInteger nextId = new AtomicInteger(1);
 
     /**
      * Gets the current max fragment ID for serialization purposes
      */
     static int getCurrentMaxId() {
-        return NEXT_ID.get();
+        return nextId.get();
     }
 
     /**
      * Sets the next fragment ID value (used during deserialization)
      */
     static void setNextId(int value) {
-        if (value > NEXT_ID.get()) {
-            NEXT_ID.set(value);
+        if (value > nextId.get()) {
+            nextId.set(value);
         }
     }
 
@@ -152,13 +152,13 @@ public interface ContextFragment {
     record ProjectPathFragment(ProjectFile file, int id) implements PathFragment {
 
         public ProjectPathFragment(ProjectFile file) {
-            this(file, NEXT_ID.getAndIncrement());
+            this(file, nextId.getAndIncrement());
         }
 
         public static ProjectPathFragment withId(ProjectFile file, int existingId) {
             // Update the counter if needed to avoid ID conflicts
-            if (existingId >= NEXT_ID.get()) {
-                NEXT_ID.set(existingId + 1);
+            if (existingId >= nextId.get()) {
+                nextId.set(existingId + 1);
             }
             return new ProjectPathFragment(file, existingId);
         }
@@ -220,13 +220,13 @@ public interface ContextFragment {
     record GitFileFragment(ProjectFile file, String revision, String content, int id) implements PathFragment {
 
         public GitFileFragment(ProjectFile file, String revision, String content) {
-            this(file, revision, content, NEXT_ID.getAndIncrement());
+            this(file, revision, content, nextId.getAndIncrement());
         }
 
         public static GitFileFragment withId(ProjectFile file, String revision, String content, int existingId) {
             // Update the counter if needed to avoid ID conflicts
-            if (existingId >= NEXT_ID.get()) {
-                NEXT_ID.set(existingId + 1);
+            if (existingId >= nextId.get()) {
+                nextId.set(existingId + 1);
             }
             return new GitFileFragment(file, revision, content, existingId);
         }
@@ -288,13 +288,13 @@ public interface ContextFragment {
     record ExternalPathFragment(ExternalFile file, int id) implements PathFragment {
 
         public ExternalPathFragment(ExternalFile file) {
-            this(file, NEXT_ID.getAndIncrement());
+            this(file, nextId.getAndIncrement());
         }
 
         public static ExternalPathFragment withId(ExternalFile file, int existingId) {
             // Update the counter if needed to avoid ID conflicts
-            if (existingId >= NEXT_ID.get()) {
-                NEXT_ID.set(existingId + 1);
+            if (existingId >= nextId.get()) {
+                nextId.set(existingId + 1);
             }
             return new ExternalPathFragment(file, existingId);
         }
@@ -326,15 +326,15 @@ public interface ContextFragment {
     record ImageFileFragment(BrokkFile file, int id) implements PathFragment {
 
         public ImageFileFragment(BrokkFile file) {
-            this(file, NEXT_ID.getAndIncrement());
+            this(file, nextId.getAndIncrement());
             assert !file.isText() : "ImageFileFragment should only be used for non-text files";
         }
 
         public static ImageFileFragment withId(BrokkFile file, int existingId) {
             assert !file.isText() : "ImageFileFragment should only be used for non-text files";
             // Update the counter if needed to avoid ID conflicts
-            if (existingId >= NEXT_ID.get()) {
-                NEXT_ID.set(existingId + 1);
+            if (existingId >= nextId.get()) {
+                nextId.set(existingId + 1);
             }
             return new ImageFileFragment(file, existingId);
         }
@@ -418,14 +418,14 @@ public interface ContextFragment {
         private final int id;
 
         public VirtualFragment() {
-            this.id = NEXT_ID.getAndIncrement();
+            this.id = nextId.getAndIncrement();
         }
 
         protected VirtualFragment(int existingId) {
             this.id = existingId;
             // Update the counter if needed to avoid ID conflicts
-            if (existingId >= NEXT_ID.get()) {
-                NEXT_ID.set(existingId + 1);
+            if (existingId >= nextId.get()) {
+                nextId.set(existingId + 1);
             }
         }
 
