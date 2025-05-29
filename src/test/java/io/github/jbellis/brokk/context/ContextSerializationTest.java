@@ -172,7 +172,11 @@ public class ContextSerializationTest {
 
         // Add SearchFragment
         var searchSources = Set.of(CodeUnit.cls(mockFile, "com.test", "TestClass"));
-        context = context.addVirtualFragment(new ContextFragment.SearchFragment("test query", "test explanation", searchSources));
+        List<ChatMessage> searchMessages = List.of(
+                dev.langchain4j.data.message.UserMessage.from("test query"),
+                dev.langchain4j.data.message.AiMessage.from("test explanation")
+        );
+        context = context.addVirtualFragment(new ContextFragment.SearchFragment("Search: test query", searchMessages, searchSources));
 
         // Add SkeletonFragment
         var skeletonMap = Map.of(CodeUnit.cls(mockFile, "com.test", "TestClass"), "class TestClass {}");
@@ -204,8 +208,8 @@ public class ContextSerializationTest {
                 .filter(f -> f instanceof ContextFragment.SearchFragment)
                 .findFirst()
                 .orElseThrow();
-        assertEquals("Search: test query", searchFragment.description());
-        assertTrue(searchFragment.text().contains("test query"));
+        assertEquals("Search: test query", searchFragment.description()); // description is sessionName
+        assertTrue(searchFragment.text().contains("test query")); // text() formats underlying messages
         assertTrue(searchFragment.text().contains("test explanation"));
 
         // Verify SkeletonFragment content
@@ -513,8 +517,12 @@ public class ContextSerializationTest {
 
         // Add SearchFragment
         var searchSources = Set.of(CodeUnit.cls(projectFile, "com.test", "Complex"));
+        List<ChatMessage> complexSearchMessages = List.of(
+                dev.langchain4j.data.message.UserMessage.from("search query"),
+                dev.langchain4j.data.message.AiMessage.from("search result")
+        );
         context = context.addVirtualFragment(new ContextFragment.SearchFragment(
-            "search query", "search result", searchSources));
+            "Search: search query", complexSearchMessages, searchSources));
 
         // Add SkeletonFragment
         var skeletonMap = Map.of(CodeUnit.cls(projectFile, "com.test", "Complex"), "class Complex {}");

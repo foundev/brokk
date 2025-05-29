@@ -36,6 +36,14 @@ public interface IContextManager {
         return List.of();
     }
 
+    default Collection<? extends ChatMessage> getWorkspaceReadOnlyMessages() throws InterruptedException {
+        return List.of();
+    }
+
+    default Collection<? extends ChatMessage> getWorkspaceEditableMessages() throws InterruptedException {
+        return List.of();
+    }
+
     default String getEditableSummary() {
         return "";
     }
@@ -140,10 +148,16 @@ public interface IContextManager {
         throw new UnsupportedOperationException();
     }
 
+    /**
+     * Create a new LLM instance for the given model and description
+     */
     default Llm getLlm(StreamingChatLanguageModel model, String taskDescription) {
         return getLlm(model, taskDescription, false);
     }
 
+    /**
+     * Create a new LLM instance for the given model and description
+     */
     default Llm getLlm(StreamingChatLanguageModel model, String taskDescription, boolean allowPartialResponses) {
         return new Llm(model, taskDescription, this, allowPartialResponses, getProject().getDataRetentionPolicy() == Project.DataRetentionPolicy.IMPROVE_BROKK);
     }

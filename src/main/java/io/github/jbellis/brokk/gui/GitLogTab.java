@@ -8,9 +8,11 @@ import io.github.jbellis.brokk.git.CommitInfo;
 import io.github.jbellis.brokk.git.ICommitInfo;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
+import org.eclipse.jgit.api.MergeResult;
 import org.eclipse.jgit.api.errors.GitAPIException;
 
 import javax.swing.*;
+import java.util.stream.Collectors;
 import javax.swing.table.DefaultTableCellRenderer;
 import javax.swing.table.DefaultTableModel;
 import javax.swing.table.TableCellRenderer;
@@ -604,6 +606,7 @@ public class GitLogTab extends JPanel {
         }
         JMenuItem addFileToContextItem = new JMenuItem("Capture Diff");
         JMenuItem compareFileWithLocalItem = new JMenuItem("Compare with Local");
+        JMenuItem viewFileAtRevisionItem = new JMenuItem("View File at Revision");
         JMenuItem viewDiffItem = new JMenuItem("View Diff");
         JMenuItem viewHistoryItem = new JMenuItem("View History");
         JMenuItem editFileItem = new JMenuItem("Edit File(s)");
@@ -614,6 +617,7 @@ public class GitLogTab extends JPanel {
         changesContextMenu.addSeparator();
         changesContextMenu.add(viewHistoryItem);
         changesContextMenu.addSeparator();
+        changesContextMenu.add(viewFileAtRevisionItem);
         changesContextMenu.add(viewDiffItem);
         changesContextMenu.add(compareFileWithLocalItem);
         changesContextMenu.add(comparePrevWithLocalItem);
@@ -647,6 +651,7 @@ public class GitLogTab extends JPanel {
                     viewHistoryItem.setEnabled(singleFileSelected);
                     addFileToContextItem.setEnabled(hasFileSelection);
                     editFileItem.setEnabled(hasFileSelection);
+                    viewFileAtRevisionItem.setEnabled(singleFileSelected && isSingleCommit);
                     viewDiffItem.setEnabled(singleFileSelected && isSingleCommit);
                     compareFileWithLocalItem.setEnabled(singleFileSelected && isSingleCommit);
                     comparePrevWithLocalItem.setEnabled(singleFileSelected && isSingleCommit);
@@ -723,6 +728,19 @@ public class GitLogTab extends JPanel {
                     String commitId = commitInfo.id();
                     GitUiUtil.showDiffVsLocal(contextManager, chrome,
                                               commitId, filePath, /*useParent=*/ true);
+                }
+            }
+        });
+        viewFileAtRevisionItem.addActionListener(e -> {
+            var paths = changesTree.getSelectionPaths();
+            if (paths != null && paths.length == 1) {
+                String filePath = getFilePathFromTreePath(paths[0]);
+                int[] selRows = commitsTable.getSelectedRows();
+                if (selRows.length == 1) {
+                    // Get CommitInfo from hidden column 5
+                    ICommitInfo commitInfo = (ICommitInfo) commitsTableModel.getValueAt(selRows[0], 5);
+                    String commitId = commitInfo.id();
+                    GitUiUtil.viewFileAtRevision(contextManager, chrome, commitId, filePath);
                 }
             }
         });
@@ -1426,12 +1444,31 @@ public class GitLogTab extends JPanel {
     private void mergeBranchIntoHead(String branchName) {
         contextManager.submitUserTask("Merging branch: " + branchName, () -> {
             try {
-                getRepo().mergeIntoHead(branchName);
-                chrome.systemOutput("Branch '" + branchName + "' was successfully merged into HEAD.");
-                update();
+                MergeResult mergeResult = getRepo().mergeIntoHead(branchName);
+                MergeResult.MergeStatus status = mergeResult.getMergeStatus();
+
+                if (status.isSuccessful()) {
+                    if (status == MergeResult.MergeStatus.ALREADY_UP_TO_DATE) {
+                        chrome.systemOutput("Branch '" + branchName + "' is already up-to-date with HEAD.");
+                    } else {
+                        chrome.systemOutput("Branch '" + branchName + "' was successfully merged into HEAD.");
+                    }
+                } else if (status == MergeResult.MergeStatus.CONFLICTING) {
+                    String conflictingFiles = mergeResult.getConflicts().keySet().stream()
+                            .map(s -> "  - " + s)
+                            .collect(Collectors.joining("\n"));
+                    chrome.toolErrorRaw("Merge conflicts detected for branch '" + branchName + "'.\n" +
+                                        "Please resolve conflicts manually and then commit.\n" +
+                                        "Conflicting files:\n" + conflictingFiles);
+                } else {
+                    // For other non-successful statuses like FAILED, ABORTED etc.
+                    chrome.toolErrorRaw("Merge of branch '" + branchName + "' failed with error: " + status);
+                }
+                update(); // Refresh UI to reflect new state (merged, conflicting, or failed)
             } catch (GitAPIException e) {
                 logger.error("Error merging branch: {}", branchName, e);
-                chrome.toolErrorRaw(e.getMessage());
+                chrome.toolErrorRaw("Error merging branch '" + branchName + "': " + e.getMessage());
+                update(); // Refresh UI to show current state after error
             }
         });
     }

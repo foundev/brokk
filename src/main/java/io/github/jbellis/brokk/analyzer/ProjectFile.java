@@ -104,4 +104,33 @@ public class ProjectFile implements BrokkFile {
     public int hashCode() {
         return relPath.hashCode();
     }
+
+    public Language getLanguage() {
+        return Language.fromExtension(extension());
+    }
+
+    private void writeObject(java.io.ObjectOutputStream oos) throws IOException {
+        oos.defaultWriteObject();
+        // store the string forms of root/relPath
+        oos.writeUTF(root.toString());
+        oos.writeUTF(relPath.toString());
+    }
+
+    private void readObject(java.io.ObjectInputStream ois) throws IOException, ClassNotFoundException {
+        // read all non-transient fields
+        ois.defaultReadObject();
+        // reconstitute root/relPath from the strings
+        String rootString = ois.readUTF();
+        String relString = ois.readUTF();
+        // both must be absolute/relative as before
+        root = Path.of(rootString);
+        if (!root.isAbsolute()) {
+            throw new IllegalArgumentException("Root must be absolute");
+        }
+
+        relPath = Path.of(relString);
+        if (relPath.isAbsolute()) {
+            throw new IllegalArgumentException("RelPath must be relative");
+        }
+    }
 }

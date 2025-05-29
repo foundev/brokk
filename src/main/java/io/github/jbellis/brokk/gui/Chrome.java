@@ -3,6 +3,7 @@ package io.github.jbellis.brokk.gui;
 import dev.langchain4j.data.message.ChatMessage;
 import dev.langchain4j.data.message.ChatMessageType;
 import io.github.jbellis.brokk.*;
+import io.github.jbellis.brokk.analyzer.ExternalFile;
 import io.github.jbellis.brokk.analyzer.ProjectFile;
 import io.github.jbellis.brokk.context.Context;
 import io.github.jbellis.brokk.context.ContextFragment;
@@ -10,7 +11,6 @@ import io.github.jbellis.brokk.git.GitRepo;
 import io.github.jbellis.brokk.gui.dialogs.PreviewImagePanel;
 import io.github.jbellis.brokk.gui.dialogs.PreviewTextPanel;
 import io.github.jbellis.brokk.gui.mop.MarkdownOutputPanel;
-import io.github.jbellis.brokk.util.SyntaxDetector;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 import org.jetbrains.annotations.Nullable;
@@ -678,7 +678,7 @@ public class Chrome implements AutoCloseable, IConsoleIO, IContextManager.Contex
             var content = pf.read();
 
             // 2. Deduce syntax style
-            var syntax = SyntaxDetector.detect(pf);
+            var syntax = pf.getSyntaxStyle();
 
             // 3. Build the PTP
             // 3. Build the PTP
@@ -759,25 +759,57 @@ public class Chrome implements AutoCloseable, IConsoleIO, IContextManager.Contex
             }
 
             // Handle text fragments
-            String content = fragment.text();
-            io.github.jbellis.brokk.analyzer.ProjectFile file;
-            // Handle PathFragment using the unified previewFile method
-            if (fragment instanceof ContextFragment.PathFragment pf) {
-                // Ensure we are on the EDT before calling previewFile
-                if (!SwingUtilities.isEventDispatchThread()) {
-                    SwingUtilities.invokeLater(() -> previewFile((ProjectFile) pf.file()));
-                } else {
-                    previewFile((ProjectFile) pf.file());
-                }
-                return; // previewFile handles showing the frame
-            }
+            String content = fragment.text(); // Content derived from fragment's specific text() method
+            String syntaxStyle = fragment.syntaxStyle(); // Syntax style from fragment
 
-            // Handle other text-based fragments (e.g., VirtualFragment, GitFileFragment)
-            String syntaxStyle = fragment.syntaxStyle();
-            // Check specifically for GitFileFragment to get the associated file, otherwise null
-            file = (fragment instanceof ContextFragment.GitFileFragment gff) ? (ProjectFile) gff.file() : null;
-            var previewPanel = new PreviewTextPanel(contextManager, file, content, syntaxStyle, themeManager, fragment);
-            showPreviewFrame(contextManager, title, previewPanel); // Use helper for these too
+            if (fragment instanceof ContextFragment.GitFileFragment gff) {
+                ProjectFile file = (ProjectFile) gff.file();
+                // For GitFileFragment, 'content' and 'syntaxStyle' are already correctly fetched
+                // from gff.text() and gff.syntaxStyle() due to polymorphism.
+                // Pass 'gff' itself as the fragment argument to PreviewTextPanel.
+                var previewPanel = new PreviewTextPanel(contextManager, file, content, syntaxStyle, themeManager, gff);
+                showPreviewFrame(contextManager, title, previewPanel);
+                return;
+            } else if (fragment instanceof ContextFragment.PathFragment pf) {
+                // Handle PathFragment using the unified previewFile method
+                // This method reads live content and determines syntax internally.
+                var brokkFile = pf.file();
+                if (brokkFile instanceof ProjectFile projectFile) {
+                    if (!SwingUtilities.isEventDispatchThread()) {
+                        SwingUtilities.invokeLater(() -> previewFile(projectFile));
+                    } else {
+                        previewFile(projectFile);
+                    }
+                    return; // previewFile handles showing the frame
+                } else if (brokkFile instanceof ExternalFile externalFile) {
+                    Runnable task = () -> {
+                        try {
+                            String externalFileContent = externalFile.read();
+                            String externalFileSyntaxStyle = externalFile.getSyntaxStyle();
+                            // For ExternalFile, ProjectFile arg to PreviewTextPanel is null.
+                            // Pass `fragment` (which is `pf`) to PreviewTextPanel for context.
+                            var panel = new PreviewTextPanel(contextManager, null, externalFileContent, externalFileSyntaxStyle, themeManager, fragment);
+                            showPreviewFrame(contextManager, "Preview: " + externalFile.toString(), panel);
+                        } catch (IOException ex) {
+                            toolErrorRaw("Error reading external file for preview: " + ex.getMessage());
+                            logger.error("Error reading external file {} for preview", externalFile.absPath(), ex);
+                        }
+                    };
+                    // Ensure UI operations are on EDT
+                    if (!SwingUtilities.isEventDispatchThread()) {
+                        SwingUtilities.invokeLater(task);
+                    } else {
+                        task.run();
+                    }
+                    return;
+                }
+            } else {
+                // Handle other text-based fragments (e.g., VirtualFragment, StringFragment)
+                // These fragments typically don't have an associated ProjectFile in the same way,
+                // so 'file' is null. 'content' and 'syntaxStyle' are from the fragment.
+                var previewPanel = new PreviewTextPanel(contextManager, null, content, syntaxStyle, themeManager, fragment);
+                showPreviewFrame(contextManager, title, previewPanel);
+            }
 
         } catch (IOException ex) { // IOException mainly from fragment.text()
             toolErrorRaw("Error reading fragment content: " + ex.getMessage());

@@ -532,25 +532,15 @@ public interface ContextFragment {
     // the search, I think we need to add a messages parameter and pass them to super();
     // then we'd also want to override format() to keep it out of what the LLM sees
     class SearchFragment extends TaskFragment {
-        private final String query;
-        private final String explanation;
+        private static final long serialVersionUID = 5L;
         private final Set<CodeUnit> sources;
 
-        public SearchFragment(String query, String explanation, Set<CodeUnit> sources) {
-            super(List.of(new UserMessage(query), new AiMessage(explanation)), query);
+        public SearchFragment(String sessionName, List<ChatMessage> messages, Set<CodeUnit> sources) {
+            super(messages, sessionName);
             assert sources != null;
-            this.query = query;
-            this.explanation = explanation;
             this.sources = sources;
         }
 
-        public SearchFragment(int existingId, String query, String explanation, Set<CodeUnit> sources) {
-            super(existingId, List.of(new UserMessage(query), new AiMessage(explanation)), query);
-            assert sources != null;
-            this.query = query;
-            this.explanation = explanation;
-            this.sources = sources;
-        }
 
         @Override
         public Set<CodeUnit> sources(IAnalyzer analyzer) {
@@ -562,21 +552,49 @@ public interface ContextFragment {
         }
 
         @Override
-        public String description() {
-            return "Search: " + query;
-        }
-
-        @Override
         public String formatSummary(IAnalyzer analyzer) {
             return format(); // full search result
         }
 
-        public String explanation() {
-            return explanation;
+        // --- Custom Serialization using Proxy Pattern ---
+        // SearchFragment extends TaskFragment, which has its own proxy for messages.
+        // We only need to handle SearchFragment's own fields here. TaskFragment's state
+        // should be handled by its proxy during the serialization process.
+
+        @java.io.Serial
+        private Object writeReplace() {
+            return new SerializationProxy(this);
         }
-        
-        public String query() {
-            return query;
+
+        @java.io.Serial
+        private void readObject(java.io.ObjectInputStream in) throws IOException, ClassNotFoundException {
+            // This method should not be called if writeReplace is used.
+            throw new java.io.NotSerializableException("SearchFragment must be serialized via SerializationProxy");
+        }
+
+        private static class SerializationProxy implements java.io.Serializable {
+            @java.io.Serial
+            private static final long serialVersionUID = 41L;
+
+            private final String serializedMessages; // Store messages as JSON string
+            private final String sessionName;
+            private final Set<CodeUnit> sources;
+
+            SerializationProxy(SearchFragment fragment) {
+                // Store the class name of the parser
+                this.sessionName = fragment.description();
+                this.serializedMessages = ChatMessageSerializer.messagesToJson(fragment.messages());
+                this.sources = fragment.sources;
+            }
+
+            /**
+             * Reconstruct the TaskFragment instance after the SerializationProxy is deserialized.
+             */
+            @java.io.Serial
+            private Object readResolve() throws java.io.ObjectStreamException {
+                List<ChatMessage> deserializedMessages = ChatMessageDeserializer.messagesFromJson(serializedMessages);
+                return new SearchFragment(sessionName, deserializedMessages, sources);
+            }
         }
     }
 
@@ -750,7 +768,11 @@ public interface ContextFragment {
 
         @Override
         public String syntaxStyle() {
-            return SyntaxConstants.SYNTAX_STYLE_NONE;
+            if (sources.isEmpty()) {
+                return SyntaxConstants.SYNTAX_STYLE_NONE;
+            }
+            var firstClass = sources.iterator().next();
+            return firstClass.source().getSyntaxStyle();
         }
     }
 
@@ -809,7 +831,11 @@ public interface ContextFragment {
 
         @Override
         public String syntaxStyle() {
-            return SyntaxConstants.SYNTAX_STYLE_JAVA;
+            if (classes.isEmpty()) {
+                return SyntaxConstants.SYNTAX_STYLE_NONE;
+            }
+            var firstClass = classes.iterator().next();
+            return firstClass.source().getSyntaxStyle();
         }
         
         public String targetIdentifier() {
@@ -867,7 +893,11 @@ public interface ContextFragment {
 
         @Override
         public String syntaxStyle() {
-            return SyntaxConstants.SYNTAX_STYLE_JAVA;
+            if (classes.isEmpty()) {
+                return SyntaxConstants.SYNTAX_STYLE_NONE;
+            }
+            var firstClass = classes.iterator().next();
+            return firstClass.source().getSyntaxStyle();
         }
     }
 
@@ -984,7 +1014,11 @@ public interface ContextFragment {
 
         @Override
         public String syntaxStyle() {
-            return SyntaxConstants.SYNTAX_STYLE_JAVA;
+            if (skeletons.isEmpty()) {
+                return SyntaxConstants.SYNTAX_STYLE_NONE;
+            }
+            var firstCodeUnit = skeletons.keySet().iterator().next();
+            return firstCodeUnit.source().getSyntaxStyle();
         }
 
         @Override

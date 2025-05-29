@@ -178,8 +178,8 @@ public class DtoMapper {
                         .toList();
                 yield new SearchFragmentDto(
                         searchFragment.id(),
-                        searchFragment.query(),
-                        searchFragment.explanation(),
+                        searchFragment.description(), // sessionName
+                        "", // explanation - no longer available as separate field
                         sourcesDto,
                         messagesDto
                 );
@@ -338,10 +338,12 @@ public class DtoMapper {
                 var sources = searchDto.sources().stream()
                         .map(DtoMapper::fromCodeUnitDto)
                         .collect(Collectors.toSet());
+                var messages = searchDto.messages().stream()
+                        .map(DtoMapper::fromChatMessageDto)
+                        .toList();
                 yield new ContextFragment.SearchFragment(
-                        searchDto.id(),
-                        searchDto.query(),
-                        searchDto.explanation(),
+                        searchDto.query(), // sessionName
+                        messages,
                         sources
                 );
             }
