@@ -54,6 +54,7 @@ public class FilePanel implements BufferDocumentChangeListenerIF, ThemeAware {
     private boolean selected;
     private SearchHits searchHits;
     private final SearchBarDialog bar;
+    private boolean initialSetupComplete = false;
 
     public FilePanel(@NotNull BufferDiffPanel diffPanel, String name, SearchBarDialog bar) {
         this.diffPanel = diffPanel;
@@ -75,7 +76,7 @@ public class FilePanel implements BufferDocumentChangeListenerIF, ThemeAware {
         // JMHighlighter (secondary) handles diff/search.
         var compositeHighlighter = new CompositeHighlighter(jmHighlighter);
         editor.setHighlighter(compositeHighlighter);  // layered: syntax first, diff/search second
-
+        
         editor.addFocusListener(getFocusListener());
         bar.setFilePanel(this);
         // Undo listener will be added in setBufferDocument when editor is active
@@ -158,6 +159,13 @@ public class FilePanel implements BufferDocumentChangeListenerIF, ThemeAware {
 
                     // Undo tracking on the RSyntaxDocument (what the user edits)
                     editor.getDocument().addUndoableEditListener(diffPanel.getUndoHandler());
+                    
+                    // Ensure highlighter is still properly connected after setText
+                    if (editor.getHighlighter() instanceof CompositeHighlighter) {
+                        // Force reinstall to ensure proper binding
+                        var highlighter = editor.getHighlighter();
+                        highlighter.install(editor);
+                    }
                 }
                 editor.setEditable(!bd.isReadonly());
                 updateSyntaxStyle();            // pick syntax based on filename
@@ -173,6 +181,9 @@ public class FilePanel implements BufferDocumentChangeListenerIF, ThemeAware {
 
             // Initialize configuration - this sets border etc.
             initConfiguration();
+            
+            // Mark initial setup as complete
+            initialSetupComplete = true;
 
         } catch (Exception ex) {
             JOptionPane.showMessageDialog(diffPanel, "Could not read file or set document: "
@@ -190,8 +201,13 @@ public class FilePanel implements BufferDocumentChangeListenerIF, ThemeAware {
         removeHighlights();
         paintSearchHighlights();
         paintRevisionHighlights();
-        // Repaint the editor to trigger the composite highlighter's paint chain
-        editor.repaint();
+        // Force both the JMHighlighter and editor to repaint
+        if (jmHighlighter != null) {
+            jmHighlighter.repaint();
+        }
+        if (editor != null) {
+            editor.repaint();
+        }
     }
 
     /**
@@ -207,7 +223,6 @@ public class FilePanel implements BufferDocumentChangeListenerIF, ThemeAware {
         // Access the shared patch from the parent BufferDiffPanel
         var patch = diffPanel.getPatch();
         if (patch == null) return;
-
         for (var delta : patch.getDeltas()) {
             // Are we the "original" side or the "revised" side?
             if (BufferDocumentIF.ORIGINAL.equals(name)) {
@@ -355,6 +370,9 @@ public class FilePanel implements BufferDocumentChangeListenerIF, ThemeAware {
     }
 
     public void documentChanged(JMDocumentEvent de) {
+        // Don't trigger timer during initial setup
+        if (!initialSetupComplete) return;
+        
         if (de.getStartLine() == -1 && de.getDocumentEvent() == null) {
             // Refresh the diff of whole document.
             timer.restart();

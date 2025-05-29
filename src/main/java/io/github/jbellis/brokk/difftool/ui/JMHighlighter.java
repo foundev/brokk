@@ -96,7 +96,13 @@ public class JMHighlighter implements Highlighter, ThemeAware {
      * Adds a highlight to a specific layer.
      */
     public Object addHighlight(int layer, int p0, int p1, HighlightPainter painter) throws BadLocationException {
+        if (component == null) {
+            throw new IllegalStateException("Highlighter not installed on any component");
+        }
         Document doc = component.getDocument();
+        if (doc == null) {
+            throw new IllegalStateException("No document available");
+        }
         HighlightInfo hli = new HighlightInfo(doc.createPosition(p0), doc.createPosition(p1), painter);
 
         getLayer(layer).add(hli);
