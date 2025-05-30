@@ -88,7 +88,7 @@ public class RevisionBar extends JComponent
                 height = 1;
             }
 
-            g.setColor(ColorUtil.getColor(delta, diffPanel.getTheme().isDarkTheme()));
+            g.setColor(ColorUtil.getColor(delta, diffPanel.isDarkTheme()));
             g.fillRect(r.x, y, r.width, height);
         }
     }

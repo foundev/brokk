@@ -232,9 +232,9 @@ public class DiffScrollComponent extends JComponent implements ChangeListener
 
                 // --- Determine Color ---
                 Color color = switch (delta.getType()) {
-                    case INSERT -> Colors.getAdded(diffPanel.getTheme().isDarkTheme());
-                    case DELETE -> Colors.getDeleted(diffPanel.getTheme().isDarkTheme());
-                    case CHANGE -> Colors.getChanged(diffPanel.getTheme().isDarkTheme());
+                    case INSERT -> Colors.getAdded(diffPanel.isDarkTheme());
+                    case DELETE -> Colors.getDeleted(diffPanel.isDarkTheme());
+                    case CHANGE -> Colors.getChanged(diffPanel.isDarkTheme());
                     case EQUAL -> throw new IllegalStateException("Equal delta should not be painted here");
                 };
                 Color darkerColor = color.darker(); // Use a darker shade for borders

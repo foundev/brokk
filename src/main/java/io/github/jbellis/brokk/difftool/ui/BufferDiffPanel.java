@@ -32,6 +32,7 @@ public class BufferDiffPanel extends AbstractContentPanel implements ThemeAware
 
     @NotNull
     private final BrokkDiffPanel mainPanel;
+    @NotNull
     private GuiTheme guiTheme;
 
     // Instead of JMRevision:
@@ -51,7 +52,7 @@ public class BufferDiffPanel extends AbstractContentPanel implements ThemeAware
     private ScrollSynchronizer scrollSynchronizer;
     private JSplitPane splitPane;
 
-    public BufferDiffPanel(BrokkDiffPanel mainPanel, GuiTheme theme)
+    public BufferDiffPanel(BrokkDiffPanel mainPanel, @NotNull GuiTheme theme)
     {
         this.mainPanel = mainPanel;
         this.guiTheme = theme;
@@ -144,10 +145,10 @@ public class BufferDiffPanel extends AbstractContentPanel implements ThemeAware
             return "No files";
         }
         if (titles.size() == 1) {
-            return titles.get(0);
+            return titles.getFirst();
         }
         if (titles.get(0).equals(titles.get(1))) {
-            return titles.get(0);
+            return titles.getFirst();
         }
         return titles.get(0) + "-" + titles.get(1);
     }
@@ -349,14 +350,14 @@ public class BufferDiffPanel extends AbstractContentPanel implements ThemeAware
         var deltas = patch.getDeltas();
         if (selectedDelta == null) {
             // If nothing selected, pick first or last
-            setSelectedDelta(next ? deltas.get(0) : deltas.get(deltas.size() - 1));
+            setSelectedDelta(next ? deltas.getFirst() : deltas.getLast());
             showSelectedDelta();
             return;
         }
         var idx = deltas.indexOf(selectedDelta);
         if (idx < 0) {
             // The current selection is not in the patch list, pick first
-            setSelectedDelta(deltas.get(0));
+            setSelectedDelta(deltas.getFirst());
         } else {
             var newIdx = next ? idx + 1 : idx - 1;
             if (newIdx < 0) newIdx = deltas.size() - 1;
@@ -564,5 +565,9 @@ public class BufferDiffPanel extends AbstractContentPanel implements ThemeAware
 
     public GuiTheme getTheme() {
         return guiTheme;
+    }
+
+    public boolean isDarkTheme() {
+        return guiTheme.isDarkTheme();
     }
 }

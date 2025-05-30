@@ -103,7 +103,7 @@ public class FilePanel implements BufferDocumentChangeListenerIF, ThemeAware {
         timer = new Timer(100, refresh());
         timer.setRepeats(false);
         // Apply syntax theme but don't trigger reDisplay yet (no diff data available)
-        GuiTheme.loadRSyntaxTheme(diffPanel.getTheme().isDarkTheme()).ifPresent(theme ->
+        GuiTheme.loadRSyntaxTheme(diffPanel.isDarkTheme()).ifPresent(theme ->
                 theme.apply(editor)
         );
 
@@ -272,7 +272,7 @@ public class FilePanel implements BufferDocumentChangeListenerIF, ThemeAware {
             boolean isEndAndNewline = isEndAndLastNewline(toOffset);
 
             // Decide color. For Insert vs Delete vs Change we do:
-            var isDark = diffPanel.getTheme().isDarkTheme();
+            var isDark = diffPanel.isDarkTheme();
             var type = delta.getType(); // DeltaType.INSERT, DELETE, CHANGE
             var painter = switch (type) {
                 case INSERT ->
