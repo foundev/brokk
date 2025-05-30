@@ -19,6 +19,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.HashMap;
 import java.util.Map;
+import java.util.zip.CRC32;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipInputStream;
 import java.util.zip.ZipOutputStream;
@@ -50,9 +51,15 @@ public final class HistoryIo {
                     if (imageBytes != null && imageBytes.length > 0) {
                         try {
                             ZipEntry entry = new ZipEntry("images/" + f.id() + ".png");
+                            entry.setMethod(ZipEntry.STORED);
+                            entry.setSize(imageBytes.length);
+                            entry.setCompressedSize(imageBytes.length);
+                            CRC32 crc = new CRC32();
+                            crc.update(imageBytes);
+                            entry.setCrc(crc.getValue());
+
                             zos.putNextEntry(entry);
                             zos.write(imageBytes);
-                            zos.flush(); // Explicitly flush before closing entry
                             zos.closeEntry();
                         } catch (IOException e) {
                             logger.error("Failed to write image for fragment {} to zip", f.id(), e);
