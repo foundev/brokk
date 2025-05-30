@@ -309,13 +309,17 @@ public class WorkspacePanel extends JPanel {
                         boolean hasGit = contextManager != null && contextManager.getProject() != null
                                 && contextManager.getProject().hasGit();
                         if (hasGit && fragmentToShow.getType() == ContextFragment.FragmentType.PROJECT_PATH) {
-                            var ppf = (ContextFragment.ProjectPathFragment) fragmentToShow;
-                            JMenuItem viewHistoryItem = new JMenuItem("View History");
-                            viewHistoryItem.addActionListener(ev -> {
-                                // Already know it's a ProjectPathFragment here, use ppf captured by the outer if
-                                chrome.getGitPanel().addFileHistoryTab(ppf.file());
-                            });
-                            contextMenu.add(viewHistoryItem);
+                            fragmentToShow.files().stream()
+                                .findFirst()
+                                .filter(ProjectFile.class::isInstance)
+                                .map(ProjectFile.class::cast)
+                                .ifPresent(projectFile -> {
+                                    JMenuItem viewHistoryItem = new JMenuItem("View History");
+                                    viewHistoryItem.addActionListener(ev -> {
+                                        chrome.getGitPanel().addFileHistoryTab(projectFile);
+                                    });
+                                    contextMenu.add(viewHistoryItem);
+                                });
                         } else if (fragmentToShow.getType() == ContextFragment.FragmentType.HISTORY) {
                             var cf = (ContextFragment.HistoryFragment) fragmentToShow;
                             // Add Compress History option for conversation fragment
@@ -337,17 +341,21 @@ public class WorkspacePanel extends JPanel {
 
                             // Special case: Single ProjectPathFragment selected -> show specific actions for it
                             if (selectedFragments.size() == 1 && selectedFragments.getFirst().getType() == ContextFragment.FragmentType.PROJECT_PATH) {
-                                var ppf = (ContextFragment.ProjectPathFragment) selectedFragments.getFirst();
-                                // Create FileReferenceData for this fragment's file
-                                var fileData = new TableUtils.FileReferenceList.FileReferenceData(
-                                        ppf.file().getFileName(),
-                                        ppf.file().toString(),
-                                        ppf.file()
-                                );
-                                // Add specific actions using existing helpers
-                                contextMenu.add(buildAddMenuItem(fileData)); // Handles edit for single tracked file
-                                contextMenu.add(buildReadMenuItem(fileData));
-                                contextMenu.add(buildSummarizeMenuItem(fileData));
+                                selectedFragments.getFirst().files().stream()
+                                    .findFirst()
+                                    .filter(ProjectFile.class::isInstance)
+                                    .map(ProjectFile.class::cast)
+                                    .ifPresent(projectFile -> {
+                                        var fileData = new TableUtils.FileReferenceList.FileReferenceData(
+                                                projectFile.getFileName(),
+                                                projectFile.toString(),
+                                                projectFile
+                                        );
+                                        // Add specific actions using existing helpers
+                                        contextMenu.add(buildAddMenuItem(fileData)); // Handles edit for single tracked file
+                                        contextMenu.add(buildReadMenuItem(fileData));
+                                        contextMenu.add(buildSummarizeMenuItem(fileData));
+                                    });
                             } else {
                                 // Default: Show "All References" actions, enabled based on file presence and track status
                                 var project = contextManager.getProject();
@@ -1292,18 +1300,14 @@ public class WorkspacePanel extends JPanel {
             }
             contextManager.dropAll(); 
         } else {
-            var pathFragsToRemove = new ArrayList<PathFragment>();
-            var virtualToRemove = new ArrayList<VirtualFragment>();
+            var idsToRemove = new ArrayList<Integer>();
             boolean clearHistory = false;
 
             for (var frag : selectedFragments) {
                 if (frag.getType() == ContextFragment.FragmentType.HISTORY) {
                     clearHistory = true;
-                } else if (frag.getType().isPathFragment()) {
-                    pathFragsToRemove.add((PathFragment) frag);
                 } else {
-                    assert frag.getType().isVirtualFragment() : frag;
-                    virtualToRemove.add((VirtualFragment) frag);
+                    idsToRemove.add(frag.id());
                 }
             }
 
@@ -1312,10 +1316,9 @@ public class WorkspacePanel extends JPanel {
                 chrome.systemOutput("Cleared task history");
             }
 
-            contextManager.drop(pathFragsToRemove, virtualToRemove); 
-
-            if (!pathFragsToRemove.isEmpty() || !virtualToRemove.isEmpty()) {
-                chrome.systemOutput("Dropped " + (pathFragsToRemove.size() + virtualToRemove.size()) + " items");
+            if (!idsToRemove.isEmpty()) {
+                contextManager.drop(idsToRemove); // Use the new ID-based method
+                chrome.systemOutput("Dropped " + idsToRemove.size() + " item(s)");
             }
         }
     }
@@ -1359,9 +1362,11 @@ public class WorkspacePanel extends JPanel {
             // Fragment case: Extract files and classes from selected fragments
             for (var frag : selectedFragments) {
                 if (frag.getType() == ContextFragment.FragmentType.PROJECT_PATH) {
-                    var ppf = (ContextFragment.ProjectPathFragment) frag;
-                    // If it's a file fragment, add the file
-                    selectedFiles.add(ppf.file());
+                    frag.files().stream()
+                        .findFirst()
+                        .filter(ProjectFile.class::isInstance)
+                        .map(ProjectFile.class::cast)
+                        .ifPresent(selectedFiles::add);
                 } else {
                     // Otherwise, add the sources (which should be classes/symbols)
                     selectedClasses.addAll(frag.sources()); // No analyzer

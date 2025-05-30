@@ -6,7 +6,6 @@ import io.github.jbellis.brokk.AnalyzerUtil;
 import io.github.jbellis.brokk.Completions;
 import io.github.jbellis.brokk.context.ContextFragment;
 import io.github.jbellis.brokk.ContextManager;
-import io.github.jbellis.brokk.analyzer.CodeUnit;
 import io.github.jbellis.brokk.analyzer.IAnalyzer;
 import io.github.jbellis.brokk.analyzer.ProjectFile;
 import io.github.jbellis.brokk.util.HtmlToMarkdown;
@@ -20,12 +19,9 @@ import java.io.InputStreamReader;
 import java.net.URI;
 import java.net.URISyntaxException;
 import java.util.ArrayList;
-import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
-import java.util.Map;
 import java.util.Objects;
-import java.util.Set;
 import java.util.stream.Collectors;
 
 
@@ -233,7 +229,10 @@ public class WorkspaceTools {
 
         // Perform the drop operation if there's anything other than AutoContext to drop
         if (!pathFragsToRemove.isEmpty() || !virtualToRemove.isEmpty()) {
-            contextManager.drop(pathFragsToRemove, virtualToRemove);
+            var idsToRemove = new ArrayList<Integer>();
+            pathFragsToRemove.forEach(f -> idsToRemove.add(f.id()));
+            virtualToRemove.forEach(f -> idsToRemove.add(f.id()));
+            contextManager.drop(idsToRemove);
         }
 
         int droppedCount = pathFragsToRemove.size() + virtualToRemove.size();

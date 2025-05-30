@@ -619,14 +619,14 @@ public class ContextManager implements IContextManager, AutoCloseable {
     }
 
     /**
-     * Drop the given fragments.
+     * Drop fragments by their IDs.
      */
-    public void drop(List<PathFragment> pathFragsToRemove, List<VirtualFragment> virtualToRemove)
+    public void drop(Collection<Integer> fragmentIds)
     {
-        pushContext(ctx -> ctx
-                .removeEditableFiles(pathFragsToRemove)
-                .removeReadonlyFiles(pathFragsToRemove)
-                .removeVirtualFragments(virtualToRemove));
+        Context newContext = pushContext(ctx -> ctx.removeFragmentsByIds(fragmentIds));
+        if (newContext != null) {
+            io.systemOutput(newContext.getAction());
+        }
     }
 
     /**
@@ -1306,8 +1306,10 @@ public class ContextManager implements IContextManager, AutoCloseable {
 
     private String readOnlySummaryDescription(ContextFragment cf) {
         if (cf.getType().isPathFragment()) {
-            var pf = (PathFragment) cf;
-            return pf.file().toString();
+            return cf.files().stream().findFirst().map(BrokkFile::toString).orElseGet(() -> {
+                logger.warn("PathFragment type {} with no files: {}", cf.getType(), cf.description());
+                return "Error: PathFragment with no file";
+            });
         }
         // If not a PathFragment, it's a VirtualFragment
         return "\"%s\"".formatted(cf.description());
@@ -1315,9 +1317,11 @@ public class ContextManager implements IContextManager, AutoCloseable {
 
     private String editableSummaryDescription(ContextFragment cf) {
         if (cf.getType().isPathFragment()) {
-            // This PathFragment is editable, so it's a ProjectPathFragment
-            var pf = (PathFragment) cf;
-            return pf.file().toString();
+            // This PathFragment is editable.
+            return cf.files().stream().findFirst().map(BrokkFile::toString).orElseGet(() -> {
+                logger.warn("Editable PathFragment type {} with no files: {}", cf.getType(), cf.description());
+                return "Error: Editable PathFragment with no file";
+            });
         }
 
         // If not a PathFragment, it's a VirtualFragment.

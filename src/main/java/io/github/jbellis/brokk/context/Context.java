@@ -413,6 +413,40 @@ public class Context {
     }
 
     /**
+     * Removes fragments from this context by their IDs.
+     * 
+     * @param idsToRemove Collection of fragment IDs to remove
+     * @return A new Context with the specified fragments removed, or this context if no changes were made
+     */
+    public Context removeFragmentsByIds(Collection<Integer> idsToRemove) {
+        if (idsToRemove == null || idsToRemove.isEmpty()) {
+            return this;
+        }
+
+        var newEditableFiles = editableFiles.stream()
+                .filter(f -> !idsToRemove.contains(f.id()))
+                .toList();
+        var newReadonlyFiles = readonlyFiles.stream()
+                .filter(f -> !idsToRemove.contains(f.id()))
+                .toList();
+        var newVirtualFragments = virtualFragments.stream()
+                .filter(f -> !idsToRemove.contains(f.id()))
+                .toList();
+
+        // Count how many fragments were actually removed
+        int originalCount = editableFiles.size() + readonlyFiles.size() + virtualFragments.size();
+        int newCount = newEditableFiles.size() + newReadonlyFiles.size() + newVirtualFragments.size();
+        int removedCount = originalCount - newCount;
+
+        if (removedCount == 0) {
+            return this; // No changes made
+        }
+
+        String actionString = "Removed " + removedCount + " fragment" + (removedCount == 1 ? "" : "s");
+        return withFragments(newEditableFiles, newReadonlyFiles, newVirtualFragments, CompletableFuture.completedFuture(actionString));
+    }
+
+    /**
      * Creates a new context with custom collections and action description,
      * refreshing auto-context if needed.
      */

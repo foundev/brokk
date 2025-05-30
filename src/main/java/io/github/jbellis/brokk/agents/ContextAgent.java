@@ -163,15 +163,23 @@ public class ContextAgent {
 
         for (var fragment : fragments) {
             if (fragment.getType() == ContextFragment.FragmentType.PROJECT_PATH) {
-                var pathFragment = (ContextFragment.ProjectPathFragment) fragment;
-                var file = pathFragment.file();
-                String content = null;
-                try {
-                    content = file.read();
-                } catch (IOException e) {
-                    debug("IOException reading file for token calculation: {}", file, e);
+                Optional<ProjectFile> fileOpt = fragment.files().stream()
+                    .findFirst()
+                    .filter(ProjectFile.class::isInstance)
+                    .map(ProjectFile.class::cast);
+
+                if (fileOpt.isPresent()) {
+                    var file = fileOpt.get();
+                    String content = null;
+                    try {
+                        content = file.read();
+                    } catch (IOException e) {
+                        debug("IOException reading file for token calculation: {}", file, e);
+                    }
+                    totalTokens += Messages.getApproximateTokens(content);
+                } else {
+                    debug("PROJECT_PATH fragment {} did not yield a ProjectFile for token calculation.", fragment.description());
                 }
-                totalTokens += Messages.getApproximateTokens(content);
             } else if (fragment.getType() == ContextFragment.FragmentType.SKELETON) {
                 var skeletonFragment = (ContextFragment.SkeletonFragment) fragment;
                 // SkeletonFragment.text() computes the combined skeletons.
