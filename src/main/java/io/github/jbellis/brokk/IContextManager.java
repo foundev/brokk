@@ -106,11 +106,7 @@ public interface IContextManager {
                 .filter(ContextManager::isTestFile)
                 .toList();
     }
-
-    default void replaceContext(Context newContext, Context replacement) {
-        // no-op
-    }
-
+    
     default AnalyzerWrapper getAnalyzerWrapper() {
         throw new UnsupportedOperationException();
     }

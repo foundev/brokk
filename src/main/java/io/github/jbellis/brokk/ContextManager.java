@@ -338,15 +338,7 @@ public class ContextManager implements IContextManager, AutoCloseable {
             return false;
         }
     }
-
-
-    @Override
-    public void replaceContext(Context context, Context replacement) {
-        contextHistory.replaceContext(context, replacement);
-        io.updateContextHistoryTable();
-        io.updateContextTable();
-    }
-
+    
     public Project getProject() {
         return project;
     }

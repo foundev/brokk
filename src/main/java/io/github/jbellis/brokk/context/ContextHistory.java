@@ -47,33 +47,7 @@ public class ContextHistory {
     public synchronized Context topContext() {
         return history.isEmpty() ? null : history.getLast();
     }
-
-    /**
-     * Replace a context in the history with a new one
-     */
-    public synchronized void replaceContext(Context oldContext, Context newContext) {
-        long start = System.currentTimeMillis();
-        while (System.currentTimeMillis() - start < 1_000) {
-            var i = history.indexOf(oldContext);
-            if (i == -1) {
-                // AutoContext build finished before we added it to history
-                try {
-                    Thread.sleep(10);
-                } catch (InterruptedException e) {
-                    throw new RuntimeException(e);
-                }
-                continue;
-            }
-
-            history.set(i, newContext);
-            // Update selected context if it was replaced
-            if (selectedContext == oldContext) {
-                selectedContext = newContext;
-            }
-            break;
-        }
-    }
-
+    
     /**
      * Push a new context onto the history stack
      * @param contextGenerator Function to generate the new context from the current one
