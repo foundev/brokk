@@ -465,7 +465,7 @@ public class WorkspaceTools {
         var fragment = new ContextFragment.CallGraphFragment(contextManager, methodName, depth, false); // false for callers, pass contextManager
         contextManager.addVirtualFragment(fragment);
 
-        return "Added dynamic call graph (callers) for '%s' (depth %d).".formatted(methodName, depth);
+        return "Added call graph (callers) for '%s' (depth %d).".formatted(methodName, depth);
     }
 
     @Tool(value = """
@@ -490,7 +490,7 @@ public class WorkspaceTools {
         var fragment = new ContextFragment.CallGraphFragment(contextManager, methodName, depth, true); // true for callees, pass contextManager
         contextManager.addVirtualFragment(fragment);
 
-        return "Added dynamic call graph (callees) for '%s' (depth %d).".formatted(methodName, depth);
+        return "Added call graph (callees) for '%s' (depth %d).".formatted(methodName, depth);
     }
 
     // --- Helper Methods ---

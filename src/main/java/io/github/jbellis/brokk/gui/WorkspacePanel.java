@@ -1092,7 +1092,6 @@ public class WorkspacePanel extends JPanel {
             }
 
             contextManager.addReadOnlyFiles(selection.files());
-            chrome.systemOutput("Added " + selection.files().size() + " file(s) as read-only context.");
         } else {
             // Add files from selected fragments
             var files = new HashSet<BrokkFile>();

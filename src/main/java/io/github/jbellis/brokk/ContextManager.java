@@ -798,7 +798,7 @@ public class ContextManager implements IContextManager, AutoCloseable {
         // The UsageFragment will now dynamically fetch its content.
         var fragment = new ContextFragment.UsageFragment(this, identifier); // Pass IContextManager
         pushContext(ctx -> ctx.addVirtualFragment(fragment));
-        io.systemOutput("Added dynamic usage analysis for " + identifier);
+        io.systemOutput("Added uses of " + identifier);
     }
 
     public void addCallersForMethod(String methodName, int depth, Map<String, List<CallSite>> callgraph) // callgraph param no longer used directly for construction
@@ -813,7 +813,7 @@ public class ContextManager implements IContextManager, AutoCloseable {
 
         var fragment = new ContextFragment.CallGraphFragment(this, methodName, depth, false); // false for callers, pass IContextManager
         pushContext(ctx -> ctx.addVirtualFragment(fragment));
-        io.systemOutput("Added dynamic call graph for callers of " + methodName + " with depth " + depth);
+        io.systemOutput("Added call graph for callers of " + methodName + " with depth " + depth);
     }
 
     /**
@@ -828,7 +828,7 @@ public class ContextManager implements IContextManager, AutoCloseable {
         }
         var fragment = new ContextFragment.CallGraphFragment(this, methodName, depth, true); // true for callees, pass IContextManager
         pushContext(ctx -> ctx.addVirtualFragment(fragment));
-        io.systemOutput("Added dynamic call graph for methods called by " + methodName + " with depth " + depth);
+        io.systemOutput("Added call graph for methods called by " + methodName + " with depth " + depth);
     }
 
     /**
