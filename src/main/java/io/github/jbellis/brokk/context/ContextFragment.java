@@ -23,6 +23,38 @@ import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
 public interface ContextFragment {
+    enum FragmentType {
+        PROJECT_PATH(true, false, false),
+        GIT_FILE(true, false, false),
+        EXTERNAL_PATH(true, false, false),
+        IMAGE_FILE(true, false, false), // isText=false for this path fragment
+
+        STRING(false, true, false),
+        SEARCH(false, true, true), // SearchFragment extends TaskFragment, TaskFragment implements OutputFragment
+        SKELETON(false, true, false),
+        USAGE(false, true, false),
+        CALL_GRAPH(false, true, false),
+        HISTORY(false, true, true),    // Implements OutputFragment
+        TASK(false, true, true),       // Implements OutputFragment
+        PASTE_TEXT(false, true, false),
+        PASTE_IMAGE(false, true, false), // isText=false for this virtual fragment
+        STACKTRACE(false, true, false);
+
+        private final boolean isPath;
+        private final boolean isVirtual;
+        private final boolean isOutput;
+
+        FragmentType(boolean isPath, boolean isVirtual, boolean isOutput) {
+            this.isPath = isPath;
+            this.isVirtual = isVirtual;
+            this.isOutput = isOutput;
+        }
+
+        public boolean isPathFragment() { return isPath; }
+        public boolean isVirtualFragment() { return isVirtual; }
+        public boolean isOutputFragment() { return isOutput; }
+    }
+
     // Static counter for all fragments
     // TODO reset this on new session (when we have sessions)
     AtomicInteger nextId = new AtomicInteger(1);
@@ -47,6 +79,11 @@ public interface ContextFragment {
      * Unique identifier for this fragment
      */
     int id();
+
+    /**
+     * The type of this fragment.
+     */
+    FragmentType getType();
 
     /**
      * short description in history
@@ -195,6 +232,11 @@ public interface ContextFragment {
         }
 
         @Override
+        public FragmentType getType() {
+            return FragmentType.PROJECT_PATH;
+        }
+
+        @Override
         public IContextManager getContextManager() {
             return contextManager;
         }
@@ -272,6 +314,11 @@ public interface ContextFragment {
 
         public GitFileFragment(ProjectFile file, String revision, String content) {
             this(file, revision, content, nextId.getAndIncrement());
+        }
+
+        @Override
+        public FragmentType getType() {
+            return FragmentType.GIT_FILE;
         }
 
         @Override
@@ -354,6 +401,11 @@ public interface ContextFragment {
         }
 
         @Override
+        public FragmentType getType() {
+            return FragmentType.EXTERNAL_PATH;
+        }
+
+        @Override
         public IContextManager getContextManager() {
             return contextManager;
         }
@@ -395,6 +447,11 @@ public interface ContextFragment {
         public ImageFileFragment(BrokkFile file, IContextManager contextManager) {
             this(file, nextId.getAndIncrement(), contextManager);
             assert !file.isText() : "ImageFileFragment should only be used for non-text files";
+        }
+
+        @Override
+        public FragmentType getType() {
+            return FragmentType.IMAGE_FILE;
         }
 
         @Override
@@ -597,6 +654,11 @@ public interface ContextFragment {
         }
 
         @Override
+        public FragmentType getType() {
+            return FragmentType.STRING;
+        }
+
+        @Override
         public String text() {
             return text;
         }
@@ -635,6 +697,10 @@ public interface ContextFragment {
             this.sources = sources;
         }
 
+        @Override
+        public FragmentType getType() {
+            return FragmentType.SEARCH;
+        }
 
         @Override
         public Set<CodeUnit> sources() {
@@ -762,6 +828,11 @@ public interface ContextFragment {
         }
 
         @Override
+        public FragmentType getType() {
+            return FragmentType.PASTE_TEXT;
+        }
+
+        @Override
         public String syntaxStyle() {
             // TODO infer from contents
             return SyntaxConstants.SYNTAX_STYLE_MARKDOWN;
@@ -788,6 +859,11 @@ public interface ContextFragment {
             assert image != null;
             assert descriptionFuture != null;
             this.image = image;
+        }
+
+        @Override
+        public FragmentType getType() {
+            return FragmentType.PASTE_IMAGE;
         }
 
         @Override
@@ -857,6 +933,11 @@ public interface ContextFragment {
         }
 
         @Override
+        public FragmentType getType() {
+            return FragmentType.STACKTRACE;
+        }
+
+        @Override
         public String text() {
             return original + "\n\nStacktrace methods in this project:\n\n" + code;
         }
@@ -922,6 +1003,11 @@ public interface ContextFragment {
             super(existingId, contextManager);
             assert targetIdentifier != null && !targetIdentifier.isBlank();
             this.targetIdentifier = targetIdentifier;
+        }
+
+        @Override
+        public FragmentType getType() {
+            return FragmentType.USAGE;
         }
 
         @Override
@@ -1001,6 +1087,11 @@ public interface ContextFragment {
             this.methodName = methodName;
             this.depth = depth;
             this.isCalleeGraph = isCalleeGraph;
+        }
+
+        @Override
+        public FragmentType getType() {
+            return FragmentType.CALL_GRAPH;
         }
 
         @Override
@@ -1089,6 +1180,11 @@ public interface ContextFragment {
             assert summaryType != null;
             this.targetIdentifiers = List.copyOf(targetIdentifiers);
             this.summaryType = summaryType;
+        }
+
+        @Override
+        public FragmentType getType() {
+            return FragmentType.SKELETON;
         }
 
         private Map<CodeUnit, String> fetchSkeletons() {
@@ -1249,6 +1345,11 @@ public interface ContextFragment {
             this.history = List.copyOf(history);
         }
 
+        @Override
+        public FragmentType getType() {
+            return FragmentType.HISTORY;
+        }
+
         public List<TaskEntry> entries() {
             return history;
         }
@@ -1340,6 +1441,12 @@ public interface ContextFragment {
 
         public TaskFragment(int existingId, IContextManager contextManager, List<ChatMessage> messages, String sessionName) {
             this(existingId, contextManager, EditBlockParser.instance, messages, sessionName);
+        }
+
+        @Override
+        public FragmentType getType() {
+            // SearchFragment overrides this to return FragmentType.SEARCH
+            return FragmentType.TASK;
         }
 
         @Override

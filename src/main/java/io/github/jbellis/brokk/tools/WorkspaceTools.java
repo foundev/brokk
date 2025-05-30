@@ -212,10 +212,10 @@ public class WorkspaceTools {
         for (var frag : allFragments) {
             if (idsToDropSet.contains(frag.id())) {
                 foundIds.add(frag.id());
-                if (frag instanceof ContextFragment.PathFragment pf) {
-                    pathFragsToRemove.add(pf);
-                } else if (frag instanceof ContextFragment.VirtualFragment vf) {
-                    virtualToRemove.add(vf);
+                if (frag.getType().isPathFragment()) {
+                    pathFragsToRemove.add((ContextFragment.PathFragment) frag);
+                } else if (frag.getType().isVirtualFragment()) {
+                    virtualToRemove.add((ContextFragment.VirtualFragment) frag);
                 } else {
                     logger.warn("Fragment with ID {} has unexpected type {} and cannot be dropped via this tool.", frag.id(), frag.getClass().getName());
                 }

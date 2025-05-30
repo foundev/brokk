@@ -1096,8 +1096,8 @@ public class ContextManager implements IContextManager, AutoCloseable {
                             if (formatted != null && !formatted.isBlank()) {
                                 readOnlyTextFragments.append(formatted).append("\n\n");
                             }
-                        } else if (fragment instanceof ContextFragment.ImageFileFragment ||
-                                fragment instanceof ContextFragment.PasteImageFragment) {
+                        } else if (fragment.getType() == ContextFragment.FragmentType.IMAGE_FILE ||
+                                   fragment.getType() == ContextFragment.FragmentType.PASTE_IMAGE) {
                             // Handle image fragments - explicitly check for known image fragment types
                             try {
                                 // Convert AWT Image to LangChain4j ImageContent
@@ -1307,21 +1307,31 @@ public class ContextManager implements IContextManager, AutoCloseable {
     }
 
     private String readOnlySummaryDescription(ContextFragment cf) {
-        if (cf instanceof PathFragment pf) {
+        if (cf.getType().isPathFragment()) {
+            var pf = (PathFragment) cf;
             return pf.file().toString();
         }
-
+        // If not a PathFragment, it's a VirtualFragment
         return "\"%s\"".formatted(cf.description());
     }
 
     private String editableSummaryDescription(ContextFragment cf) {
-        if (cf instanceof PathFragment pf) {
+        if (cf.getType().isPathFragment()) {
+            // This PathFragment is editable, so it's a ProjectPathFragment
+            var pf = (PathFragment) cf;
             return pf.file().toString();
         }
 
-        ContextFragment.UsageFragment uf = (ContextFragment.UsageFragment) cf;
-        var files = uf.files().stream().map(ProjectFile::toString).sorted().collect(Collectors.joining(", ")); // No analyzer
-        return "[%s] (%s)".formatted(files, uf.description());
+        // If not a PathFragment, it's a VirtualFragment.
+        // Handle UsageFragment specially.
+        if (cf.getType() == ContextFragment.FragmentType.USAGE) {
+            var uf = (ContextFragment.UsageFragment) cf;
+            var files = uf.files().stream().map(ProjectFile::toString).sorted().collect(Collectors.joining(", "));
+            return "[%s] (%s)".formatted(files, uf.description());
+        }
+
+        // Default for other editable VirtualFragments
+        return "\"%s\"".formatted(cf.description());
     }
 
     public String getReadOnlySummary()

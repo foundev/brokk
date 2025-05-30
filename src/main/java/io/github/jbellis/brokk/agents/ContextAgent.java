@@ -162,7 +162,8 @@ public class ContextAgent {
         int totalTokens = 0;
 
         for (var fragment : fragments) {
-            if (fragment instanceof ContextFragment.ProjectPathFragment pathFragment) {
+            if (fragment.getType() == ContextFragment.FragmentType.PROJECT_PATH) {
+                var pathFragment = (ContextFragment.ProjectPathFragment) fragment;
                 var file = pathFragment.file();
                 String content = null;
                 try {
@@ -171,7 +172,8 @@ public class ContextAgent {
                     debug("IOException reading file for token calculation: {}", file, e);
                 }
                 totalTokens += Messages.getApproximateTokens(content);
-            } else if (fragment instanceof ContextFragment.SkeletonFragment skeletonFragment) {
+            } else if (fragment.getType() == ContextFragment.FragmentType.SKELETON) {
+                var skeletonFragment = (ContextFragment.SkeletonFragment) fragment;
                 // SkeletonFragment.text() computes the combined skeletons.
                 // This might re-fetch if called multiple times, but for token calculation it's acceptable once.
                 // ContextFragment.SkeletonFragment.text() does not throw IOException or InterruptedException
@@ -191,10 +193,10 @@ public class ContextAgent {
      */
     public void addSelectedFragments(List<ContextFragment> selected) {
         // Group selected fragments by type
-        var grouped = selected.stream().collect(Collectors.groupingBy(ContextFragment::getClass));
+        var groupedByType = selected.stream().collect(Collectors.groupingBy(ContextFragment::getType));
 
         // Process ProjectPathFragments
-        var pathFragments = grouped.getOrDefault(ContextFragment.ProjectPathFragment.class, List.of()).stream()
+        var pathFragments = groupedByType.getOrDefault(ContextFragment.FragmentType.PROJECT_PATH, List.of()).stream()
                 .map(ContextFragment.ProjectPathFragment.class::cast)
                 .toList();
         if (!pathFragments.isEmpty()) {
@@ -203,7 +205,7 @@ public class ContextAgent {
         }
 
         // Process SkeletonFragments
-        var skeletonFragments = grouped.getOrDefault(ContextFragment.SkeletonFragment.class, List.of()).stream()
+        var skeletonFragments = groupedByType.getOrDefault(ContextFragment.FragmentType.SKELETON, List.of()).stream()
                 .map(ContextFragment.SkeletonFragment.class::cast)
                 .toList();
 
@@ -234,11 +236,11 @@ public class ContextAgent {
         }
 
         // Handle any unexpected fragment types (should not happen with current logic)
-        grouped.keySet().stream()
-                .filter(cls -> cls != ContextFragment.ProjectPathFragment.class && cls != ContextFragment.SkeletonFragment.class)
+        groupedByType.keySet().stream()
+                .filter(type -> type != ContextFragment.FragmentType.PROJECT_PATH && type != ContextFragment.FragmentType.SKELETON)
                 .findFirst()
-                .ifPresent(unexpectedClass -> {
-                    throw new AssertionError("Unexpected fragment type selected: " + unexpectedClass.getName() + " in " + selected);
+                .ifPresent(unexpectedType -> {
+                    throw new AssertionError("Unexpected fragment type selected: " + unexpectedType + " in " + selected);
                 });
     }
 
@@ -478,9 +480,14 @@ public class ContextAgent {
 
     private boolean isClassInWorkspace(CodeUnit cls) {
         return contextManager.topContext().allFragments()
-                .anyMatch(f -> f instanceof ContextFragment.SkeletonFragment sf &&
-                        sf.getTargetIdentifiers().contains(cls.fqName()) && // Check if class FQN is among targets
-                        sf.getSummaryType() == ContextFragment.SummaryType.CLASS_SKELETON); // Ensure it's a class summary
+                .anyMatch(f -> {
+                    if (f.getType() == ContextFragment.FragmentType.SKELETON) {
+                        var sf = (ContextFragment.SkeletonFragment) f;
+                        return sf.getTargetIdentifiers().contains(cls.fqName()) && // Check if class FQN is among targets
+                               sf.getSummaryType() == ContextFragment.SummaryType.CLASS_SKELETON; // Ensure it's a class summary
+                    }
+                    return false;
+                });
     }
 
     private LlmRecommendation askLlmToRecommendContext(List<String> filenames,
@@ -795,7 +802,8 @@ public class ContextAgent {
                  fragments = fragments.stream()
                          .filter(frag -> {
                              // Ensure frag is ProjectPathFragment and then get its file
-                             if (frag instanceof ContextFragment.ProjectPathFragment ppf) {
+                             if (frag.getType() == ContextFragment.FragmentType.PROJECT_PATH) {
+                                 var ppf = (ContextFragment.ProjectPathFragment) frag;
                                  return !existingFiles.contains(ppf.file());
                              }
                              return true; // Or handle other fragment types if necessary

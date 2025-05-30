@@ -133,7 +133,8 @@ public class PreviewTextPanel extends JPanel implements ThemeAware {
 
         // Capture button (conditionally added for GitHistoryFragment)
         captureButton = null;
-        if (fragment instanceof ContextFragment.GitFileFragment ghf) {
+        if (fragment != null && fragment.getType() == ContextFragment.FragmentType.GIT_FILE) {
+            var ghf = (ContextFragment.GitFileFragment) fragment;
             captureButton = new JButton("Capture this Revision");
             captureButton.addActionListener(e -> {
                 // Add the GitHistoryFragment to the read-only context
@@ -147,7 +148,7 @@ public class PreviewTextPanel extends JPanel implements ThemeAware {
         // Edit button (conditionally added for ProjectFile)
         editButton = null; // Initialize to null
         if (file != null) {
-            var text = fragment instanceof ContextFragment.GitFileFragment ? "Edit Current Version" : "Edit File";
+            var text = (fragment != null && fragment.getType() == ContextFragment.FragmentType.GIT_FILE) ? "Edit Current Version" : "Edit File";
             editButton = new JButton(text);
             if (contextManager.getEditableFiles().contains(file)) {
                 editButton.setEnabled(false);

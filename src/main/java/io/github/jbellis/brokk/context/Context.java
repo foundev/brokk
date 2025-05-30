@@ -223,7 +223,8 @@ public class Context {
     }
 
     public Context removeBadFragment(ContextFragment f) { // IContextManager is already member
-        if (f instanceof ContextFragment.PathFragment pf) {
+        if (f.getType().isPathFragment()) {
+            var pf = (ContextFragment.PathFragment) f;
             var inEditable = editableFiles.contains(pf);
             var inReadonly = readonlyFiles.contains(pf);
 
@@ -239,7 +240,8 @@ public class Context {
                                         "Removed unreadable " + pf.description());
             }
             return this;
-        } else if (f instanceof ContextFragment.VirtualFragment vf) {
+        } else if (f.getType().isVirtualFragment()) {
+            var vf = (ContextFragment.VirtualFragment) f;
             var newFragments = new ArrayList<>(virtualFragments);
             if (newFragments.remove(vf)) {
                 return getWithFragments(editableFiles, readonlyFiles, newFragments,
@@ -247,7 +249,14 @@ public class Context {
             }
             return this;
         } else {
-            throw new IllegalArgumentException("Unknown fragment type: " + f);
+            // This case should ideally not be reached if all fragments correctly report their type.
+            // However, as a fallback or for future fragment types not yet covered by isPath/isVirtual,
+            // log a warning and attempt a generic removal if possible, or return 'this'.
+            logger.warn("Unknown fragment type encountered in removeBadFragment: {}", f.getClass().getName());
+            // Attempt removal based on object equality if not a known type, though this might not be effective
+            // if the fragment isn't in any of the primary lists or if equality isn't well-defined.
+            // For now, returning 'this' to avoid unexpected behavior.
+            return this;
         }
     }
 
@@ -367,7 +376,7 @@ public class Context {
     public Stream<ContextFragment> getReadOnlyFragments() {
         return Streams.concat(
             readonlyFiles.stream(),
-            virtualFragments.stream().filter(f -> !(f instanceof ContextFragment.UsageFragment))
+            virtualFragments.stream().filter(f -> f.getType() != ContextFragment.FragmentType.USAGE)
         );
     }
 
@@ -393,7 +402,7 @@ public class Context {
                 .sorted(Comparator.comparingLong(EditableFileWithMtime::mtime)) // Sort by mtime
                 .map(EditableFileWithMtime::fragment); // Extract the original fragment
 
-        return Streams.concat(virtualFragments.stream().filter(f -> f instanceof ContextFragment.UsageFragment),
+        return Streams.concat(virtualFragments.stream().filter(f -> f.getType() == ContextFragment.FragmentType.USAGE),
                               sortedEditableFiles);
     }
 
@@ -540,6 +549,10 @@ public class Context {
         return id;
     }
 
+    public IContextManager getContextManager() {
+        return contextManager;
+    }
+
     /**
      * Returns all fragments in display order:
      * 0 => conversation history (if not empty)
@@ -606,7 +619,7 @@ public class Context {
     public String toJson() {
         return Json.toJson(DtoMapper.toDto(this));
     }
-    
+
     /**
      * Deserializes a Context from JSON using the DTO layer.
      */
@@ -690,32 +703,32 @@ public class Context {
      */
     public int getMaxId() {
         var maxId = 0;
-        
+
         // Check editable files
         maxId = Math.max(maxId, editableFiles.stream()
                 .mapToInt(f -> f.id())
                 .max()
                 .orElse(0));
-        
-        // Check readonly files  
+
+        // Check readonly files
         maxId = Math.max(maxId, readonlyFiles.stream()
                 .mapToInt(f -> f.id())
                 .max()
                 .orElse(0));
-        
+
         // Check virtual fragments
         maxId = Math.max(maxId, virtualFragments.stream()
                 .mapToInt(f -> f.id())
                 .max()
                 .orElse(0));
-        
+
         // Check task history
         maxId = Math.max(maxId, taskHistory.stream()
                 .filter(t -> t.log() != null)
                 .mapToInt(t -> t.log().id())
                 .max()
                 .orElse(0));
-        
+
         return maxId;
     }
 }

@@ -308,14 +308,16 @@ public class WorkspacePanel extends JPanel {
                         // show "View History" only if it's a ProjectPathFragment and Git is available
                         boolean hasGit = contextManager != null && contextManager.getProject() != null
                                 && contextManager.getProject().hasGit();
-                        if (hasGit && fragmentToShow instanceof ContextFragment.ProjectPathFragment ppf) {
+                        if (hasGit && fragmentToShow.getType() == ContextFragment.FragmentType.PROJECT_PATH) {
+                            var ppf = (ContextFragment.ProjectPathFragment) fragmentToShow;
                             JMenuItem viewHistoryItem = new JMenuItem("View History");
                             viewHistoryItem.addActionListener(ev -> {
                                 // Already know it's a ProjectPathFragment here, use ppf captured by the outer if
                                 chrome.getGitPanel().addFileHistoryTab(ppf.file());
                             });
                             contextMenu.add(viewHistoryItem);
-                        } else if (fragmentToShow instanceof ContextFragment.HistoryFragment cf) {
+                        } else if (fragmentToShow.getType() == ContextFragment.FragmentType.HISTORY) {
+                            var cf = (ContextFragment.HistoryFragment) fragmentToShow;
                             // Add Compress History option for conversation fragment
                             JMenuItem compressHistoryItem = new JMenuItem("Compress History");
                             compressHistoryItem.addActionListener(e1 -> {
@@ -334,7 +336,8 @@ public class WorkspacePanel extends JPanel {
                             var selectedFragments = getSelectedFragments(); // Get selected fragments once
 
                             // Special case: Single ProjectPathFragment selected -> show specific actions for it
-                            if (selectedFragments.size() == 1 && selectedFragments.getFirst() instanceof ContextFragment.ProjectPathFragment ppf) {
+                            if (selectedFragments.size() == 1 && selectedFragments.getFirst().getType() == ContextFragment.FragmentType.PROJECT_PATH) {
+                                var ppf = (ContextFragment.ProjectPathFragment) selectedFragments.getFirst();
                                 // Create FileReferenceData for this fragment's file
                                 var fileData = new TableUtils.FileReferenceList.FileReferenceData(
                                         ppf.file().getFileName(),
@@ -353,7 +356,7 @@ public class WorkspacePanel extends JPanel {
                                         .collect(Collectors.toSet());
 
                                 boolean allFilesAreTrackedProjectFiles = !allFiles.isEmpty() && allFiles.stream().allMatch(f ->
-                                        f instanceof ProjectFile pf &&
+                                        f instanceof ProjectFile pf && // This instanceof is on BrokkFile, not ContextFragment, so it's okay
                                         project.getRepo().getTrackedFiles().contains(pf)
                                 );
                                 boolean hasFiles = !allFiles.isEmpty(); // Re-introduce hasFiles
@@ -629,7 +632,7 @@ public class WorkspacePanel extends JPanel {
         StringBuilder fullText = new StringBuilder();
         for (var frag : allFragments) {
             String locText;
-            if (frag.isText() || frag instanceof ContextFragment.OutputFragment) {
+            if (frag.isText() || frag.getType().isOutputFragment()) {
                 var text = getTextSafe(frag);
                 fullText.append(text).append("\n");
                 int loc = text.split("\\r?\\n", -1).length;
@@ -648,7 +651,7 @@ public class WorkspacePanel extends JPanel {
 
             // Build file references
             List<TableUtils.FileReferenceList.FileReferenceData> fileReferences = new ArrayList<>();
-            if (!(frag instanceof ContextFragment.ProjectPathFragment)) {
+            if (frag.getType() != ContextFragment.FragmentType.PROJECT_PATH) {
                 fileReferences = frag.files()
                         .stream()
                         .map(file -> new TableUtils.FileReferenceList.FileReferenceData(file.getFileName(), file.toString(), file))
@@ -1294,12 +1297,12 @@ public class WorkspacePanel extends JPanel {
             boolean clearHistory = false;
 
             for (var frag : selectedFragments) {
-                if (frag instanceof ContextFragment.HistoryFragment) {
+                if (frag.getType() == ContextFragment.FragmentType.HISTORY) {
                     clearHistory = true;
-                } else if (frag instanceof ContextFragment.PathFragment pf) {
-                    pathFragsToRemove.add(pf);
+                } else if (frag.getType().isPathFragment()) {
+                    pathFragsToRemove.add((PathFragment) frag);
                 } else {
-                    assert frag instanceof ContextFragment.VirtualFragment : frag;
+                    assert frag.getType().isVirtualFragment() : frag;
                     virtualToRemove.add((VirtualFragment) frag);
                 }
             }
@@ -1340,7 +1343,6 @@ public class WorkspacePanel extends JPanel {
 
             if (selection == null || selection.isEmpty()) {
                 chrome.systemOutput("No files or classes selected for summarization.");
-                chrome.systemOutput("No files or classes selected for summarization.");
                 return;
             }
 
@@ -1356,7 +1358,8 @@ public class WorkspacePanel extends JPanel {
         else {
             // Fragment case: Extract files and classes from selected fragments
             for (var frag : selectedFragments) {
-                if (frag instanceof ContextFragment.ProjectPathFragment ppf) {
+                if (frag.getType() == ContextFragment.FragmentType.PROJECT_PATH) {
+                    var ppf = (ContextFragment.ProjectPathFragment) frag;
                     // If it's a file fragment, add the file
                     selectedFiles.add(ppf.file());
                 } else {

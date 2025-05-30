@@ -700,7 +700,8 @@ public class Chrome implements AutoCloseable, IConsoleIO, IContextManager.Contex
         try {
             String title = "Preview: " + fragment.description();
 
-            if (fragment instanceof ContextFragment.OutputFragment outputFragment) {
+            if (fragment.getType().isOutputFragment()) {
+                var outputFragment = (ContextFragment.OutputFragment) fragment;
                 // Create a panel to hold all message panels
                 JPanel messagesContainer = new JPanel();
                 messagesContainer.setLayout(new BoxLayout(messagesContainer, BoxLayout.Y_AXIS));
@@ -735,11 +736,13 @@ public class Chrome implements AutoCloseable, IConsoleIO, IContextManager.Contex
 
             if (!fragment.isText()) {
                 // Handle image fragments
-                if (fragment instanceof ContextFragment.PasteImageFragment pif) {
+                if (fragment.getType() == ContextFragment.FragmentType.PASTE_IMAGE) {
+                    var pif = (ContextFragment.PasteImageFragment) fragment;
                     var imagePanel = new PreviewImagePanel(contextManager, null, themeManager);
                     imagePanel.setImage(pif.image());
                     showPreviewFrame(contextManager, title, imagePanel); // Use helper
-                } else if (fragment instanceof ContextFragment.ImageFileFragment iff) {
+                } else if (fragment.getType() == ContextFragment.FragmentType.IMAGE_FILE) {
+                    var iff = (ContextFragment.ImageFileFragment) fragment;
                     // PreviewImagePanel has its own static showInFrame that uses showPreviewFrame
                     PreviewImagePanel.showInFrame(frame, contextManager, iff.file(), themeManager);
                 }
@@ -750,7 +753,8 @@ public class Chrome implements AutoCloseable, IConsoleIO, IContextManager.Contex
             String content = fragment.text(); // No analyzer
             String syntaxStyle = fragment.syntaxStyle(); // Syntax style from fragment
 
-            if (fragment instanceof ContextFragment.GitFileFragment gff) {
+            if (fragment.getType() == ContextFragment.FragmentType.GIT_FILE) {
+                var gff = (ContextFragment.GitFileFragment) fragment;
                 ProjectFile file = (ProjectFile) gff.file();
                 // For GitFileFragment, 'content' and 'syntaxStyle' are already correctly fetched
                 // from gff.text() and gff.syntaxStyle() due to polymorphism.
@@ -758,18 +762,19 @@ public class Chrome implements AutoCloseable, IConsoleIO, IContextManager.Contex
                 var previewPanel = new PreviewTextPanel(contextManager, file, content, syntaxStyle, themeManager, gff);
                 showPreviewFrame(contextManager, title, previewPanel);
                 return;
-            } else if (fragment instanceof ContextFragment.PathFragment pf) {
+            } else if (fragment.getType().isPathFragment()) {
+                var pf = (ContextFragment.PathFragment) fragment;
                 // Handle PathFragment using the unified previewFile method
                 // This method reads live content and determines syntax internally.
                 var brokkFile = pf.file();
-                if (brokkFile instanceof ProjectFile projectFile) {
+                if (brokkFile instanceof ProjectFile projectFile) { // This instanceof is on BrokkFile, not ContextFragment
                     if (!SwingUtilities.isEventDispatchThread()) {
                         SwingUtilities.invokeLater(() -> previewFile(projectFile));
                     } else {
                         previewFile(projectFile);
                     }
                     return; // previewFile handles showing the frame
-                } else if (brokkFile instanceof ExternalFile externalFile) {
+                } else if (brokkFile instanceof ExternalFile externalFile) { // This instanceof is on BrokkFile
                     Runnable task = () -> {
                         try {
                             String externalFileContent = externalFile.read();

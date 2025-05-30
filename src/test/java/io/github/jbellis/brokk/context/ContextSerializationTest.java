@@ -4,6 +4,7 @@ import dev.langchain4j.data.message.ChatMessage;
 import io.github.jbellis.brokk.IContextManager;
 import io.github.jbellis.brokk.SessionResult;
 import io.github.jbellis.brokk.TaskEntry;
+import io.github.jbellis.brokk.analyzer.AnalyzerWrapper;
 import io.github.jbellis.brokk.analyzer.CodeUnit;
 import io.github.jbellis.brokk.analyzer.ExternalFile;
 import io.github.jbellis.brokk.analyzer.ProjectFile;
@@ -32,6 +33,10 @@ public class ContextSerializationTest {
     void setup() {
         // Setup mock context manager
         mockContextManager = new IContextManager() {
+            @Override
+            public AnalyzerWrapper getAnalyzerWrapper() { // Use imported AnalyzerWrapper
+                return null; // Allow tests to proceed with fragments that try to access analyzer
+            }
         };
     }
 
@@ -54,8 +59,8 @@ public class ContextSerializationTest {
         assertEquals(context.taskHistory.size(), deserialized.taskHistory.size());
 
         // Transient fields should be initialized appropriately
-        assertNotNull(deserialized.contextManager);
-        assertEquals(mockContextManager, deserialized.contextManager);
+        assertNotNull(deserialized.getContextManager());
+        assertEquals(mockContextManager, deserialized.getContextManager());
     }
 
     @Test
@@ -73,9 +78,9 @@ public class ContextSerializationTest {
 
         // Create context with fragments
         Context context = new Context(mockContextManager)
-                .addEditableFiles(List.of(new ContextFragment.ProjectPathFragment(projectFile)))
-                .addReadonlyFiles(List.of(new ContextFragment.ExternalPathFragment(externalFile)))
-                .addVirtualFragment(new ContextFragment.StringFragment("virtual content", "Virtual Fragment", SyntaxConstants.SYNTAX_STYLE_NONE));
+                .addEditableFiles(List.of(new ContextFragment.ProjectPathFragment(projectFile, mockContextManager)))
+                .addReadonlyFiles(List.of(new ContextFragment.ExternalPathFragment(externalFile, mockContextManager)))
+                .addVirtualFragment(new ContextFragment.StringFragment(mockContextManager, "virtual content", "Virtual Fragment", SyntaxConstants.SYNTAX_STYLE_NONE));
 
         // Serialize to JSON and deserialize
         String json = context.toJson();
@@ -127,7 +132,7 @@ public class ContextSerializationTest {
 
         // Add history entry
         var originalContents = Map.<ProjectFile, String>of();
-        var parsedOutput = new ContextFragment.TaskFragment(sessionMessages, "Math Question");
+        var parsedOutput = new ContextFragment.TaskFragment(mockContextManager, sessionMessages, "Math Question");
         Future<String> action = CompletableFuture.completedFuture("Math Question");
         var result = new SessionResult("What is 2+2?", parsedOutput, Map.of(), new SessionResult.StopDetails(SessionResult.StopReason.SUCCESS));
         var taskEntry = context.createTaskEntry(result);
@@ -176,14 +181,15 @@ public class ContextSerializationTest {
                 dev.langchain4j.data.message.UserMessage.from("test query"),
                 dev.langchain4j.data.message.AiMessage.from("test explanation")
         );
-        context = context.addVirtualFragment(new ContextFragment.SearchFragment("Search: test query", searchMessages, searchSources));
+        context = context.addVirtualFragment(new ContextFragment.SearchFragment(mockContextManager, "Search: test query", searchMessages, searchSources));
 
         // Add SkeletonFragment
         var skeletonMap = Map.of(CodeUnit.cls(mockFile, "com.test", "TestClass"), "class TestClass {}");
-        context = context.addVirtualFragment(new ContextFragment.SkeletonFragment(skeletonMap));
+        var targetIdentifiers = skeletonMap.keySet().stream().map(CodeUnit::fqName).toList();
+        context = context.addVirtualFragment(new ContextFragment.SkeletonFragment(mockContextManager, targetIdentifiers, ContextFragment.SummaryType.CLASS_SKELETON));
 
         // Add UsageFragment
-        context = context.addVirtualFragment(new ContextFragment.UsageFragment("TestClass.method", searchSources, "TestClass.method()"));
+        context = context.addVirtualFragment(new ContextFragment.UsageFragment(mockContextManager, "TestClass.method"));
 
         // Serialize to JSON and deserialize
         String json = context.toJson();
@@ -217,7 +223,7 @@ public class ContextSerializationTest {
                 .filter(f -> f instanceof ContextFragment.SkeletonFragment)
                 .findFirst()
                 .orElseThrow();
-        assertFalse(skeletonFragment.skeletons().isEmpty());
+        assertFalse(skeletonFragment.getTargetIdentifiers().isEmpty());
         assertTrue(skeletonFragment.text().contains("TestClass"));
 
         // Verify UsageFragment content
@@ -226,7 +232,8 @@ public class ContextSerializationTest {
                 .findFirst()
                 .orElseThrow();
         assertEquals("Uses of TestClass.method", usageFragment.description());
-        assertEquals("TestClass.method()", usageFragment.text());
+        // Text is dynamically generated, check it contains the identifier
+        assertTrue(usageFragment.text().contains("TestClass.method"));
     }
 
     @Test
@@ -235,9 +242,9 @@ public class ContextSerializationTest {
         Context context = new Context(mockContextManager);
 
         // Add multiple string fragments in specific order
-        context = context.addVirtualFragment(new ContextFragment.StringFragment("first", "First Fragment", SyntaxConstants.SYNTAX_STYLE_NONE));
-        context = context.addVirtualFragment(new ContextFragment.StringFragment("second", "Second Fragment", SyntaxConstants.SYNTAX_STYLE_NONE));
-        context = context.addVirtualFragment(new ContextFragment.StringFragment("third", "Third Fragment", SyntaxConstants.SYNTAX_STYLE_NONE));
+        context = context.addVirtualFragment(new ContextFragment.StringFragment(mockContextManager, "first", "First Fragment", SyntaxConstants.SYNTAX_STYLE_NONE));
+        context = context.addVirtualFragment(new ContextFragment.StringFragment(mockContextManager, "second", "Second Fragment", SyntaxConstants.SYNTAX_STYLE_NONE));
+        context = context.addVirtualFragment(new ContextFragment.StringFragment(mockContextManager, "third", "Third Fragment", SyntaxConstants.SYNTAX_STYLE_NONE));
 
         // Serialize to JSON and deserialize
         String json = context.toJson();
@@ -279,14 +286,14 @@ public class ContextSerializationTest {
 
         // Create PasteTextFragment with completed future
         CompletableFuture<String> textDescFuture = CompletableFuture.completedFuture("code snippet");
-        var pasteTextFragment = new ContextFragment.PasteTextFragment("int x = 5;", textDescFuture);
+        var pasteTextFragment = new ContextFragment.PasteTextFragment(mockContextManager, "int x = 5;", textDescFuture);
         context = context.addVirtualFragment(pasteTextFragment);
 
         // Create PasteImageFragment with completed future
         CompletableFuture<String> imageDescFuture = CompletableFuture.completedFuture("diagram");
         // Create a simple test image
         var testImage = new java.awt.image.BufferedImage(10, 10, java.awt.image.BufferedImage.TYPE_INT_RGB);
-        var pasteImageFragment = new ContextFragment.PasteImageFragment(testImage, imageDescFuture);
+        var pasteImageFragment = new ContextFragment.PasteImageFragment(mockContextManager, testImage, imageDescFuture);
         context = context.addVirtualFragment(pasteImageFragment);
 
         // Serialize to JSON and deserialize
@@ -358,7 +365,7 @@ public class ContextSerializationTest {
         var externalFile = new ExternalFile(imagePath);
         
         // Create ImageFileFragment
-        var imageFileFragment = new ContextFragment.ImageFileFragment(externalFile);
+        var imageFileFragment = new ContextFragment.ImageFileFragment(externalFile, mockContextManager);
 
         Context context = new Context(mockContextManager)
                 .addReadonlyFiles(List.of(imageFileFragment));
@@ -386,13 +393,8 @@ public class ContextSerializationTest {
         Files.createFile(mockFile.absPath());
 
         // Create CallGraphFragment
-        var codeUnits = Set.of(CodeUnit.cls(mockFile, "com.test", "TestClass"));
-        var callGraphFragment = new ContextFragment.CallGraphFragment(
-            "Callers", 
-            "TestClass.method", 
-            codeUnits, 
-            "TestClass.method() calls:\n  OtherClass.helper()"
-        );
+        // var codeUnits = Set.of(CodeUnit.cls(mockFile, "com.test", "TestClass")); // No longer a direct constructor param
+        var callGraphFragment = new ContextFragment.CallGraphFragment(mockContextManager, "TestClass.method", 1, false); // Assuming depth 1, isCalleeGraph=false for "Callers"
 
         context = context.addVirtualFragment(callGraphFragment);
 
@@ -406,9 +408,11 @@ public class ContextSerializationTest {
         assertEquals(1, deserialized.virtualFragments.size());
         var deserializedFragment = (ContextFragment.CallGraphFragment) deserialized.virtualFragments.get(0);
         
-        assertEquals("Callers of TestClass.method", deserializedFragment.description());
-        assertEquals("TestClass.method() calls:\n  OtherClass.helper()", deserializedFragment.text());
-        assertEquals(1, deserializedFragment.sources(null).size());
+        assertEquals("Callers of TestClass.method (depth 1)", deserializedFragment.description());
+        // Text is dynamically generated
+        assertTrue(deserializedFragment.text().contains("TestClass.method"));
+        // Sources are also dynamic
+        assertEquals(1, deserializedFragment.sources().size()); // Assuming mockFile's class is the source
     }
 
     @Test
@@ -420,17 +424,17 @@ public class ContextSerializationTest {
             dev.langchain4j.data.message.UserMessage.from("First question"),
             dev.langchain4j.data.message.AiMessage.from("First answer")
         );
-        var taskFragment1 = new ContextFragment.TaskFragment(messages1, "Task 1");
+        var taskFragment1 = new ContextFragment.TaskFragment(mockContextManager, messages1, "Task 1");
         var taskEntry1 = new TaskEntry(1, taskFragment1, null);
 
         List<ChatMessage> messages2 = List.of(
             dev.langchain4j.data.message.UserMessage.from("Second question"),
             dev.langchain4j.data.message.AiMessage.from("Second answer")
         );
-        var taskFragment2 = new ContextFragment.TaskFragment(messages2, "Task 2");
+        var taskFragment2 = new ContextFragment.TaskFragment(mockContextManager, messages2, "Task 2");
         var taskEntry2 = new TaskEntry(2, taskFragment2, null);
 
-        var historyFragment = new ContextFragment.HistoryFragment(List.of(taskEntry1, taskEntry2));
+        var historyFragment = new ContextFragment.HistoryFragment(mockContextManager, List.of(taskEntry1, taskEntry2));
         context = context.addVirtualFragment(historyFragment);
 
         // Serialize to JSON and deserialize
@@ -460,9 +464,9 @@ public class ContextSerializationTest {
 
         // Create fragments with special characters
         String specialText = "Special chars: äöü ñ 中文 🎉 \"quotes\" 'apostrophes' \n\t\r";
-        var stringFragment = new ContextFragment.StringFragment(
-            specialText, 
-            "Fragment with émojis & spéciäl chars", 
+        var stringFragment = new ContextFragment.StringFragment(mockContextManager,
+            specialText,
+            "Fragment with émojis & spéciäl chars",
             SyntaxConstants.SYNTAX_STYLE_NONE
         );
         context = context.addVirtualFragment(stringFragment);
@@ -471,7 +475,7 @@ public class ContextSerializationTest {
         Path repoRoot = tempDir.resolve("project with spaces & symbols");
         Files.createDirectories(repoRoot);
         var specialFile = new ProjectFile(repoRoot, "src/Special File (1).java");
-        context = context.addEditableFiles(List.of(new ContextFragment.ProjectPathFragment(specialFile)));
+        context = context.addEditableFiles(List.of(new ContextFragment.ProjectPathFragment(specialFile, mockContextManager)));
 
         // Serialize to JSON and deserialize
         String json = context.toJson();
@@ -504,15 +508,15 @@ public class ContextSerializationTest {
         var projectFile = new ProjectFile(repoRoot, "src/main/java/Complex.java");
         Files.createDirectories(projectFile.absPath().getParent());
         Files.writeString(projectFile.absPath(), "public class Complex {}");
-        context = context.addEditableFiles(List.of(new ContextFragment.ProjectPathFragment(projectFile)));
+        context = context.addEditableFiles(List.of(new ContextFragment.ProjectPathFragment(projectFile, mockContextManager)));
 
         // Add ExternalFile
         var externalFile = new ExternalFile(tempDir.resolve("external.txt").toAbsolutePath());
         Files.writeString(externalFile.absPath(), "External content");
-        context = context.addReadonlyFiles(List.of(new ContextFragment.ExternalPathFragment(externalFile)));
+        context = context.addReadonlyFiles(List.of(new ContextFragment.ExternalPathFragment(externalFile, mockContextManager)));
 
         // Add StringFragment
-        context = context.addVirtualFragment(new ContextFragment.StringFragment(
+        context = context.addVirtualFragment(new ContextFragment.StringFragment(mockContextManager,
             "String content", "String Description", SyntaxConstants.SYNTAX_STYLE_JAVA));
 
         // Add SearchFragment
@@ -521,24 +525,24 @@ public class ContextSerializationTest {
                 dev.langchain4j.data.message.UserMessage.from("search query"),
                 dev.langchain4j.data.message.AiMessage.from("search result")
         );
-        context = context.addVirtualFragment(new ContextFragment.SearchFragment(
+        context = context.addVirtualFragment(new ContextFragment.SearchFragment(mockContextManager,
             "Search: search query", complexSearchMessages, searchSources));
 
         // Add SkeletonFragment
         var skeletonMap = Map.of(CodeUnit.cls(projectFile, "com.test", "Complex"), "class Complex {}");
-        context = context.addVirtualFragment(new ContextFragment.SkeletonFragment(skeletonMap));
+        var targetIdentifiers = skeletonMap.keySet().stream().map(CodeUnit::fqName).toList();
+        context = context.addVirtualFragment(new ContextFragment.SkeletonFragment(mockContextManager, targetIdentifiers, ContextFragment.SummaryType.CLASS_SKELETON));
 
         // Add UsageFragment
-        context = context.addVirtualFragment(new ContextFragment.UsageFragment(
-            "Complex.method", searchSources, "Complex.method() usage"));
+        context = context.addVirtualFragment(new ContextFragment.UsageFragment(mockContextManager, "Complex.method"));
 
         // Add TaskHistory
         List<ChatMessage> sessionMessages = List.of(
             dev.langchain4j.data.message.UserMessage.from("Test question"),
             dev.langchain4j.data.message.AiMessage.from("Test answer")
         );
-        var taskFragment = new ContextFragment.TaskFragment(sessionMessages, "Integration Test");
-        var result = new SessionResult("Test question", taskFragment, Map.of(), 
+        var taskFragment = new ContextFragment.TaskFragment(mockContextManager, sessionMessages, "Integration Test");
+        var result = new SessionResult("Test question", taskFragment, Map.of(),
             new SessionResult.StopDetails(SessionResult.StopReason.SUCCESS));
         var taskEntry = context.createTaskEntry(result);
         context = context.addHistoryEntry(taskEntry, taskFragment, 

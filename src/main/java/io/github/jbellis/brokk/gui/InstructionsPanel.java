@@ -663,7 +663,7 @@ public class InstructionsPanel extends JPanel implements IContextManager.Context
         var contextManager = chrome.getContextManager();
         return contextManager.topContext() != null &&
                 contextManager.topContext().allFragments()
-                        .anyMatch(f -> !f.isText() && !(f instanceof ContextFragment.OutputFragment));
+                        .anyMatch(f -> !f.isText() && !f.getType().isOutputFragment());
     }
 
     /**

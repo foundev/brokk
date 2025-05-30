@@ -245,9 +245,10 @@ class DeepScanDialog {
             JComboBox<String> comboBox = new JComboBox<>(options);
 
             // Determine default action based on fragment type
-            if (fragment instanceof ContextFragment.SkeletonFragment sf && Arrays.asList(options).contains(SUMMARIZE)) { // Added variable for sf
+            if (fragment.getType() == ContextFragment.FragmentType.SKELETON && Arrays.asList(options).contains(SUMMARIZE)) {
                 comboBox.setSelectedItem(SUMMARIZE);
-            } else if (fragment instanceof ContextFragment.ProjectPathFragment ppf) { // Added variable for ppf
+            } else if (fragment.getType() == ContextFragment.FragmentType.PROJECT_PATH) {
+                var ppf = (ContextFragment.ProjectPathFragment) fragment;
                 // EDIT if the file is in git, otherwise READ
                 var edit = hasGit && contextManager.getRepo().getTrackedFiles().contains(ppf.file()); // Use ppf.file()
                 comboBox.setSelectedItem(edit ? EDIT : READ_ONLY);

@@ -386,7 +386,7 @@ public class BuildAgent {
             // Get ProjectFiles specifically from SkeletonFragments among all virtual fragments
             Stream<ProjectFile> projectFilesFromSkeletons =
                 cm.topContext().virtualFragments()
-                    .filter(vf -> vf instanceof ContextFragment.SkeletonFragment)
+                    .filter(vf -> vf.getType() == ContextFragment.FragmentType.SKELETON)
                     .flatMap(skeletonFragment -> skeletonFragment.files().stream()); // No analyzer
 
             // Combine all relevant ProjectFiles into a single set for checking against test files
