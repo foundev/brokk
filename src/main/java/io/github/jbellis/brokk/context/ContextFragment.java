@@ -884,7 +884,7 @@ public interface ContextFragment {
 
         @Override
         public String syntaxStyle() {
-            throw new UnsupportedOperationException();
+            return SyntaxConstants.SYNTAX_STYLE_NONE;
         }
 
         @Override
