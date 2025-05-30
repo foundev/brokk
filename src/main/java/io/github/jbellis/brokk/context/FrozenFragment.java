@@ -235,7 +235,20 @@ public final class FrozenFragment extends ContextFragment.VirtualFragment {
 
         // Capture basic fragment data
         var type = liveFragment.getType();
-        var description = liveFragment.description(); // Use live fragment's description
+        String description;
+        if (liveFragment instanceof ContextFragment.PasteFragment pf) {
+            // For PasteFragments, get the underlying description without "Paste of " prefix,
+            // mimicking DtoMapper's logic for PasteImageFragmentDto/PasteTextFragmentDto.
+            // This ensures consistency if a PasteFragment is frozen.
+            try {
+                description = pf.descriptionFuture.get(10, java.util.concurrent.TimeUnit.SECONDS);
+            } catch (Exception e) {
+                // Fallback to the full description which might include "(Summarizing...)" or error messages
+                description = pf.description();
+            }
+        } else {
+            description = liveFragment.description(); // Use live fragment's description directly
+        }
         var isText = liveFragment.isText();
         var syntaxStyle = liveFragment.syntaxStyle();
         var sources = liveFragment.sources(); // These are live sources

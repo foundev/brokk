@@ -14,6 +14,15 @@ import java.util.Set;
 public class FragmentDtos {
     
     /**
+     * DTO for ContextHistory - contains a list of Context DTOs.
+     */
+    public record HistoryDto(List<ContextDto> contexts) {
+        public HistoryDto {
+            contexts = contexts != null ? List.copyOf(contexts) : List.of();
+        }
+    }
+    
+    /**
      * Sealed interface for path-based fragments (files).
      */
     @JsonTypeInfo(use = Id.CLASS, include = As.PROPERTY, property = "type")
@@ -260,7 +269,7 @@ public class FragmentDtos {
      * DTO for FrozenFragment - contains frozen state of any fragment type.
      */
     public record FrozenFragmentDto(int id, String originalType, String description, String textContent, 
-                                   String base64ImageContent, boolean isTextFragment, String syntaxStyle,
+                                   boolean isTextFragment, String syntaxStyle,
                                    Set<CodeUnitDto> sources, Set<ProjectFileDto> files, String originalClassName,
                                    Map<String, String> meta) implements VirtualFragmentDto {
         public FrozenFragmentDto {

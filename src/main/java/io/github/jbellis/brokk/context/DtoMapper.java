@@ -18,6 +18,7 @@ import java.io.IOException;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.Base64;
+import java.util.Map;
 import java.util.concurrent.CompletableFuture;
 import java.util.stream.Collectors;
 
@@ -58,9 +59,40 @@ public class DtoMapper {
     }
     
     /**
+     * Converts a ContextHistory to its DTO representation.
+     */
+    public static HistoryDto toHistoryDto(ContextHistory ch) {
+        var contexts = ch.getHistory().stream()
+                .map(DtoMapper::toDto)
+                .toList();
+        return new HistoryDto(contexts);
+    }
+    
+    /**
+     * Converts a HistoryDto back to a ContextHistory domain object.
+     */
+    public static ContextHistory fromHistoryDto(HistoryDto dto, IContextManager mgr, Map<Integer, byte[]> imageBytesMap) {
+        var ch = new ContextHistory();
+        
+        var contexts = dto.contexts().stream()
+                .map(contextDto -> DtoMapper.fromDto(contextDto, mgr, imageBytesMap))
+                .toList();
+        
+        if (!contexts.isEmpty()) {
+            ch.setInitialContext(contexts.get(0));
+            for (int i = 1; i < contexts.size(); i++) {
+                final Context contextToAdd = contexts.get(i);
+                ch.pushContext(prev -> contextToAdd);
+            }
+        }
+        
+        return ch;
+    }
+    
+    /**
      * Converts a ContextDto back to a Context domain object.
      */
-    public static Context fromDto(ContextDto dto, IContextManager mgr) {
+    public static Context fromDto(ContextDto dto, IContextManager mgr, Map<Integer, byte[]> imageBytesMap) {
         var context = new Context(mgr, "Restored from DTO");
         
         // Convert editable files
@@ -105,7 +137,7 @@ public class DtoMapper {
         
         // Convert virtual fragments
         for (var virtualDto : dto.virtualFragments()) {
-            var fragment = fromVirtualFragmentDto((FragmentDtos.VirtualFragmentDto)virtualDto, mgr); // Explicit cast
+            var fragment = fromVirtualFragmentDto((FragmentDtos.VirtualFragmentDto)virtualDto, mgr, imageBytesMap); // Explicit cast
             context = context.addVirtualFragment(fragment);
         }
         
@@ -124,13 +156,10 @@ public class DtoMapper {
         return context;
     }
 
-    private static ContextFragment.VirtualFragment fromVirtualFragmentDto(FragmentDtos.VirtualFragmentDto dto, IContextManager mgr) {
+    private static ContextFragment.VirtualFragment fromVirtualFragmentDto(FragmentDtos.VirtualFragmentDto dto, IContextManager mgr, Map<Integer, byte[]> imageBytesMap) {
         return switch (dto) {
             case FrozenFragmentDto frozenDto -> {
-                byte[] imageBytes = null;
-                if (frozenDto.base64ImageContent() != null) {
-                    imageBytes = Base64.getDecoder().decode(frozenDto.base64ImageContent());
-                }
+                byte[] imageBytes = imageBytesMap.get(frozenDto.id());
                 
                 var sources = frozenDto.sources().stream()
                         .map(DtoMapper::fromCodeUnitDto)
@@ -259,14 +288,6 @@ public class DtoMapper {
         // Handle FrozenFragment first
         if (fragment instanceof FrozenFragment ff) {
             try {
-                String base64ImageContent = null;
-                if (!ff.isText()) {
-                    var imageBytes = ff.imageBytesContent();
-                    if (imageBytes != null) {
-                        base64ImageContent = Base64.getEncoder().encodeToString(imageBytes);
-                    }
-                }
-                
                 var sourcesDto = ff.sources().stream()
                         .map(DtoMapper::toCodeUnitDto)
                         .collect(Collectors.toSet());
@@ -280,7 +301,6 @@ public class DtoMapper {
                     ff.getType().name(),
                     ff.description(),
                     ff.isText() ? ff.text() : null,
-                    base64ImageContent,
                     ff.isText(),
                     ff.syntaxStyle(),
                     sourcesDto,

@@ -613,20 +613,6 @@ public class Context {
         return parsedOutput;
     }
 
-    /**
-     * Serializes this Context to JSON using the DTO layer.
-     */
-    public String toJson() {
-        return Json.toJson(DtoMapper.toDto(this));
-    }
-
-    /**
-     * Deserializes a Context from JSON using the DTO layer.
-     */
-    public static Context fromJson(String json, IContextManager mgr) {
-        var dto = Json.fromJson(json, ContextDto.class);
-        return DtoMapper.fromDto(dto, mgr);
-    }
 
     /**
      * Creates a new Context with the specified context manager.

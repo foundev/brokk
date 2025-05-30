@@ -227,18 +227,24 @@ public class ContextManager implements IContextManager, AutoCloseable {
 
         this.analyzerWrapper = new AnalyzerWrapper(project, this::submitBackgroundTask, analyzerListener);
 
-        // Load saved context or create a new one
+        // Load saved context history or create a new one
         submitBackgroundTask("Loading saved context", () -> {
             var welcomeMessage = buildWelcomeMessage(); // welcome message might change if git status changed
-            var initialContext = project.loadContext(this, welcomeMessage);
-            if (initialContext == null) {
-                initialContext = new Context(this, welcomeMessage);
+            var loadedHistory = project.loadHistory(this);
+            if (loadedHistory.getHistory().isEmpty()) {
+                var initialContext = new Context(this, welcomeMessage);
+                loadedHistory.setInitialContext(initialContext);
             }
-            contextHistory.setInitialContext(initialContext);
+            contextHistory.setInitialContext(loadedHistory.topContext());
+            // Copy the loaded history to our context history
+            for (int i = 1; i < loadedHistory.getHistory().size(); i++) {
+                final Context contextToAdd = loadedHistory.getHistory().get(i);
+                contextHistory.pushContext(prev -> contextToAdd);
+            }
             // If git was just initialized, Chrome components like GitPanel will be updated
             // by their own construction logic based on the new project.hasGit() state.
             // Explicit io.updateGitRepo() might not be needed here if Chrome rebuilds relevant parts.
-            io.updateContextHistoryTable(initialContext); // Update UI with loaded/new context
+            io.updateContextHistoryTable(contextHistory.topContext()); // Update UI with loaded/new context
         });
 
         // Ensure style guide and build details are loaded/generated asynchronously
@@ -659,7 +665,7 @@ public class ContextManager implements IContextManager, AutoCloseable {
             if (result.wasUndone()) {
                 var currentContext = contextHistory.topContext();
                 notifyContextListeners(currentContext);
-                project.saveContext(currentContext);
+                project.saveHistory(contextHistory);
                 io.systemOutput("Undid " + result.steps() + " step" + (result.steps() > 1 ? "s" : "") + "!");
             } else {
                 io.toolErrorRaw("no undo state available");
@@ -677,7 +683,7 @@ public class ContextManager implements IContextManager, AutoCloseable {
             if (result.wasUndone()) {
                 var currentContext = contextHistory.topContext();
                 notifyContextListeners(currentContext);
-                project.saveContext(currentContext);
+                project.saveHistory(contextHistory);
                 io.systemOutput("Undid " + result.steps() + " step" + (result.steps() > 1 ? "s" : "") + "!");
             } else {
                 io.toolErrorRaw("Context not found or already at that point");
@@ -694,7 +700,7 @@ public class ContextManager implements IContextManager, AutoCloseable {
             if (wasRedone) {
                 var currentContext = contextHistory.topContext();
                 notifyContextListeners(currentContext);
-                project.saveContext(currentContext);
+                project.saveHistory(contextHistory);
                 io.systemOutput("Redo!");
             } else {
                 io.toolErrorRaw("no redo state available");
@@ -1375,7 +1381,7 @@ public class ContextManager implements IContextManager, AutoCloseable {
         }
 
         notifyContextListeners(newContext);
-        project.saveContext(newContext);
+        project.saveHistory(contextHistory);
         if (newContext.getTaskHistory().isEmpty()) {
             return newContext;
         }

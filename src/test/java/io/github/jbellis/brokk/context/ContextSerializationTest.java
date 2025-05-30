@@ -1,30 +1,36 @@
 package io.github.jbellis.brokk.context;
 
+import dev.langchain4j.data.message.AiMessage;
 import dev.langchain4j.data.message.ChatMessage;
+import dev.langchain4j.data.message.UserMessage;
 import io.github.jbellis.brokk.IContextManager;
-import io.github.jbellis.brokk.SessionResult;
 import io.github.jbellis.brokk.TaskEntry;
+import io.github.jbellis.brokk.AnalyzerWrapper;
 import io.github.jbellis.brokk.analyzer.CodeUnit;
 import io.github.jbellis.brokk.analyzer.ExternalFile;
 import io.github.jbellis.brokk.analyzer.ProjectFile;
-
-import io.github.jbellis.brokk.IContextManager;
-import io.github.jbellis.brokk.SessionResult;
-import io.github.jbellis.brokk.TaskEntry;
-import io.github.jbellis.brokk.AnalyzerWrapper;
+import io.github.jbellis.brokk.util.HistoryIo;
 import org.fife.ui.rsyntaxtextarea.SyntaxConstants;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
+import javax.imageio.ImageIO;
+import java.awt.Color;
+import java.awt.Graphics2D;
+import java.awt.Image;
+import java.awt.image.BufferedImage;
+import java.io.ByteArrayOutputStream;
+import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.Arrays;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.Future;
 import java.util.stream.Collectors;
+import io.github.jbellis.brokk.util.Messages;
 
 import static org.junit.jupiter.api.Assertions.*;
 
@@ -38,550 +44,259 @@ public class ContextSerializationTest {
         // Setup mock context manager
         mockContextManager = new IContextManager() {
             @Override
-            public AnalyzerWrapper getAnalyzerWrapper() { // Use imported AnalyzerWrapper
-                return null; // Allow tests to proceed with fragments that try to access analyzer
+            public AnalyzerWrapper getAnalyzerWrapper() {
+                return null;
             }
+            // Implement other methods if needed by fragments during test execution
         };
         // Clear the intern pool before each test to ensure isolation
         FrozenFragment.clearInternPoolForTesting();
+        // Reset fragment ID counter for test isolation
+        ContextFragment.nextId.set(1);
+    }
+
+    private BufferedImage createTestImage(Color color, int width, int height) {
+        var image = new BufferedImage(width, height, BufferedImage.TYPE_INT_RGB);
+        Graphics2D g = image.createGraphics();
+        g.setColor(color);
+        g.fillRect(0, 0, width, height);
+        g.dispose();
+        return image;
+    }
+
+    private byte[] imageToBytes(Image image) throws IOException {
+        if (image == null) return null;
+        BufferedImage bufferedImage = (image instanceof BufferedImage) ? (BufferedImage) image :
+                                      new BufferedImage(image.getWidth(null), image.getHeight(null), BufferedImage.TYPE_INT_ARGB);
+        if (!(image instanceof BufferedImage)) {
+            Graphics2D bGr = bufferedImage.createGraphics();
+            bGr.drawImage(image, 0, 0, null);
+            bGr.dispose();
+        }
+        try (var baos = new ByteArrayOutputStream()) {
+            ImageIO.write(bufferedImage, "PNG", baos);
+            return baos.toByteArray();
+        }
+    }
+
+    // --- Tests for HistoryIo ---
+
+    @Test
+    void testWriteReadEmptyHistory() throws IOException {
+        var history = new ContextHistory();
+        Path zipFile = tempDir.resolve("empty_history.zip");
+
+        HistoryIo.writeZip(history, zipFile);
+        assertTrue(Files.exists(zipFile));
+
+        ContextHistory loadedHistory = HistoryIo.readZip(zipFile, mockContextManager);
+        assertNotNull(loadedHistory);
+        assertTrue(loadedHistory.getHistory().isEmpty());
     }
 
     @Test
-    void testContextJsonSerialization() throws Exception {
-        // Create a context with minimal state
-        Context context = new Context(mockContextManager);
-
-        // Serialize to JSON and deserialize
-        String json = context.toJson();
-        assertNotNull(json, "JSON serialization should not return null");
-        assertTrue(json.contains("editableFiles"), "JSON should contain editableFiles field");
-
-        Context deserialized = Context.fromJson(json, mockContextManager);
-
-        // Verify non-transient fields were preserved
-        assertEquals(context.editableFiles.size(), deserialized.editableFiles.size());
-        assertEquals(context.readonlyFiles.size(), deserialized.readonlyFiles.size());
-        assertEquals(context.virtualFragments.size(), deserialized.virtualFragments.size());
-        assertEquals(context.taskHistory.size(), deserialized.taskHistory.size());
-
-        // Transient fields should be initialized appropriately
-        assertNotNull(deserialized.getContextManager());
-        assertEquals(mockContextManager, deserialized.getContextManager());
+    void testReadNonExistentZip() throws IOException {
+        Path zipFile = tempDir.resolve("non_existent.zip");
+        ContextHistory loadedHistory = HistoryIo.readZip(zipFile, mockContextManager);
+        assertNotNull(loadedHistory);
+        assertTrue(loadedHistory.getHistory().isEmpty(), "Reading a non-existent zip should result in an empty history.");
     }
 
     @Test
-    void testContextWithFragmentsJsonSerialization() throws Exception {
-        // Create test files
-        Path repoRoot = tempDir.resolve("repo");
-        Files.createDirectories(repoRoot);
-
-        var projectFile = new ProjectFile(repoRoot, "src/main/java/Test.java");
-        Files.createDirectories(projectFile.absPath().getParent());
-        Files.writeString(projectFile.absPath(), "public class Test {}");
-
-        var externalFile = new ExternalFile(tempDir.resolve("external.txt").toAbsolutePath());
-        Files.writeString(externalFile.absPath(), "This is external content");
-
-        // Create context with fragments
-        Context context = new Context(mockContextManager)
-                .addEditableFiles(List.of(new ContextFragment.ProjectPathFragment(projectFile, mockContextManager)))
-                .addReadonlyFiles(List.of(new ContextFragment.ExternalPathFragment(externalFile, mockContextManager)))
-                .addVirtualFragment(new ContextFragment.StringFragment(mockContextManager, "virtual content", "Virtual Fragment", SyntaxConstants.SYNTAX_STYLE_NONE));
-
-        // Serialize to JSON and deserialize
-        String json = context.toJson();
-        assertNotNull(json, "JSON serialization should not return null");
-        Context deserialized = Context.fromJson(json, mockContextManager);
-
-        // Verify fragment counts
-        assertEquals(1, deserialized.editableFiles.size());
-        assertEquals(1, deserialized.readonlyFiles.size());
-        assertEquals(1, deserialized.virtualFragments.size());
-
-        // Check that editable files were properly serialized
-        ContextFragment.ProjectPathFragment deserializedEditable = deserialized.editableFiles.get(0);
-        assertEquals(projectFile.toString(), deserializedEditable.file().toString());
-        assertEquals(projectFile.getRoot(), deserializedEditable.file().getRoot());
-        assertEquals(projectFile.getRelPath(), deserializedEditable.file().getRelPath());
-
-        // Check that readonly files were properly serialized
-        ContextFragment.PathFragment deserializedReadonly = deserialized.readonlyFiles.get(0);
-        assertEquals(externalFile.toString(), deserializedReadonly.file().toString());
-        assertInstanceOf(ContextFragment.ExternalPathFragment.class, deserializedReadonly);
-
-        // Check that virtual fragments were properly serialized
-        ContextFragment.VirtualFragment deserializedVirtual = deserialized.virtualFragments.get(0);
-        assertInstanceOf(ContextFragment.StringFragment.class, deserializedVirtual);
-        assertEquals("virtual content", deserializedVirtual.text());
-        assertEquals("Virtual Fragment", deserializedVirtual.description());
-
-        // Verify the files can still be read correctly after JSON round-trip
-        assertDoesNotThrow(() -> {
-            String editableContent = deserializedEditable.text();
-            assertEquals("public class Test {}", editableContent);
-            
-            String readonlyContent = deserializedReadonly.text();
-            assertEquals("This is external content", readonlyContent);
-        });
-    }
-
-    @Test
-    void testJsonSerializationWithTaskHistory() throws Exception {
-        // Create context
-        Context context = new Context(mockContextManager);
-
-        // Create sample chat messages for a full session
-        List<ChatMessage> sessionMessages = List.of(
-                dev.langchain4j.data.message.UserMessage.from("What is 2+2?"),
-                dev.langchain4j.data.message.AiMessage.from("2+2 equals 4.")
-        );
-
-        // Add history entry
-        var originalContents = Map.<ProjectFile, String>of();
-        var parsedOutput = new ContextFragment.TaskFragment(mockContextManager, sessionMessages, "Math Question");
-        Future<String> action = CompletableFuture.completedFuture("Math Question");
-        var result = new SessionResult("What is 2+2?", parsedOutput, Map.of(), new SessionResult.StopDetails(SessionResult.StopReason.SUCCESS));
-        var taskEntry = context.createTaskEntry(result);
-        context = context.addHistoryEntry(taskEntry, parsedOutput, action, originalContents);
-
-        // Serialize to JSON and deserialize
-        String json = context.toJson();
-        assertNotNull(json, "JSON serialization should not return null");
-        assertTrue(json.contains("taskHistory"), "JSON should contain taskHistory field");
-        
-        Context deserialized = Context.fromJson(json, mockContextManager);
-
-        // Verify task history was preserved
-        assertEquals(1, deserialized.getTaskHistory().size(), "Task history should contain one entry");
-        
-        TaskEntry deserializedTask = deserialized.getTaskHistory().get(0);
-        assertEquals(taskEntry.sequence(), deserializedTask.sequence(), "Task sequence should be preserved");
-        assertNotNull(deserializedTask.log(), "Task log should not be null");
-        assertEquals(sessionMessages.size(), deserializedTask.log().messages().size(), "Message count should be preserved");
-        
-        // Check first message content
-        var firstMessage = deserializedTask.log().messages().get(0);
-        assertTrue(firstMessage instanceof dev.langchain4j.data.message.UserMessage, "First message should be UserMessage");
-        assertEquals("What is 2+2?", ((dev.langchain4j.data.message.UserMessage) firstMessage).singleText());
-        
-        // Check second message content
-        var secondMessage = deserializedTask.log().messages().get(1);
-        assertTrue(secondMessage instanceof dev.langchain4j.data.message.AiMessage, "Second message should be AiMessage");
-        assertEquals("2+2 equals 4.", ((dev.langchain4j.data.message.AiMessage) secondMessage).text());
-        
-        assertNull(deserializedTask.summary(), "Task should not be summarized");
-    }
-
-    @Test
-    void testJsonSerializationWithComplexFragments() throws Exception {
-        // Create context with various fragment types
-        Context context = new Context(mockContextManager);
-
-        // Create mock file for CodeUnit construction
-        ProjectFile mockFile = new ProjectFile(tempDir, "Mock.java");
-        Files.createFile(mockFile.absPath());
-
-        // Add SearchFragment
-        var searchSources = Set.of(CodeUnit.cls(mockFile, "com.test", "TestClass"));
-        List<ChatMessage> searchMessages = List.of(
-                dev.langchain4j.data.message.UserMessage.from("test query"),
-                dev.langchain4j.data.message.AiMessage.from("test explanation")
-        );
-        context = context.addVirtualFragment(new ContextFragment.SearchFragment(mockContextManager, "Search: test query", searchMessages, searchSources));
-
-        // Add SkeletonFragment
-        var skeletonMap = Map.of(CodeUnit.cls(mockFile, "com.test", "TestClass"), "class TestClass {}");
-        var targetIdentifiers = skeletonMap.keySet().stream().map(CodeUnit::fqName).toList();
-        context = context.addVirtualFragment(new ContextFragment.SkeletonFragment(mockContextManager, targetIdentifiers, ContextFragment.SummaryType.CLASS_SKELETON));
-
-        // Add UsageFragment
-        context = context.addVirtualFragment(new ContextFragment.UsageFragment(mockContextManager, "TestClass.method"));
-
-        // Serialize to JSON and deserialize
-        String json = context.toJson();
-        assertNotNull(json, "JSON serialization should not return null");
-        
-        Context deserialized = Context.fromJson(json, mockContextManager);
-
-        // Verify all fragments were preserved (should be 3: SearchFragment, SkeletonFragment, UsageFragment)
-        assertEquals(3, deserialized.virtualFragments.size(), "All virtual fragments should be preserved");
-
-        // Check that we have the expected fragment types
-        var fragmentTypes = deserialized.virtualFragments.stream()
-                .map(Object::getClass)
-                .collect(Collectors.toSet());
-        
-        assertTrue(fragmentTypes.contains(ContextFragment.SearchFragment.class), "Should contain SearchFragment");
-        assertTrue(fragmentTypes.contains(ContextFragment.SkeletonFragment.class), "Should contain SkeletonFragment");
-        assertTrue(fragmentTypes.contains(ContextFragment.UsageFragment.class), "Should contain UsageFragment");
-
-        // Verify SearchFragment content
-        var searchFragment = (ContextFragment.SearchFragment) deserialized.virtualFragments.stream()
-                .filter(f -> f instanceof ContextFragment.SearchFragment)
-                .findFirst()
-                .orElseThrow();
-        assertEquals("Search: test query", searchFragment.description()); // description is sessionName
-        assertTrue(searchFragment.text().contains("test query")); // text() formats underlying messages
-        assertTrue(searchFragment.text().contains("test explanation"));
-
-        // Verify SkeletonFragment content
-        var skeletonFragment = (ContextFragment.SkeletonFragment) deserialized.virtualFragments.stream()
-                .filter(f -> f instanceof ContextFragment.SkeletonFragment)
-                .findFirst()
-                .orElseThrow();
-        assertFalse(skeletonFragment.getTargetIdentifiers().isEmpty());
-        assertTrue(skeletonFragment.text().contains("TestClass"));
-
-        // Verify UsageFragment content
-        var usageFragment = (ContextFragment.UsageFragment) deserialized.virtualFragments.stream()
-                .filter(f -> f instanceof ContextFragment.UsageFragment)
-                .findFirst()
-                .orElseThrow();
-        assertEquals("Uses of TestClass.method", usageFragment.description());
-        // Text is dynamically generated, check it contains the identifier
-        assertTrue(usageFragment.text().contains("TestClass.method"));
-    }
-
-    @Test
-    void testJsonSerializationPreservesOrder() throws Exception {
-        // Create context with multiple fragments of the same type
-        Context context = new Context(mockContextManager);
-
-        // Add multiple string fragments in specific order
-        context = context.addVirtualFragment(new ContextFragment.StringFragment(mockContextManager, "first", "First Fragment", SyntaxConstants.SYNTAX_STYLE_NONE));
-        context = context.addVirtualFragment(new ContextFragment.StringFragment(mockContextManager, "second", "Second Fragment", SyntaxConstants.SYNTAX_STYLE_NONE));
-        context = context.addVirtualFragment(new ContextFragment.StringFragment(mockContextManager, "third", "Third Fragment", SyntaxConstants.SYNTAX_STYLE_NONE));
-
-        // Serialize to JSON and deserialize
-        String json = context.toJson();
-        Context deserialized = Context.fromJson(json, mockContextManager);
-
-        // Verify order is preserved
-        assertEquals(3, deserialized.virtualFragments.size());
-        assertEquals("first", deserialized.virtualFragments.get(0).text());
-        assertEquals("second", deserialized.virtualFragments.get(1).text());
-        assertEquals("third", deserialized.virtualFragments.get(2).text());
-    }
-
-    @Test
-    void testJsonSerializationHandlesEmptyContext() throws Exception {
-        // Create completely empty context
-        Context context = new Context(mockContextManager);
-
-        // Serialize to JSON and deserialize
-        String json = context.toJson();
-        assertNotNull(json);
-        assertTrue(json.contains("editableFiles"), "JSON should contain editableFiles field");
-        assertTrue(json.contains("readonlyFiles"), "JSON should contain readonlyFiles field");
-        assertTrue(json.contains("virtualFragments"), "JSON should contain virtualFragments field");
-        assertTrue(json.contains("taskHistory"), "JSON should contain taskHistory field");
-
-        Context deserialized = Context.fromJson(json, mockContextManager);
-
-        // Verify everything is empty
-        assertTrue(deserialized.editableFiles.isEmpty());
-        assertTrue(deserialized.readonlyFiles.isEmpty());
-        assertTrue(deserialized.virtualFragments.isEmpty());
-        assertTrue(deserialized.taskHistory.isEmpty());
-        assertTrue(deserialized.isEmpty());
-    }
-
-    @Test
-    void testJsonSerializationWithPasteFragments() throws Exception {
-        Context context = new Context(mockContextManager);
-
-        // Create PasteTextFragment with completed future
-        CompletableFuture<String> textDescFuture = CompletableFuture.completedFuture("code snippet");
-        var pasteTextFragment = new ContextFragment.PasteTextFragment(mockContextManager, "int x = 5;", textDescFuture);
-        context = context.addVirtualFragment(pasteTextFragment);
-
-        // Create PasteImageFragment with completed future
-        CompletableFuture<String> imageDescFuture = CompletableFuture.completedFuture("diagram");
-        // Create a simple test image
-        var testImage = new java.awt.image.BufferedImage(10, 10, java.awt.image.BufferedImage.TYPE_INT_RGB);
-        var pasteImageFragment = new ContextFragment.PasteImageFragment(mockContextManager, testImage, imageDescFuture);
-        context = context.addVirtualFragment(pasteImageFragment);
-
-        // Serialize to JSON and deserialize
-        String json = context.toJson();
-        assertNotNull(json);
-        Context deserialized = Context.fromJson(json, mockContextManager);
-
-        // Verify fragments were preserved
-        assertEquals(2, deserialized.virtualFragments.size());
-
-        // Find PasteTextFragment
-        var deserializedTextFragment = (ContextFragment.PasteTextFragment) deserialized.virtualFragments.stream()
-                .filter(f -> f instanceof ContextFragment.PasteTextFragment)
-                .findFirst()
-                .orElseThrow();
-        assertEquals("int x = 5;", deserializedTextFragment.text());
-        assertEquals("Paste of code snippet", deserializedTextFragment.description());
-
-        // Find PasteImageFragment
-        var deserializedImageFragment = (ContextFragment.PasteImageFragment) deserialized.virtualFragments.stream()
-                .filter(f -> f instanceof ContextFragment.PasteImageFragment)
-                .findFirst()
-                .orElseThrow();
-        assertEquals("Paste of diagram", deserializedImageFragment.description());
-        assertNotNull(deserializedImageFragment.image());
-        assertFalse(deserializedImageFragment.isText());
-    }
-
-    @Test
-    void testJsonSerializationWithGitFileFragment() throws Exception {
-        // Create test ProjectFile
-        Path repoRoot = tempDir.resolve("repo");
-        Files.createDirectories(repoRoot);
-        var projectFile = new ProjectFile(repoRoot, "src/Test.java");
-        
-        // Create GitFileFragment
-        var gitFileFragment = new ContextFragment.GitFileFragment(
-            projectFile, 
-            "abc123def", 
-            "public class OldTest {}"
-        );
-
-        Context context = new Context(mockContextManager)
-                .addReadonlyFiles(List.of(gitFileFragment));
-
-        // Serialize to JSON and deserialize
-        String json = context.toJson();
-        assertNotNull(json);
-        assertTrue(json.contains("revision"), "JSON should contain revision field");
-        assertTrue(json.contains("abc123def"), "JSON should contain revision value");
-
-        Context deserialized = Context.fromJson(json, mockContextManager);
-
-        // Verify GitFileFragment was preserved
-        assertEquals(1, deserialized.readonlyFiles.size());
-        var deserializedFragment = (ContextFragment.GitFileFragment) deserialized.readonlyFiles.get(0);
-        
-        assertEquals("abc123def", deserializedFragment.revision());
-        assertEquals("public class OldTest {}", deserializedFragment.content());
-        assertEquals(projectFile.toString(), deserializedFragment.file().toString());
-        assertTrue(deserializedFragment.description().contains("@abc123d")); // short revision
-    }
-
-    @Test
-    void testJsonSerializationWithImageFileFragment() throws Exception {
-        // Create test image file
-        Path imagePath = tempDir.resolve("test.png").toAbsolutePath();
-        Files.createFile(imagePath);
-        var externalFile = new ExternalFile(imagePath);
-        
-        // Create ImageFileFragment
-        var imageFileFragment = new ContextFragment.ImageFileFragment(externalFile, mockContextManager);
-
-        Context context = new Context(mockContextManager)
-                .addReadonlyFiles(List.of(imageFileFragment));
-
-        // Serialize to JSON and deserialize
-        String json = context.toJson();
-        assertNotNull(json);
-
-        Context deserialized = Context.fromJson(json, mockContextManager);
-
-        // Verify ImageFileFragment was preserved
-        assertEquals(1, deserialized.readonlyFiles.size());
-        var deserializedFragment = (ContextFragment.ImageFileFragment) deserialized.readonlyFiles.get(0);
-        
-        assertEquals(imagePath.toString(), deserializedFragment.file().toString());
-        assertEquals("test.png", deserializedFragment.file().getFileName());
-        assertFalse(deserializedFragment.isText());
-        assertEquals("[Image content provided out of band]", deserializedFragment.text());
-    }
-
-    @Test
-    void testJsonSerializationWithCallGraphFragment() throws Exception {
-        Context context = new Context(mockContextManager);
-        ProjectFile mockFile = new ProjectFile(tempDir, "Test.java");
-        Files.createFile(mockFile.absPath());
-
-        // Create CallGraphFragment
-        // var codeUnits = Set.of(CodeUnit.cls(mockFile, "com.test", "TestClass")); // No longer a direct constructor param
-        var callGraphFragment = new ContextFragment.CallGraphFragment(mockContextManager, "TestClass.method", 1, false); // Assuming depth 1, isCalleeGraph=false for "Callers"
-
-        context = context.addVirtualFragment(callGraphFragment);
-
-        // Serialize to JSON and deserialize
-        String json = context.toJson();
-        assertNotNull(json);
-
-        Context deserialized = Context.fromJson(json, mockContextManager);
-
-        // Verify CallGraphFragment was preserved
-        assertEquals(1, deserialized.virtualFragments.size());
-        var deserializedFragment = (ContextFragment.CallGraphFragment) deserialized.virtualFragments.get(0);
-        
-        assertEquals("Callers of TestClass.method (depth 1)", deserializedFragment.description());
-        // Text is dynamically generated
-        assertTrue(deserializedFragment.text().contains("TestClass.method"));
-        // Sources are also dynamic - CallGraphFragment returns sources based on analyzer state
-        // With our mock setup (no analyzer), it returns empty set
-        assertEquals(0, deserializedFragment.sources().size());
-    }
-
-    @Test
-    void testJsonSerializationWithHistoryFragment() throws Exception {
-        Context context = new Context(mockContextManager);
-
-        // Create some task entries
-        List<ChatMessage> messages1 = List.of(
-            dev.langchain4j.data.message.UserMessage.from("First question"),
-            dev.langchain4j.data.message.AiMessage.from("First answer")
-        );
-        var taskFragment1 = new ContextFragment.TaskFragment(mockContextManager, messages1, "Task 1");
-        var taskEntry1 = new TaskEntry(1, taskFragment1, null);
-
-        List<ChatMessage> messages2 = List.of(
-            dev.langchain4j.data.message.UserMessage.from("Second question"),
-            dev.langchain4j.data.message.AiMessage.from("Second answer")
-        );
-        var taskFragment2 = new ContextFragment.TaskFragment(mockContextManager, messages2, "Task 2");
-        var taskEntry2 = new TaskEntry(2, taskFragment2, null);
-
-        var historyFragment = new ContextFragment.HistoryFragment(mockContextManager, List.of(taskEntry1, taskEntry2));
-        context = context.addVirtualFragment(historyFragment);
-
-        // Serialize to JSON and deserialize
-        String json = context.toJson();
-        assertNotNull(json);
-
-        Context deserialized = Context.fromJson(json, mockContextManager);
-
-        // Verify HistoryFragment was preserved
-        assertEquals(1, deserialized.virtualFragments.size());
-        var deserializedFragment = (ContextFragment.HistoryFragment) deserialized.virtualFragments.get(0);
-        
-        assertEquals("Task History (2 tasks)", deserializedFragment.description());
-        assertEquals(2, deserializedFragment.entries().size());
-        
-        // Check first task entry
-        var firstEntry = deserializedFragment.entries().get(0);
-        assertEquals(1, firstEntry.sequence());
-        assertNotNull(firstEntry.log());
-        assertEquals("Task 1", firstEntry.log().description());
-        assertEquals(2, firstEntry.log().messages().size());
-    }
-
-    @Test
-    void testJsonSerializationWithSpecialCharacters() throws Exception {
-        Context context = new Context(mockContextManager);
-
-        // Create fragments with special characters
-        String specialText = "Special chars: äöü ñ 中文 🎉 \"quotes\" 'apostrophes' \n\t\r";
-        var stringFragment = new ContextFragment.StringFragment(mockContextManager,
-            specialText,
-            "Fragment with émojis & spéciäl chars",
-            SyntaxConstants.SYNTAX_STYLE_NONE
-        );
-        context = context.addVirtualFragment(stringFragment);
-
-        // Test with file paths containing special characters
-        Path repoRoot = tempDir.resolve("project with spaces & symbols");
-        Files.createDirectories(repoRoot);
-        var specialFile = new ProjectFile(repoRoot, "src/Special File (1).java");
-        context = context.addEditableFiles(List.of(new ContextFragment.ProjectPathFragment(specialFile, mockContextManager)));
-
-        // Serialize to JSON and deserialize
-        String json = context.toJson();
-        assertNotNull(json);
-        // Verify JSON contains escaped special characters properly
-        assertTrue(json.contains("Special chars"));
-
-        Context deserialized = Context.fromJson(json, mockContextManager);
-
-        // Verify special characters were preserved
-        assertEquals(1, deserialized.virtualFragments.size());
-        var deserializedStringFragment = (ContextFragment.StringFragment) deserialized.virtualFragments.get(0);
-        assertEquals(specialText, deserializedStringFragment.text());
-        assertEquals("Fragment with émojis & spéciäl chars", deserializedStringFragment.description());
-
-        assertEquals(1, deserialized.editableFiles.size());
-        var deserializedFileFragment = deserialized.editableFiles.get(0);
-        assertTrue(deserializedFileFragment.file().toString().contains("Special File (1).java"));
+    void testWriteReadHistoryWithSingleContext_NoFragments() throws IOException {
+        var history = new ContextHistory();
+        var initialContext = new Context(mockContextManager, "Initial welcome.");
+        history.setInitialContext(initialContext);
+
+        Path zipFile = tempDir.resolve("single_context_no_fragments.zip");
+        HistoryIo.writeZip(history, zipFile);
+        ContextHistory loadedHistory = HistoryIo.readZip(zipFile, mockContextManager);
+
+        assertEquals(1, loadedHistory.getHistory().size());
+        // Further assertions can be added to compare context details if necessary,
+        // focusing on serializable aspects.
+        // For a "no fragments" context, primarily the task history (welcome message) is relevant.
+        Context loadedCtx = loadedHistory.getHistory().get(0);
+        assertNotNull(loadedCtx.getParsedOutput()); // Welcome message
+        assertEquals("Welcome", loadedCtx.getParsedOutput().description());
     }
 
 
     @Test
-    void testJsonSerializationRoundTripIntegrity() throws Exception {
-        // Create a complex context with multiple fragment types
-        Context context = new Context(mockContextManager);
+    void testWriteReadHistoryWithComplexContent() throws Exception {
+        ContextHistory originalHistory = new ContextHistory();
 
-        // Add ProjectFile
-        Path repoRoot = tempDir.resolve("complex-project");
-        Files.createDirectories(repoRoot);
-        var projectFile = new ProjectFile(repoRoot, "src/main/java/Complex.java");
-        Files.createDirectories(projectFile.absPath().getParent());
-        Files.writeString(projectFile.absPath(), "public class Complex {}");
-        context = context.addEditableFiles(List.of(new ContextFragment.ProjectPathFragment(projectFile, mockContextManager)));
+        // Context 1: Project file, string fragment
+        var projectFile1 = new ProjectFile(tempDir, "src/File1.java");
+        Files.createDirectories(projectFile1.absPath().getParent());
+        Files.writeString(projectFile1.absPath(), "public class File1 {}");
+        var context1 = new Context(mockContextManager, "Context 1 started")
+                .addEditableFiles(List.of(new ContextFragment.ProjectPathFragment(projectFile1, mockContextManager)))
+                .addVirtualFragment(new ContextFragment.StringFragment(mockContextManager, "Virtual content 1", "VC1", SyntaxConstants.SYNTAX_STYLE_JAVA));
+        originalHistory.setInitialContext(context1);
 
-        // Add ExternalFile
-        var externalFile = new ExternalFile(tempDir.resolve("external.txt").toAbsolutePath());
-        Files.writeString(externalFile.absPath(), "External content");
-        context = context.addReadonlyFiles(List.of(new ContextFragment.ExternalPathFragment(externalFile, mockContextManager)));
-
-        // Add StringFragment
-        context = context.addVirtualFragment(new ContextFragment.StringFragment(mockContextManager,
-            "String content", "String Description", SyntaxConstants.SYNTAX_STYLE_JAVA));
-
-        // Add SearchFragment
-        var searchSources = Set.of(CodeUnit.cls(projectFile, "com.test", "Complex"));
-        List<ChatMessage> complexSearchMessages = List.of(
-                dev.langchain4j.data.message.UserMessage.from("search query"),
-                dev.langchain4j.data.message.AiMessage.from("search result")
-        );
-        context = context.addVirtualFragment(new ContextFragment.SearchFragment(mockContextManager,
-            "Search: search query", complexSearchMessages, searchSources));
-
-        // Add SkeletonFragment
-        var skeletonMap = Map.of(CodeUnit.cls(projectFile, "com.test", "Complex"), "class Complex {}");
-        var targetIdentifiers = skeletonMap.keySet().stream().map(CodeUnit::fqName).toList();
-        context = context.addVirtualFragment(new ContextFragment.SkeletonFragment(mockContextManager, targetIdentifiers, ContextFragment.SummaryType.CLASS_SKELETON));
-
-        // Add UsageFragment
-        context = context.addVirtualFragment(new ContextFragment.UsageFragment(mockContextManager, "Complex.method"));
-
-        // Add TaskHistory
-        List<ChatMessage> sessionMessages = List.of(
-            dev.langchain4j.data.message.UserMessage.from("Test question"),
-            dev.langchain4j.data.message.AiMessage.from("Test answer")
-        );
-        var taskFragment = new ContextFragment.TaskFragment(mockContextManager, sessionMessages, "Integration Test");
-        var result = new SessionResult("Test question", taskFragment, Map.of(),
-            new SessionResult.StopDetails(SessionResult.StopReason.SUCCESS));
-        var taskEntry = context.createTaskEntry(result);
-        context = context.addHistoryEntry(taskEntry, taskFragment, 
-            CompletableFuture.completedFuture("Integration Test"), Map.of());
-
-        // Perform multiple round-trips
-        String json1 = context.toJson();
-        Context deserialized1 = Context.fromJson(json1, mockContextManager);
-        String json2 = deserialized1.toJson();
-        Context deserialized2 = Context.fromJson(json2, mockContextManager);
-
-        // Verify consistency across round-trips
-        assertEquals(context.editableFiles.size(), deserialized1.editableFiles.size());
-        assertEquals(context.editableFiles.size(), deserialized2.editableFiles.size());
+        // Context 2: Image fragment, task history
+        var image1 = createTestImage(Color.RED, 10, 10);
+        var pasteImageFragment1 = new ContextFragment.PasteImageFragment(mockContextManager, image1, CompletableFuture.completedFuture("Pasted Red Image"));
         
-        assertEquals(context.readonlyFiles.size(), deserialized1.readonlyFiles.size());
-        assertEquals(context.readonlyFiles.size(), deserialized2.readonlyFiles.size());
+        var context2 = new Context(mockContextManager, "Context 2 started")
+                .addVirtualFragment(pasteImageFragment1);
         
-        assertEquals(context.virtualFragments.size(), deserialized1.virtualFragments.size());
-        assertEquals(context.virtualFragments.size(), deserialized2.virtualFragments.size());
+        List<ChatMessage> taskMessages = List.of(UserMessage.from("User query"), AiMessage.from("AI response"));
+        var taskFragment = new ContextFragment.TaskFragment(mockContextManager, taskMessages, "Test Task");
+        context2 = context2.addHistoryEntry(new TaskEntry(1, taskFragment, null), taskFragment, CompletableFuture.completedFuture("Action for task"), Map.of());
         
-        assertEquals(context.taskHistory.size(), deserialized1.taskHistory.size());
-        assertEquals(context.taskHistory.size(), deserialized2.taskHistory.size());
+        final Context finalContext2 = context2; // effectively final for lambda
+        originalHistory.pushContext(prev -> finalContext2);
+        
+        Path zipFile = tempDir.resolve("complex_history.zip");
+        HistoryIo.writeZip(originalHistory, zipFile);
+        ContextHistory loadedHistory = HistoryIo.readZip(zipFile, mockContextManager);
 
-        // Verify that JSON representations are stable
-        // Note: Order and exact formatting might vary, but structure should be consistent
-        assertNotNull(json1);
-        assertNotNull(json2);
-        assertTrue(json1.length() > 100); // Sanity check for non-trivial content
-        assertTrue(json2.length() > 100);
+        // Assertions
+        assertEquals(originalHistory.getHistory().size(), loadedHistory.getHistory().size());
+
+        // Compare Context 1 (which will be frozen)
+        Context originalCtx1Frozen = originalHistory.getHistory().get(0); // This is already frozen by ContextHistory
+        Context loadedCtx1 = loadedHistory.getHistory().get(0);
+        assertContextsEqual(originalCtx1Frozen, loadedCtx1);
+
+
+        // Compare Context 2 (which will be frozen)
+        Context originalCtx2Frozen = originalHistory.getHistory().get(1); // This is already frozen by ContextHistory
+        Context loadedCtx2 = loadedHistory.getHistory().get(1);
+        assertContextsEqual(originalCtx2Frozen, loadedCtx2);
+
+        // Verify image content from a FrozenFragment in loadedCtx2
+        var loadedImageFragment = loadedCtx2.virtualFragments()
+            .filter(f -> f instanceof FrozenFragment && !f.isText() && "Pasted Red Image".equals(f.description()))
+            .map(f -> (FrozenFragment) f)
+            .findFirst()
+            .orElseThrow(() -> new AssertionError("Pasted Red Image FrozenFragment not found in loaded context 2"));
+        
+        assertNotNull(loadedImageFragment.imageBytesContent());
+        assertTrue(loadedImageFragment.imageBytesContent().length > 0);
+        Image loadedImage = ImageIO.read(new java.io.ByteArrayInputStream(loadedImageFragment.imageBytesContent()));
+        assertNotNull(loadedImage);
+        assertEquals(10, loadedImage.getWidth(null));
+        assertEquals(10, loadedImage.getHeight(null));
+        // Could do a pixel-by-pixel comparison if necessary
     }
 
+    private void assertContextsEqual(Context expected, Context actual) throws IOException, InterruptedException {
+        // Compare editable files (these should be empty if all were dynamic and frozen)
+        // After freezing, dynamic ProjectPathFragments become FrozenFragments in virtualFragments.
+        // Non-dynamic ones would remain. Assuming test setup makes them dynamic.
+        assertEquals(expected.editableFiles().count(), actual.editableFiles().count(), "Editable files count mismatch");
+        for (int i = 0; i < expected.editableFiles().toList().size(); i++) {
+            assertContextFragmentsEqual(expected.editableFiles().toList().get(i), actual.editableFiles().toList().get(i));
+        }
+
+        assertEquals(expected.readonlyFiles().count(), actual.readonlyFiles().count(), "Readonly files count mismatch");
+         for (int i = 0; i < expected.readonlyFiles().toList().size(); i++) {
+            assertContextFragmentsEqual(expected.readonlyFiles().toList().get(i), actual.readonlyFiles().toList().get(i));
+        }
+        
+        // Compare virtual fragments (this is where frozen dynamic path fragments will also end up)
+        var expectedVirtuals = expected.virtualFragments().sorted(java.util.Comparator.comparingInt(ContextFragment::id)).toList();
+        var actualVirtuals = actual.virtualFragments().sorted(java.util.Comparator.comparingInt(ContextFragment::id)).toList();
+        assertEquals(expectedVirtuals.size(), actualVirtuals.size(), "Virtual fragments count mismatch");
+        for (int i = 0; i < expectedVirtuals.size(); i++) {
+            assertContextFragmentsEqual(expectedVirtuals.get(i), actualVirtuals.get(i));
+        }
+        
+        // Compare task history
+        assertEquals(expected.getTaskHistory().size(), actual.getTaskHistory().size(), "Task history size mismatch");
+        for (int i = 0; i < expected.getTaskHistory().size(); i++) {
+            assertTaskEntriesEqual(expected.getTaskHistory().get(i), actual.getTaskHistory().get(i));
+        }
+    }
+
+    private void assertContextFragmentsEqual(ContextFragment expected, ContextFragment actual) throws IOException, InterruptedException {
+        assertEquals(expected.id(), actual.id(), "Fragment ID mismatch");
+        assertEquals(expected.getType(), actual.getType(), "Fragment type mismatch for ID " + expected.id());
+        assertEquals(expected.description(), actual.description(), "Fragment description mismatch for ID " + expected.id());
+        assertEquals(expected.isText(), actual.isText(), "Fragment isText mismatch for ID " + expected.id());
+        assertEquals(expected.syntaxStyle(), actual.syntaxStyle(), "Fragment syntaxStyle mismatch for ID " + expected.id());
+
+        if (expected.isText()) {
+            assertEquals(expected.text(), actual.text(), "Fragment text content mismatch for ID " + expected.id());
+        } else {
+            // For image fragments, compare byte content if both are FrozenFragment or can provide bytes
+            if (expected instanceof FrozenFragment expectedFf && actual instanceof FrozenFragment actualFf) {
+                assertArrayEquals(expectedFf.imageBytesContent(), actualFf.imageBytesContent(), "FrozenFragment imageBytesContent mismatch for ID " + expected.id());
+            } else if (expected.image() != null && actual.image() != null) { // Fallback for non-frozen, if any after freezing
+                assertArrayEquals(imageToBytes(expected.image()), imageToBytes(actual.image()), "Fragment image content mismatch for ID " + expected.id());
+            }
+        }
+
+        // Compare sources and files (ProjectFile and CodeUnit DTOs are by value)
+        assertEquals(expected.sources().stream().map(CodeUnit::fqName).collect(Collectors.toSet()),
+                     actual.sources().stream().map(CodeUnit::fqName).collect(Collectors.toSet()),
+                     "Fragment sources mismatch for ID " + expected.id());
+        assertEquals(expected.files().stream().map(ProjectFile::toString).collect(Collectors.toSet()),
+                     actual.files().stream().map(ProjectFile::toString).collect(Collectors.toSet()),
+                     "Fragment files mismatch for ID " + expected.id());
+
+        if (expected instanceof FrozenFragment expectedFf && actual instanceof FrozenFragment actualFf) {
+            assertEquals(expectedFf.originalClassName(), actualFf.originalClassName(), "FrozenFragment originalClassName mismatch for ID " + expected.id());
+            assertEquals(expectedFf.meta(), actualFf.meta(), "FrozenFragment meta mismatch for ID " + expected.id());
+        }
+    }
+    
+    private void assertTaskEntriesEqual(TaskEntry expected, TaskEntry actual) {
+        assertEquals(expected.sequence(), actual.sequence());
+        assertEquals(expected.isCompressed(), actual.isCompressed());
+        if (expected.isCompressed()) {
+            assertEquals(expected.summary(), actual.summary());
+        } else {
+            assertNotNull(expected.log());
+            assertNotNull(actual.log());
+            assertEquals(expected.log().description(), actual.log().description());
+            assertEquals(expected.log().messages().size(), actual.log().messages().size());
+            for (int i = 0; i < expected.log().messages().size(); i++) {
+                ChatMessage expectedMsg = expected.log().messages().get(i);
+                ChatMessage actualMsg = actual.log().messages().get(i);
+                assertEquals(expectedMsg.type(), actualMsg.type());
+                assertEquals(Messages.getRepr(expectedMsg), Messages.getRepr(actualMsg));
+            }
+        }
+    }
+
+    @Test
+    void testFragmentIdContinuityAfterLoad() throws IOException {
+        var history = new ContextHistory();
+        var projectFile = new ProjectFile(tempDir, "dummy.txt");
+        Files.writeString(projectFile.absPath(), "content");
+        var ctxFragment = new ContextFragment.ProjectPathFragment(projectFile, mockContextManager); // ID 1
+        var strFragment = new ContextFragment.StringFragment(mockContextManager, "text", "desc", SyntaxConstants.SYNTAX_STYLE_NONE); // ID 2
+        
+        var context = new Context(mockContextManager, "Initial")
+            .addEditableFiles(List.of(ctxFragment))
+            .addVirtualFragment(strFragment);
+        history.setInitialContext(context);
+
+        Path zipFile = tempDir.resolve("id_continuity_history.zip");
+        HistoryIo.writeZip(history, zipFile);
+        ContextHistory loadedHistory = HistoryIo.readZip(zipFile, mockContextManager); // Deserialization updates ContextFragment.nextId
+
+        int maxIdFromLoadedFragments = loadedHistory.getHistory().stream()
+            .flatMap(Context::allFragments)
+            .mapToInt(ContextFragment::id)
+            .max().orElse(0);
+
+        // CurrentNextId should be maxId + 1
+        int currentNextId = ContextFragment.getCurrentMaxId();
+        assertTrue(currentNextId > maxIdFromLoadedFragments, 
+                   "ContextFragment.nextId should be greater than the max ID found in loaded fragments.");
+        
+        // Create a new fragment; it should get `currentNextId`
+        var newFragment = new ContextFragment.StringFragment(mockContextManager, "new", "new desc", SyntaxConstants.SYNTAX_STYLE_NONE);
+        assertEquals(currentNextId, newFragment.id(), "New fragment should get the expected next ID.");
+        assertEquals(currentNextId + 1, ContextFragment.getCurrentMaxId(), "ContextFragment.nextId should increment after new fragment creation.");
+    }
+
+    // --- Kept Tests for FrozenFragment Interning ---
     @Test
     void testFrozenFragmentInterning_SameContentSameInstance_StringFragment() throws Exception {
         var liveFragment1 = new ContextFragment.StringFragment(mockContextManager, "test content", "desc1", SyntaxConstants.SYNTAX_STYLE_NONE);
@@ -642,10 +357,11 @@ public class ContextSerializationTest {
     void testFrozenFragmentInterning_ProjectPathFragment_SameContent() throws Exception {
         Path fileAPath = tempDir.resolve("fileA.txt");
         Files.writeString(fileAPath, "Common content for ProjectPathFragment");
+        ProjectFile pf = new ProjectFile(tempDir, "fileA.txt");
 
-        var liveFragment1 = new ContextFragment.ProjectPathFragment(new ProjectFile(tempDir, "fileA.txt"), mockContextManager);
+        var liveFragment1 = new ContextFragment.ProjectPathFragment(pf, mockContextManager);
         // Create a new ProjectPathFragment instance for the same file, to simulate different live fragments pointing to same content
-        var liveFragment2 = new ContextFragment.ProjectPathFragment(new ProjectFile(tempDir, "fileA.txt"), mockContextManager);
+        var liveFragment2 = new ContextFragment.ProjectPathFragment(pf, mockContextManager);
 
         FrozenFragment frozen1 = FrozenFragment.freeze(liveFragment1, mockContextManager);
         FrozenFragment frozen2 = FrozenFragment.freeze(liveFragment2, mockContextManager);
@@ -656,26 +372,17 @@ public class ContextSerializationTest {
 
         // Modify content and check new frozen fragment
         Files.writeString(fileAPath, "Modified content");
-        var liveFragment3 = new ContextFragment.ProjectPathFragment(new ProjectFile(tempDir, "fileA.txt"), mockContextManager);
+        var liveFragment3 = new ContextFragment.ProjectPathFragment(pf, mockContextManager);
         FrozenFragment frozen3 = FrozenFragment.freeze(liveFragment3, mockContextManager);
 
         assertNotSame(frozen1, frozen3, "FrozenFragment should be different after content modification.");
         assertNotEquals(frozen1.getContentHash(), frozen3.getContentHash(), "Content hashes should differ after content modification.");
     }
 
-    private java.awt.image.BufferedImage createTestImage(java.awt.Color color) {
-        var image = new java.awt.image.BufferedImage(1, 1, java.awt.image.BufferedImage.TYPE_INT_RGB);
-        java.awt.Graphics2D g = image.createGraphics();
-        g.setColor(color);
-        g.fillRect(0, 0, 1, 1);
-        g.dispose();
-        return image;
-    }
-
     @Test
     void testFrozenFragmentInterning_PasteImageFragment_SameImage() throws Exception {
-        java.awt.image.BufferedImage image1Data = createTestImage(java.awt.Color.RED);
-        java.awt.image.BufferedImage image2Data = createTestImage(java.awt.Color.RED); // Same content
+        BufferedImage image1Data = createTestImage(Color.RED, 1, 1);
+        BufferedImage image2Data = createTestImage(Color.RED, 1, 1); // Same content
 
         var liveFragment1 = new ContextFragment.PasteImageFragment(mockContextManager, image1Data, CompletableFuture.completedFuture("Image Description"));
         var liveFragment2 = new ContextFragment.PasteImageFragment(mockContextManager, image2Data, CompletableFuture.completedFuture("Image Description"));
@@ -688,7 +395,7 @@ public class ContextSerializationTest {
         assertEquals(frozen1.getContentHash(), frozen2.getContentHash(), "Content hashes should be identical.");
 
         // Different image
-        java.awt.image.BufferedImage image3Data = createTestImage(java.awt.Color.BLUE);
+        BufferedImage image3Data = createTestImage(Color.BLUE, 1, 1);
         var liveFragment3 = new ContextFragment.PasteImageFragment(mockContextManager, image3Data, CompletableFuture.completedFuture("Image Description"));
         FrozenFragment frozen3 = FrozenFragment.freeze(liveFragment3, mockContextManager);
 
@@ -724,4 +431,4 @@ public class ContextSerializationTest {
         assertNotSame(frozen1, frozen4); // Meta includes revision, so hash will differ
         assertNotEquals(frozen1.getContentHash(), frozen4.getContentHash());
     }
- }
+}

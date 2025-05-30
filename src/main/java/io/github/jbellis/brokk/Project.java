@@ -9,6 +9,9 @@ import io.github.jbellis.brokk.analyzer.Language;
 import io.github.jbellis.brokk.analyzer.ProjectFile;
 import io.github.jbellis.brokk.context.Context;
 import io.github.jbellis.brokk.context.ContextFragment;
+import io.github.jbellis.brokk.context.ContextHistory;
+import io.github.jbellis.brokk.TaskEntry;
+import io.github.jbellis.brokk.util.HistoryIo;
 import io.github.jbellis.brokk.git.GitRepo;
 import io.github.jbellis.brokk.git.IGitRepo;
 import io.github.jbellis.brokk.git.LocalFileRepo;
@@ -29,6 +32,7 @@ import java.util.stream.Collectors;
 public class Project implements IProject, AutoCloseable {
     private final Path propertiesFile;
     private final Path workspacePropertiesFile;
+    private final Path historyZipFile;
     private final Path root;
     private final Properties projectProps;
     private final Properties workspaceProps;
@@ -110,6 +114,7 @@ public class Project implements IProject, AutoCloseable {
         this.root = root;
         this.propertiesFile = root.resolve(".brokk").resolve("project.properties");
         this.workspacePropertiesFile = root.resolve(".brokk").resolve("workspace.properties");
+        this.historyZipFile = this.workspacePropertiesFile.getParent().resolve("history.zip");
         this.styleGuidePath = root.resolve(".brokk").resolve("style.md");
         this.projectProps = new Properties();
         this.workspaceProps = new Properties();
@@ -749,62 +754,44 @@ public class Project implements IProject, AutoCloseable {
     }
 
     /**
-     * Saves a Context object to the workspace properties using JSON serialization
+     * Saves a ContextHistory object to a ZIP file using HistoryIo
      */
-    public void saveContext(Context context) {
+    public void saveHistory(ContextHistory ch) {
         try {
-            // Save the context using JSON serialization
-            String jsonData = context.toJson();
-            workspaceProps.setProperty("context", jsonData);
-
-            // Save the current fragment ID counter
-            int currentMaxId = ContextFragment.getCurrentMaxId();
-            workspaceProps.setProperty("contextFragmentNextId", String.valueOf(currentMaxId));
-
-            saveWorkspaceProperties();
-        } catch (Exception e) {
-            logger.error("Error saving context: {}", e.getMessage());
+            HistoryIo.writeZip(ch, historyZipFile);
+        } catch (IOException e) {
+            logger.error("Error saving context history: {}", e.getMessage());
         }
     }
 
     /**
-     * Loads a Context object from the workspace properties, supporting both JSON and legacy binary formats
+     * Loads a ContextHistory object from a ZIP file using HistoryIo
      *
-     * @return The loaded Context, or null if none exists
+     * @return The loaded ContextHistory, or a new empty history if loading fails
      */
-    public Context loadContext(IContextManager contextManager, String welcomeMessage) {
+    public ContextHistory loadHistory(IContextManager contextManager) {
         try {
-            // Restore the fragment ID counter first
-            String nextIdStr = workspaceProps.getProperty("contextFragmentNextId");
-            if (nextIdStr != null && !nextIdStr.isEmpty()) {
-                try {
-                    int nextId = Integer.parseInt(nextIdStr);
-                    ContextFragment.setNextId(nextId);
-                    logger.debug("Restored fragment ID counter to {}", nextId);
-                } catch (NumberFormatException e) {
-                    logger.warn("Invalid fragment ID counter value: {}", nextIdStr);
+            ContextHistory ch = HistoryIo.readZip(historyZipFile, contextManager);
+            if (ch != null && !ch.getHistory().isEmpty()) {
+                int maxId = 0;
+                for (Context ctx : ch.getHistory()) {
+                    for (ContextFragment fragment : ctx.allFragments().toList()) {
+                        maxId = Math.max(maxId, fragment.id());
+                    }
+                    for (TaskEntry taskEntry : ctx.getTaskHistory()) {
+                        if (taskEntry.log() != null) {
+                            maxId = Math.max(maxId, taskEntry.log().id());
+                        }
+                    }
                 }
+                ContextFragment.setNextId(maxId + 1);
+                logger.debug("Restored fragment ID counter to {}", maxId + 1);
             }
-
-            // Then load the context
-            String contextData = workspaceProps.getProperty("context");
-            if (contextData != null && !contextData.isEmpty()) {
-                Context context = Context.fromJson(contextData, contextManager);
-                logger.debug("Loaded context from JSON with {} fragments", context.allFragments().count());
-                return context;
-            }
-        } catch (Throwable e) {
-            logger.error("Error loading context", e);
-            clearSavedContext();
+            return ch;
+        } catch (IOException e) {
+            logger.error("Error loading context history: {}", e.getMessage());
+            return new ContextHistory();
         }
-        return null;
-    }
-
-    private void clearSavedContext() {
-        workspaceProps.remove("context");
-        workspaceProps.remove("contextFragmentNextId");
-        saveWorkspaceProperties();
-        logger.debug("Cleared saved context from workspace properties");
     }
 
     /**
