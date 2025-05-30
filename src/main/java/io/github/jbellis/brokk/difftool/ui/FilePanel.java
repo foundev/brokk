@@ -24,6 +24,7 @@ import java.awt.event.FocusAdapter;
 import java.awt.event.FocusEvent;
 import java.awt.event.FocusListener;
 import java.util.List;
+import java.util.Optional;
 
 import io.github.jbellis.brokk.gui.ThemeAware;
 import io.github.jbellis.brokk.gui.dialogs.StartupDialog;
@@ -190,6 +191,7 @@ public class FilePanel implements BufferDocumentChangeListenerIF, ThemeAware {
             initialSetupComplete = true;
 
         } catch (Exception ex) {
+            ex.printStackTrace();
             JOptionPane.showMessageDialog(diffPanel, "Could not read file or set document: "
                                                   + (bd != null ? bd.getName() : "Unknown")
                                                   + "\n" + ex.getMessage(),
@@ -222,11 +224,19 @@ public class FilePanel implements BufferDocumentChangeListenerIF, ThemeAware {
     {
         assert SwingUtilities.isEventDispatchThread() : "NOT ON EDT";
         var doc = bufferDocument;
-        if (doc == null) return;
+        if (doc == null) {
+            logger.debug("paintRevisionHighlights: bufferDocument is null for panel {}", name);
+            return;
+        }
 
         // Access the shared patch from the parent BufferDiffPanel
         var patch = diffPanel.getPatch();
-        if (patch == null) return;
+        if (patch == null) {
+            logger.debug("paintRevisionHighlights: patch is null for panel {}", name);
+            return;
+        }
+        
+        logger.debug("paintRevisionHighlights: painting {} deltas for panel {}", patch.getDeltas().size(), name);
         for (var delta : patch.getDeltas()) {
             // Are we the "original" side or the "revised" side?
             if (BufferDocumentIF.ORIGINAL.equals(name)) {
@@ -462,7 +472,8 @@ public class FilePanel implements BufferDocumentChangeListenerIF, ThemeAware {
                 if (!SyntaxConstants.SYNTAX_STYLE_NONE.equals(otherStyle)) {
                     style = otherStyle;
                 }
-                logger.info("File type detection heuristic 2 type: {}, filename: {}, style {}", name, otherPanel.getBufferDocument().getName(), style);
+                var docName = Optional.ofNullable(otherPanel.getBufferDocument()).map(BufferDocumentIF::getName).orElse("'<No other document>'");
+                logger.info("File type detection heuristic 2 type: {}, filename: {}, style {}", name, docName, style);
             }
         }
 
