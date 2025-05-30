@@ -32,8 +32,7 @@ public class BufferDiffPanel extends AbstractContentPanel implements ThemeAware
 
     @NotNull
     private final BrokkDiffPanel mainPanel;
-    // Mutable so existing panels can react to live theme changes
-    private boolean isDarkTheme;
+    private GuiTheme guiTheme;
 
     // Instead of JMRevision:
     private Patch<String> patch; // from JMDiffNode
@@ -52,15 +51,10 @@ public class BufferDiffPanel extends AbstractContentPanel implements ThemeAware
     private ScrollSynchronizer scrollSynchronizer;
     private JSplitPane splitPane;
 
-    public BufferDiffPanel(BrokkDiffPanel mainPanel)
-    {
-        this(mainPanel, false);
-    }
-
-    public BufferDiffPanel(BrokkDiffPanel mainPanel, boolean isDarkTheme)
+    public BufferDiffPanel(BrokkDiffPanel mainPanel, GuiTheme theme)
     {
         this.mainPanel = mainPanel;
-        this.isDarkTheme = isDarkTheme;
+        this.guiTheme = theme;
         // Let the mainPanel keep a reference to us for toolbar/undo/redo interplay
         mainPanel.setBufferDiffPanel(this);
         init();
@@ -104,7 +98,7 @@ public class BufferDiffPanel extends AbstractContentPanel implements ThemeAware
             filePanels[LEFT].setBufferDocument(leftDocument);
         }
 
-        reDisplay();
+        // Don't apply theme here - let it happen after the panel is added to the UI
     }
 
     /**
@@ -158,11 +152,6 @@ public class BufferDiffPanel extends AbstractContentPanel implements ThemeAware
         return titles.get(0) + "-" + titles.get(1);
     }
 
-    public boolean isDarkTheme()
-    {
-        return isDarkTheme;
-    }
-
     /**
      * Do not try incremental updates. We just re-diff the whole thing.
      */
@@ -190,6 +179,8 @@ public class BufferDiffPanel extends AbstractContentPanel implements ThemeAware
         scrollSynchronizer = new ScrollSynchronizer(this, filePanels[LEFT], filePanels[RIGHT]);
         setSelectedPanel(filePanels[LEFT]);
         mainPanel.updateUndoRedoButtons();
+        // Apply initial theme for syntax highlighting (but not diff highlights yet)
+        applyTheme(guiTheme);
     }
 
     public JCheckBox getCaseSensitiveCheckBox()
@@ -552,15 +543,14 @@ public class BufferDiffPanel extends AbstractContentPanel implements ThemeAware
     {
         assert javax.swing.SwingUtilities.isEventDispatchThread()
                 : "applyTheme must be invoked on the EDT";
-
-        this.isDarkTheme = guiTheme.isDarkTheme();
+        this.guiTheme = guiTheme;
 
         // Refresh RSyntax themes and highlights in each child FilePanel
         if (filePanels != null) {
             for (FilePanel fp : filePanels) {
                 if (fp == null) continue;
-                guiTheme.applyCurrentThemeToComponent(fp.getEditor());
-                fp.reDisplay();
+                // Note: fp.applyTheme() already calls reDisplay()
+                fp.applyTheme(guiTheme);
             }
         }
 
@@ -570,5 +560,9 @@ public class BufferDiffPanel extends AbstractContentPanel implements ThemeAware
 
         // Repaint diff connectors, revision bars, etc.
         reDisplay();
+    }
+
+    public GuiTheme getTheme() {
+        return guiTheme;
     }
 }

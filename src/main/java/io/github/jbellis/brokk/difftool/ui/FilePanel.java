@@ -25,6 +25,10 @@ import java.awt.event.FocusEvent;
 import java.awt.event.FocusListener;
 import java.util.List;
 
+import io.github.jbellis.brokk.gui.ThemeAware;
+import io.github.jbellis.brokk.gui.dialogs.StartupDialog;
+import org.apache.logging.log4j.LogManager;
+import org.apache.logging.log4j.Logger;
 import org.fife.ui.rsyntaxtextarea.RSyntaxTextArea;
 import org.fife.ui.rsyntaxtextarea.SyntaxConstants;
 import javax.swing.SwingUtilities;
@@ -33,8 +37,9 @@ import io.github.jbellis.brokk.gui.GuiTheme;
 import io.github.jbellis.brokk.util.SyntaxDetector;
 import org.jetbrains.annotations.NotNull;
 
-public class FilePanel implements BufferDocumentChangeListenerIF {
+public class FilePanel implements BufferDocumentChangeListenerIF, ThemeAware {
     private static final int MAXSIZE_CHANGE_DIFF = 1000;
+    private static final Logger logger = LogManager.getLogger(FilePanel.class);
 
     @NotNull
     private final BufferDiffPanel diffPanel;
@@ -53,6 +58,7 @@ public class FilePanel implements BufferDocumentChangeListenerIF {
     private boolean selected;
     private SearchHits searchHits;
     private final SearchBarDialog bar;
+    private volatile boolean initialSetupComplete = false;
 
     public FilePanel(@NotNull BufferDiffPanel diffPanel, String name, SearchBarDialog bar) {
         this.diffPanel = diffPanel;
@@ -96,9 +102,8 @@ public class FilePanel implements BufferDocumentChangeListenerIF {
         // Setup a one-time timer to refresh the UI after 100ms
         timer = new Timer(100, refresh());
         timer.setRepeats(false);
-
-        // Apply current theme
-        GuiTheme.loadRSyntaxTheme(diffPanel.isDarkTheme()).ifPresent(theme ->
+        // Apply syntax theme but don't trigger reDisplay yet (no diff data available)
+        GuiTheme.loadRSyntaxTheme(diffPanel.getTheme().isDarkTheme()).ifPresent(theme ->
                 theme.apply(editor)
         );
 
@@ -158,6 +163,13 @@ public class FilePanel implements BufferDocumentChangeListenerIF {
 
                     // Undo tracking on the RSyntaxDocument (what the user edits)
                     editor.getDocument().addUndoableEditListener(diffPanel.getUndoHandler());
+
+                    // Ensure highlighter is still properly connected after setText
+                    if (editor.getHighlighter() instanceof CompositeHighlighter) {
+                        // Force reinstall to ensure proper binding
+                        var highlighter = editor.getHighlighter();
+                        highlighter.install(editor);
+                    }
                 }
                 editor.setEditable(!bd.isReadonly());
                 updateSyntaxStyle();            // pick syntax based on filename
@@ -173,6 +185,9 @@ public class FilePanel implements BufferDocumentChangeListenerIF {
 
             // Initialize configuration - this sets border etc.
             initConfiguration();
+
+            // Mark initial setup as complete
+            initialSetupComplete = true;
 
         } catch (Exception ex) {
             JOptionPane.showMessageDialog(diffPanel, "Could not read file or set document: "
@@ -190,7 +205,13 @@ public class FilePanel implements BufferDocumentChangeListenerIF {
         removeHighlights();
         paintSearchHighlights();
         paintRevisionHighlights();
-        getHighlighter().repaint();
+        // Force both the JMHighlighter and editor to repaint
+        if (jmHighlighter != null) {
+            jmHighlighter.repaint();
+        }
+        if (editor != null) {
+            editor.repaint();
+        }
     }
 
     /**
@@ -199,13 +220,13 @@ public class FilePanel implements BufferDocumentChangeListenerIF {
      */
     private void paintRevisionHighlights()
     {
+        assert SwingUtilities.isEventDispatchThread() : "NOT ON EDT";
         var doc = bufferDocument;
         if (doc == null) return;
 
         // Access the shared patch from the parent BufferDiffPanel
         var patch = diffPanel.getPatch();
         if (patch == null) return;
-
         for (var delta : patch.getDeltas()) {
             // Are we the "original" side or the "revised" side?
             if (BufferDocumentIF.ORIGINAL.equals(name)) {
@@ -214,6 +235,19 @@ public class FilePanel implements BufferDocumentChangeListenerIF {
                 new HighlightRevised(delta).highlight();
             }
         }
+    }
+
+    @Override
+    public void applyTheme(GuiTheme guiTheme) {
+        // Apply current theme
+        GuiTheme.loadRSyntaxTheme(guiTheme.isDarkTheme()).ifPresent(theme -> {
+            // Apply theme to the composite highlighter (which will forward to JMHighlighter)
+            if (editor.getHighlighter() instanceof ThemeAware high) {
+                high.applyTheme(guiTheme);
+            }
+            theme.apply(editor);
+            reDisplay();
+        });
     }
 
     abstract class AbstractHighlight {
@@ -238,7 +272,7 @@ public class FilePanel implements BufferDocumentChangeListenerIF {
             boolean isEndAndNewline = isEndAndLastNewline(toOffset);
 
             // Decide color. For Insert vs Delete vs Change we do:
-            var isDark = diffPanel.isDarkTheme();
+            var isDark = diffPanel.getTheme().isDarkTheme();
             var type = delta.getType(); // DeltaType.INSERT, DELETE, CHANGE
             var painter = switch (type) {
                 case INSERT ->
@@ -340,6 +374,9 @@ public class FilePanel implements BufferDocumentChangeListenerIF {
     }
 
     public void documentChanged(JMDocumentEvent de) {
+        // Don't trigger timer during initial setup
+        if (!initialSetupComplete) return;
+
         if (de.getStartLine() == -1 && de.getDocumentEvent() == null) {
             // Refresh the diff of whole document.
             timer.restart();
@@ -411,7 +448,7 @@ public class FilePanel implements BufferDocumentChangeListenerIF {
                     style = SyntaxDetector.fromExtension(ext);
                 }
             }
-            System.out.println("H1 Buffer " + fileName + " -> " + style);
+            logger.info("File type detection heuristic 1 type: {}, filename: {}, style {}", name, fileName, style);
         }
 
         // --------------------------- Heuristic 2 -----------------------------
@@ -425,6 +462,7 @@ public class FilePanel implements BufferDocumentChangeListenerIF {
                 if (!SyntaxConstants.SYNTAX_STYLE_NONE.equals(otherStyle)) {
                     style = otherStyle;
                 }
+                logger.info("File type detection heuristic 2 type: {}, filename: {}, style {}", name, otherPanel.getBufferDocument().getName(), style);
             }
         }
 

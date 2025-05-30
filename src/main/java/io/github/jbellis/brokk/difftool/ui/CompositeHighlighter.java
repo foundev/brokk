@@ -9,12 +9,15 @@ import java.awt.*;
 import java.util.Arrays;
 import java.util.stream.Stream;
 
+import io.github.jbellis.brokk.gui.GuiTheme;
+import io.github.jbellis.brokk.gui.ThemeAware;
+
 /**
  * Extends {@link RSyntaxTextAreaHighlighter} to provide base syntax highlighting and delegates
  * to a secondary {@link Highlighter} (typically {@link JMHighlighter}) for additional decorations like diff/search.
  * Mutating operations are forwarded to the secondary highlighter.
  */
-public class CompositeHighlighter extends RSyntaxTextAreaHighlighter
+public class CompositeHighlighter extends RSyntaxTextAreaHighlighter implements ThemeAware
 {
     private final Highlighter secondary;
 
@@ -85,5 +88,14 @@ public class CompositeHighlighter extends RSyntaxTextAreaHighlighter
 
         return Stream.concat(Arrays.stream(a), Arrays.stream(b))
                      .toArray(Highlight[]::new);
+    }
+
+    @Override
+    public void applyTheme(GuiTheme guiTheme)
+    {
+        // Forward theme changes to the secondary highlighter if it supports themes
+        if (secondary instanceof ThemeAware) {
+            ((ThemeAware) secondary).applyTheme(guiTheme);
+        }
     }
 }
