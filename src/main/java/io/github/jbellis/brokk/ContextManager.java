@@ -217,6 +217,12 @@ public class ContextManager implements IContextManager, AutoCloseable {
             public void onTrackedFileChange() {
                 io.updateCommitPanel();
             }
+
+            @Override
+            public void afterEachBuild() {
+                // Refresh the context table as dynamic fragment content might have changed
+                SwingUtilities.invokeLater(io::updateContextTable);
+            }
         };
 
         this.analyzerWrapper = new AnalyzerWrapper(project, this::submitBackgroundTask, analyzerListener);

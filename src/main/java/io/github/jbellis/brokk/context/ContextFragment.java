@@ -110,6 +110,26 @@ public interface ContextFragment {
         return true;
     }
 
+    /**
+     * Retrieves the {@link IContextManager} associated with this fragment.
+     *
+     * @return The context manager instance, or {@code null} if not applicable or available.
+     */
+    IContextManager getContextManager();
+
+    /**
+     * Convenience method to get the analyzer in a non-blocking way using the fragment's context manager.
+     *
+     * @return The IAnalyzer instance if available, or null if it's not ready yet or if the context manager is not available.
+     */
+    default IAnalyzer getAnalyzerNonBlocking() {
+        IContextManager cm = getContextManager();
+        if (cm == null || cm.getAnalyzerWrapper() == null) {
+            return null;
+        }
+        return cm.getAnalyzerWrapper().getNonBlocking();
+    }
+
     static Set<ProjectFile> parseProjectFiles(String text, IProject project) {
         var exactMatches = project.getAllFiles().stream().parallel()
                 .filter(f -> text.contains(f.toString()))
@@ -174,6 +194,11 @@ public interface ContextFragment {
             this(file, nextId.getAndIncrement(), contextManager);
         }
 
+        @Override
+        public IContextManager getContextManager() {
+            return contextManager;
+        }
+
         public static ProjectPathFragment withId(ProjectFile file, int existingId, IContextManager contextManager) {
             // Update the counter if needed to avoid ID conflicts
             if (existingId >= nextId.get()) {
@@ -202,14 +227,16 @@ public interface ContextFragment {
 
         @Override
         public String formatSummary() {
-            var analyzer = contextManager.getAnalyzerUninterrupted();
+            IAnalyzer analyzer = getAnalyzerNonBlocking();
+            if (analyzer == null || analyzer.isEmpty()) {
+                return PathFragment.formatSummary(file); // Fallback if analyzer not ready or empty
+            }
             var summary = analyzer.getSkeletons(file).entrySet().stream()
                     .sorted(Map.Entry.comparingByKey())
                     .map(Map.Entry::getValue)
                     .collect(Collectors.joining("\n"));
             if (summary.isBlank()) {
-                // this also handles the analyzer.isEmpty case
-                return PathFragment.formatSummary(file);
+                return PathFragment.formatSummary(file); // Also fallback if skeletons are blank
             }
             return """
                    <file source="%s" summarized=true>
@@ -220,7 +247,11 @@ public interface ContextFragment {
 
         @Override
         public Set<CodeUnit> sources() {
-            return contextManager.getAnalyzerUninterrupted().getDeclarationsInFile(file);
+            IAnalyzer analyzer = getAnalyzerNonBlocking();
+            if (analyzer == null) {
+                return Set.of();
+            }
+            return analyzer.getDeclarationsInFile(file);
         }
 
         @Override
@@ -241,6 +272,11 @@ public interface ContextFragment {
 
         public GitFileFragment(ProjectFile file, String revision, String content) {
             this(file, revision, content, nextId.getAndIncrement());
+        }
+
+        @Override
+        public IContextManager getContextManager() {
+            return null; // GitFileFragment does not have a context manager
         }
 
         public static GitFileFragment withId(ProjectFile file, String revision, String content, int existingId) {
@@ -317,6 +353,11 @@ public interface ContextFragment {
             this(file, nextId.getAndIncrement(), contextManager);
         }
 
+        @Override
+        public IContextManager getContextManager() {
+            return contextManager;
+        }
+
         public static ExternalPathFragment withId(ExternalFile file, int existingId, IContextManager contextManager) {
             // Update the counter if needed to avoid ID conflicts
             if (existingId >= nextId.get()) {
@@ -354,6 +395,11 @@ public interface ContextFragment {
         public ImageFileFragment(BrokkFile file, IContextManager contextManager) {
             this(file, nextId.getAndIncrement(), contextManager);
             assert !file.isText() : "ImageFileFragment should only be used for non-text files";
+        }
+
+        @Override
+        public IContextManager getContextManager() {
+            return contextManager;
         }
 
         public static ImageFileFragment withId(BrokkFile file, int existingId, IContextManager contextManager) {
@@ -452,6 +498,11 @@ public interface ContextFragment {
         public VirtualFragment(IContextManager contextManager) {
             this.id = nextId.getAndIncrement();
             this.contextManager = contextManager;
+        }
+
+        @Override
+        public IContextManager getContextManager() {
+            return contextManager;
         }
 
         protected VirtualFragment(int existingId, IContextManager contextManager) {
@@ -875,9 +926,9 @@ public interface ContextFragment {
 
         @Override
         public String text() throws InterruptedException {
-            var analyzer = contextManager.getAnalyzer();
+            IAnalyzer analyzer = getAnalyzerNonBlocking();
             if (analyzer == null || analyzer.isEmpty()) {
-                return "Code intelligence not available to find usages for " + targetIdentifier;
+                return "Code intelligence is not ready. Cannot find usages for " + targetIdentifier + ".";
             }
             List<CodeUnit> uses = analyzer.getUses(targetIdentifier);
             var result = AnalyzerUtil.processUsages(analyzer, uses);
@@ -891,13 +942,7 @@ public interface ContextFragment {
 
         @Override
         public Set<CodeUnit> sources() {
-            IAnalyzer analyzer;
-            try {
-                analyzer = contextManager.getAnalyzer();
-            } catch (InterruptedException e) {
-                Thread.currentThread().interrupt();
-                return Set.of();
-            }
+            IAnalyzer analyzer = getAnalyzerNonBlocking();
             if (analyzer == null || analyzer.isEmpty()) {
                 return Set.of();
             }
@@ -909,16 +954,11 @@ public interface ContextFragment {
 
         @Override
         public Set<ProjectFile> files() {
-            IAnalyzer analyzer;
-            try {
-                analyzer = contextManager.getAnalyzer();
-            } catch (InterruptedException e) {
-                Thread.currentThread().interrupt();
+            IAnalyzer analyzer = getAnalyzerNonBlocking();
+            if (analyzer == null || analyzer.isEmpty()) { // Check analyzer readiness
                 return Set.of();
             }
-            if (analyzer == null || analyzer.isEmpty()) {
-                return Set.of();
-            }
+            // sources() will use getAnalyzerNonBlocking, so this is fine
             return sources().stream().map(CodeUnit::source).collect(Collectors.toSet());
         }
 
@@ -965,9 +1005,9 @@ public interface ContextFragment {
 
         @Override
         public String text() throws InterruptedException {
-            var analyzer = contextManager.getAnalyzer();
+            IAnalyzer analyzer = getAnalyzerNonBlocking();
             if (analyzer == null || !analyzer.isCpg()) {
-                return "Code intelligence not available for call graph of " + methodName;
+                return "Code intelligence is not ready. Cannot generate call graph for " + methodName + ".";
             }
             Map<String, List<CallSite>> graphData;
             if (isCalleeGraph) {
@@ -989,14 +1029,7 @@ public interface ContextFragment {
 
         @Override
         public Set<CodeUnit> sources() {
-            IAnalyzer analyzer;
-            try {
-                analyzer = contextManager.getAnalyzer();
-            } catch (InterruptedException e) {
-                Thread.currentThread().interrupt();
-                return Set.of();
-            }
-
+            IAnalyzer analyzer = getAnalyzerNonBlocking();
             if (analyzer == null || analyzer.isEmpty()) {
                 return Set.of();
             }
@@ -1009,16 +1042,11 @@ public interface ContextFragment {
 
         @Override
         public Set<ProjectFile> files() {
-            IAnalyzer analyzer;
-            try {
-                analyzer = contextManager.getAnalyzer();
-            } catch (InterruptedException e) {
-                Thread.currentThread().interrupt();
+            IAnalyzer analyzer = getAnalyzerNonBlocking();
+            if (analyzer == null || analyzer.isEmpty()) { // Check analyzer readiness
                 return Set.of();
             }
-            if (analyzer == null || analyzer.isEmpty()) {
-                return Set.of();
-            }
+            // sources() will use getAnalyzerNonBlocking, so this is fine
             return sources().stream().map(CodeUnit::source).collect(Collectors.toSet());
         }
 
@@ -1064,15 +1092,8 @@ public interface ContextFragment {
         }
 
         private Map<CodeUnit, String> fetchSkeletons() {
-            IAnalyzer analyzer;
-            try {
-                analyzer = contextManager.getAnalyzer();
-            } catch (InterruptedException e) {
-                Thread.currentThread().interrupt();
-                return Map.of();
-            }
-
-            if (analyzer == null || !analyzer.isCpg()) {
+            IAnalyzer analyzer = getAnalyzerNonBlocking();
+            if (analyzer == null || !analyzer.isCpg()) { // If analyzer is null, or not CPG, return empty
                 return Map.of();
             }
             Map<CodeUnit, String> skeletonsMap = new HashMap<>();
@@ -1140,16 +1161,11 @@ public interface ContextFragment {
 
         @Override
         public Set<ProjectFile> files() {
-            IAnalyzer analyzer;
-            try {
-                analyzer = contextManager.getAnalyzer();
-            } catch (InterruptedException e) {
-                Thread.currentThread().interrupt();
-                return Set.of();
-            }
+            IAnalyzer analyzer = getAnalyzerNonBlocking(); // Explicitly get non-blocking analyzer
             if (analyzer == null || analyzer.isEmpty()) {
                 return Set.of();
             }
+            // sources() internally uses getAnalyzerNonBlocking, so this is fine.
             return sources().stream().map(CodeUnit::source).collect(Collectors.toSet());
         }
 

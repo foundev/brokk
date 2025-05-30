@@ -138,8 +138,10 @@ public class AnalyzerWrapper implements AutoCloseable {
         });
         if (needsGitRefresh) {
             logger.debug("Refreshing git due to changes in .git directory");
-            listener.onRepoChange();
-            listener.onTrackedFileChange(); // not 100% sure this is necessary
+            if (listener != null) {
+                listener.onRepoChange();
+                listener.onTrackedFileChange(); // not 100% sure this is necessary
+            }
         }
 
         // 2) Check if any *tracked* files changed
@@ -151,7 +153,9 @@ public class AnalyzerWrapper implements AutoCloseable {
 
         if (trackedPathsChanged) {
             // call listener (refreshes git panel)
-            listener.onTrackedFileChange();
+            if (listener != null) {
+                listener.onTrackedFileChange();
+            }
 
             // update the analyzer if we're configured to do so
             // Only rebuild if the changed files are of a type relevant to the project's configured languages
@@ -279,6 +283,11 @@ public class AnalyzerWrapper implements AutoCloseable {
         currentAnalyzer = resultAnalyzer;
         logger.debug("Analyzer (re)build completed for languages: {}", projectLangs.stream().map(Language::name).collect(Collectors.joining(", ")));
 
+        // Notify listener after each build, once currentAnalyzer is set
+        if (listener != null) {
+            listener.afterEachBuild();
+        }
+
         if (isInitialLoad && project.getAnalyzerRefresh() == CpgRefresh.UNSET) {
             handleFirstBuildRefreshSettings(totalDeclarations, totalCreationTimeMs, allEmpty, projectLangs);
             startWatcher();
@@ -294,6 +303,19 @@ public class AnalyzerWrapper implements AutoCloseable {
             .flatMap(l -> l.getExtensions().stream())
             .distinct()
             .collect(Collectors.joining(", "));
+
+        if (listener == null) { // Should not happen in normal flow, but good for safety
+            logger.warn("AnalyzerListener is null during handleFirstBuildRefreshSettings, cannot call afterFirstBuild.");
+            // Set a default refresh policy if listener is unexpectedly null
+            if (isEmpty || durationMs > 3 * 6000) {
+                project.setAnalyzerRefresh(CpgRefresh.MANUAL);
+            } else if (durationMs > 5000) {
+                project.setAnalyzerRefresh(CpgRefresh.ON_RESTART);
+            } else {
+                project.setAnalyzerRefresh(CpgRefresh.AUTO);
+            }
+            return;
+        }
 
         if (isEmpty) {
             logger.info("Empty {} analyzer", langNames);
@@ -451,7 +473,9 @@ public class AnalyzerWrapper implements AutoCloseable {
         }
 
         // Otherwise, this must be the very first build (or a failed one).
-        listener.onBlocked();
+        if (listener != null) {
+            listener.onBlocked();
+        }
         try {
             // Block until the future analyzer finishes building
             return future.get();
