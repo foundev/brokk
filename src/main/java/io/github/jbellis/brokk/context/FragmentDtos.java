@@ -5,6 +5,7 @@ import com.fasterxml.jackson.annotation.JsonTypeInfo.As;
 import com.fasterxml.jackson.annotation.JsonTypeInfo.Id;
 
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 
 /**
@@ -23,7 +24,7 @@ public class FragmentDtos {
      * Sealed interface for virtual fragments (non-file content).
      */
     @JsonTypeInfo(use = Id.CLASS, include = As.PROPERTY, property = "type")
-    public sealed interface VirtualFragmentDto permits TaskFragmentDto, StringFragmentDto, SearchFragmentDto, SkeletonFragmentDto, UsageFragmentDto, PasteTextFragmentDto, PasteImageFragmentDto, StacktraceFragmentDto, CallGraphFragmentDto, HistoryFragmentDto {
+    public sealed interface VirtualFragmentDto permits TaskFragmentDto, StringFragmentDto, SearchFragmentDto, SkeletonFragmentDto, UsageFragmentDto, PasteTextFragmentDto, PasteImageFragmentDto, StacktraceFragmentDto, CallGraphFragmentDto, HistoryFragmentDto, FrozenFragmentDto {
     }
     
     /**
@@ -252,6 +253,32 @@ public class FragmentDtos {
                 throw new IllegalArgumentException("history cannot be null");
             }
             history = List.copyOf(history);
+        }
+    }
+    
+    /**
+     * DTO for FrozenFragment - contains frozen state of any fragment type.
+     */
+    public record FrozenFragmentDto(int id, String originalType, String description, String textContent, 
+                                   String base64ImageContent, boolean isTextFragment, String syntaxStyle,
+                                   Set<CodeUnitDto> sources, Set<ProjectFileDto> files, String originalClassName,
+                                   Map<String, String> meta) implements VirtualFragmentDto {
+        public FrozenFragmentDto {
+            if (originalType == null || originalType.isEmpty()) {
+                throw new IllegalArgumentException("originalType cannot be null or empty");
+            }
+            if (description == null) {
+                throw new IllegalArgumentException("description cannot be null");
+            }
+            if (syntaxStyle == null) {
+                throw new IllegalArgumentException("syntaxStyle cannot be null");
+            }
+            if (originalClassName == null || originalClassName.isEmpty()) {
+                throw new IllegalArgumentException("originalClassName cannot be null or empty");
+            }
+            sources = sources != null ? Set.copyOf(sources) : Set.of();
+            files = files != null ? Set.copyOf(files) : Set.of();
+            meta = meta != null ? Map.copyOf(meta) : Map.of();
         }
     }
     

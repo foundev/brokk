@@ -91,15 +91,15 @@ public class Context {
         this(Objects.requireNonNull(contextManager, "contextManager cannot be null"), "placeholder");
     }
 
-    private Context(int id,
-                    @NotNull IContextManager contextManager,
-                    List<ContextFragment.ProjectPathFragment> editableFiles,
-                    List<ContextFragment.PathFragment> readonlyFiles,
-                    List<ContextFragment.VirtualFragment> virtualFragments,
-                    List<TaskEntry> taskHistory,
-                    Map<ProjectFile, String> originalContents,
-                    ContextFragment.TaskFragment parsedOutput,
-                    Future<String> action)
+    Context(int id,
+            @NotNull IContextManager contextManager,
+            List<ContextFragment.ProjectPathFragment> editableFiles,
+            List<ContextFragment.PathFragment> readonlyFiles,
+            List<ContextFragment.VirtualFragment> virtualFragments,
+            List<TaskEntry> taskHistory,
+            Map<ProjectFile, String> originalContents,
+            ContextFragment.TaskFragment parsedOutput,
+            Future<String> action)
     {
         assert id > 0;
         // contextManager is asserted non-null by the caller or public constructor
@@ -660,12 +660,25 @@ public class Context {
         assert sourceContext != null;
         assert currentContext != null;
 
+        // Unfreeze fragments from the source context if they are frozen
+        var unfrozenEditableFiles = sourceContext.editableFiles.stream()
+                .map(fragment -> unfreezeFragmentIfNeeded(fragment, currentContext.contextManager))
+                .collect(Collectors.toList());
+        
+        var unfrozenReadonlyFiles = sourceContext.readonlyFiles.stream()
+                .map(fragment -> unfreezeFragmentIfNeeded(fragment, currentContext.contextManager))
+                .collect(Collectors.toList());
+        
+        var unfrozenVirtualFragments = sourceContext.virtualFragments.stream()
+                .map(fragment -> unfreezeFragmentIfNeeded(fragment, currentContext.contextManager))
+                .collect(Collectors.toList());
+
         // New ID for the reset point
         return new Context(newId(), // New ID for the reset point
                            currentContext.contextManager,
-                           sourceContext.editableFiles,
-                           sourceContext.readonlyFiles,
-                           sourceContext.virtualFragments,
+                           unfrozenEditableFiles,
+                           unfrozenReadonlyFiles,
+                           unfrozenVirtualFragments,
                            currentContext.taskHistory,
                            Map.of(),
                            null,
@@ -685,12 +698,25 @@ public class Context {
         assert sourceContext != null;
         assert currentContext != null;
 
+        // Unfreeze fragments from the source context if they are frozen
+        var unfrozenEditableFiles = sourceContext.editableFiles.stream()
+                .map(fragment -> unfreezeFragmentIfNeeded(fragment, currentContext.contextManager))
+                .collect(Collectors.toList());
+        
+        var unfrozenReadonlyFiles = sourceContext.readonlyFiles.stream()
+                .map(fragment -> unfreezeFragmentIfNeeded(fragment, currentContext.contextManager))
+                .collect(Collectors.toList());
+        
+        var unfrozenVirtualFragments = sourceContext.virtualFragments.stream()
+                .map(fragment -> unfreezeFragmentIfNeeded(fragment, currentContext.contextManager))
+                .collect(Collectors.toList());
+
         // New ID for the reset point
         return new Context(newId(), // New ID for the reset point
                            currentContext.contextManager,
-                           sourceContext.editableFiles,
-                           sourceContext.readonlyFiles,
-                           sourceContext.virtualFragments,
+                           unfrozenEditableFiles,
+                           unfrozenReadonlyFiles,
+                           unfrozenVirtualFragments,
                            sourceContext.taskHistory, // Use task history from sourceContext
                            Map.of(),
                            null,
@@ -730,5 +756,98 @@ public class Context {
                 .orElse(0));
 
         return maxId;
+    }
+
+    /**
+     * Creates a new Context with dynamic fragments replaced by their frozen counterparts.
+     * This method is used by ContextHistory to ensure that contexts stored in history
+     * contain point-in-time snapshots that don't depend on the filesystem or analyzer.
+     *
+     * @return A new Context instance with dynamic fragments frozen
+     */
+    Context freeze() {
+        try {
+            // Process editable files
+            var frozenEditableFiles = new ArrayList<ContextFragment.ProjectPathFragment>();
+            for (var fragment : editableFiles) {
+                if (fragment.isDynamic()) {
+                    var frozen = FrozenFragment.freeze(fragment, contextManager);
+                    // FrozenFragment extends VirtualFragment, so we can't add it to editableFiles
+                    // Instead, we need to handle this differently - frozen editable files become virtual fragments
+                } else {
+                    frozenEditableFiles.add(fragment);
+                }
+            }
+
+            // Process readonly files
+            var frozenReadonlyFiles = new ArrayList<ContextFragment.PathFragment>();
+            for (var fragment : readonlyFiles) {
+                if (fragment.isDynamic()) {
+                    var frozen = FrozenFragment.freeze(fragment, contextManager);
+                    // Add frozen fragment as virtual fragment instead
+                } else {
+                    frozenReadonlyFiles.add(fragment);
+                }
+            }
+
+            // Process virtual fragments
+            var frozenVirtualFragments = new ArrayList<ContextFragment.VirtualFragment>();
+            for (var fragment : virtualFragments) {
+                if (fragment.isDynamic()) {
+                    var frozen = FrozenFragment.freeze(fragment, contextManager);
+                    frozenVirtualFragments.add(frozen);
+                } else {
+                    frozenVirtualFragments.add(fragment);
+                }
+            }
+
+            // Add frozen path fragments to virtual fragments since FrozenFragment extends VirtualFragment
+            for (var fragment : editableFiles) {
+                if (fragment.isDynamic()) {
+                    var frozen = FrozenFragment.freeze(fragment, contextManager);
+                    frozenVirtualFragments.add(frozen);
+                }
+            }
+
+            for (var fragment : readonlyFiles) {
+                if (fragment.isDynamic()) {
+                    var frozen = FrozenFragment.freeze(fragment, contextManager);
+                    frozenVirtualFragments.add(frozen);
+                }
+            }
+
+            return new Context(
+                    this.id, // Keep same ID as this is the same logical context
+                    this.contextManager,
+                    frozenEditableFiles, // Only non-dynamic editable files remain
+                    frozenReadonlyFiles, // Only non-dynamic readonly files remain
+                    frozenVirtualFragments, // All virtual fragments plus frozen path fragments
+                    this.taskHistory,
+                    Map.of(), // Clear original contents as frozen fragments don't need undo
+                    this.parsedOutput,
+                    this.action
+            );
+        } catch (IOException | InterruptedException e) {
+            logger.error("Failed to freeze dynamic fragments, returning original context", e);
+            return this;
+        }
+    }
+
+    /**
+     * Helper method to unfreeze a fragment if it's a FrozenFragment, otherwise return as-is.
+     * Used when restoring contexts from history to get live fragments.
+     */
+    @SuppressWarnings("unchecked")
+    private static <T extends ContextFragment> T unfreezeFragmentIfNeeded(T fragment, IContextManager contextManager) {
+        if (fragment instanceof FrozenFragment frozen) {
+            try {
+                return (T) frozen.unfreeze(contextManager);
+            } catch (IOException e) {
+                logger.warn("Failed to unfreeze fragment {}: {}", frozen.description(), e.getMessage());
+                // Return the frozen fragment if unfreezing fails
+                return fragment;
+            }
+        }
+        return fragment;
     }
 }

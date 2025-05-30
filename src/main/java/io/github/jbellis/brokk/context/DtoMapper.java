@@ -126,6 +126,37 @@ public class DtoMapper {
 
     private static ContextFragment.VirtualFragment fromVirtualFragmentDto(FragmentDtos.VirtualFragmentDto dto, IContextManager mgr) {
         return switch (dto) {
+            case FrozenFragmentDto frozenDto -> {
+                byte[] imageBytes = null;
+                if (frozenDto.base64ImageContent() != null) {
+                    imageBytes = Base64.getDecoder().decode(frozenDto.base64ImageContent());
+                }
+                
+                var sources = frozenDto.sources().stream()
+                        .map(DtoMapper::fromCodeUnitDto)
+                        .collect(Collectors.toSet());
+                        
+                var files = frozenDto.files().stream()
+                        .map(DtoMapper::fromProjectFileDto)
+                        .collect(Collectors.toSet());
+                
+                var originalType = ContextFragment.FragmentType.valueOf(frozenDto.originalType());
+                
+                yield FrozenFragment.fromDto(
+                    frozenDto.id(),
+                    mgr,
+                    originalType,
+                    frozenDto.description(),
+                    frozenDto.textContent(),
+                    imageBytes,
+                    frozenDto.isTextFragment(),
+                    frozenDto.syntaxStyle(),
+                    sources,
+                    files,
+                    frozenDto.originalClassName(),
+                    frozenDto.meta()
+                );
+            }
             case SearchFragmentDto searchDto -> {
                 var sources = searchDto.sources().stream()
                         .map(DtoMapper::fromCodeUnitDto)
@@ -182,6 +213,10 @@ public class DtoMapper {
         return new ProjectFileDto(fragment.id(), file.getRoot().toString(), file.getRelPath().toString());
     }
     
+    private static ProjectFileDto toProjectFileDto(ProjectFile pf) {
+        return new ProjectFileDto(0, pf.getRoot().toString(), pf.getRelPath().toString());
+    }
+    
     private static PathFragmentDto toPathFragmentDto(ContextFragment.PathFragment fragment) { // IContextManager not needed here
         return switch (fragment) {
             case ContextFragment.ProjectPathFragment projectFragment -> {
@@ -221,6 +256,43 @@ public class DtoMapper {
     }
     
     private static VirtualFragmentDto toVirtualFragmentDto(ContextFragment.VirtualFragment fragment) { // IContextManager not needed here as dynamic fragments store params
+        // Handle FrozenFragment first
+        if (fragment instanceof FrozenFragment ff) {
+            try {
+                String base64ImageContent = null;
+                if (!ff.isText()) {
+                    var imageBytes = ff.imageBytesContent();
+                    if (imageBytes != null) {
+                        base64ImageContent = Base64.getEncoder().encodeToString(imageBytes);
+                    }
+                }
+                
+                var sourcesDto = ff.sources().stream()
+                        .map(DtoMapper::toCodeUnitDto)
+                        .collect(Collectors.toSet());
+                        
+                var filesDto = ff.files().stream()
+                        .map(DtoMapper::toProjectFileDto)
+                        .collect(Collectors.toSet());
+                
+                return new FrozenFragmentDto(
+                    ff.id(),
+                    ff.getType().name(),
+                    ff.description(),
+                    ff.isText() ? ff.text() : null,
+                    base64ImageContent,
+                    ff.isText(),
+                    ff.syntaxStyle(),
+                    sourcesDto,
+                    filesDto,
+                    ff.originalClassName(),
+                    ff.meta()
+                );
+            } catch (Exception e) {
+                throw new RuntimeException("Failed to serialize FrozenFragment", e);
+            }
+        }
+        
         return switch (fragment) {
             case ContextFragment.SearchFragment searchFragment -> {
                 var sourcesDto = searchFragment.sources().stream() // No analyzer needed for pre-computed

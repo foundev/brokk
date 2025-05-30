@@ -28,8 +28,10 @@ public class ContextHistory {
      * Set the initial context
      */
     public synchronized void setInitialContext(Context initialContext) {
-        history = new ArrayList<>(List.of(initialContext))  ;
-        selectedContext = initialContext; // The first context is selected by default
+        // Freeze dynamic fragments in the initial context to ensure point-in-time snapshot
+        var frozen = initialContext.freeze();
+        history = new ArrayList<>(List.of(frozen));
+        selectedContext = frozen; // The first context is selected by default
     }
 
     /**
@@ -85,15 +87,19 @@ public class ContextHistory {
             return null;
         }
 
-        history.add(newContext);
+        // Freeze dynamic fragments in the new context before adding to history
+        // This ensures we have point-in-time snapshots that don't depend on filesystem/analyzer
+        var frozen = newContext.freeze();
+        
+        history.add(frozen);
         if (history.size() > MAX_UNDO_DEPTH) {
             history.removeFirst();
         }
         redoHistory.clear();
 
         // Set new context as selected by default
-        selectedContext = newContext;
-        return newContext;
+        selectedContext = frozen;
+        return frozen;
     }
 
     /**
@@ -261,6 +267,67 @@ public class ContextHistory {
         if (!changedFiles.isEmpty()) {
             io.systemOutput("Modified " + changedFiles);
         }
-        return original.withOriginalContents(redoContents);
+
+        // Create redo context with live fragments (unfreeze any frozen fragments from original)
+        var redoContext = original.withOriginalContents(redoContents);
+        return unfreezeContextFragments(redoContext);
+    }
+
+    /**
+     * Helper method to unfreeze any FrozenFragments in a context, returning a new context with live fragments.
+     * Used when creating redo contexts to ensure they contain live, interactive fragments.
+     */
+    private Context unfreezeContextFragments(Context context) {
+        try {
+            var unfrozenEditableFiles = new ArrayList<ContextFragment.ProjectPathFragment>();
+            var unfrozenReadonlyFiles = new ArrayList<ContextFragment.PathFragment>();
+            var unfrozenVirtualFragments = new ArrayList<ContextFragment.VirtualFragment>();
+
+            // Copy existing non-frozen editable and readonly fragments as-is
+            unfrozenEditableFiles.addAll(context.editableFiles().toList());
+            unfrozenReadonlyFiles.addAll(context.readonlyFiles().toList());
+
+            // Process virtual fragments and unfreeze any FrozenFragments
+            for (var fragment : context.virtualFragments().toList()) {
+                if (fragment instanceof FrozenFragment frozen) {
+                    try {
+                        var unfrozen = frozen.unfreeze(context.getContextManager());
+                        // Categorize unfrozen fragment based on its type
+                        if (unfrozen instanceof ContextFragment.ProjectPathFragment ppf) {
+                            unfrozenEditableFiles.add(ppf);
+                        } else if (unfrozen instanceof ContextFragment.PathFragment pf) {
+                            unfrozenReadonlyFiles.add(pf);
+                        } else if (unfrozen instanceof ContextFragment.VirtualFragment vf) {
+                            unfrozenVirtualFragments.add(vf);
+                        } else {
+                            logger.warn("Unfrozen fragment has unexpected type: {}", unfrozen.getClass());
+                            unfrozenVirtualFragments.add(frozen); // Keep frozen as fallback
+                        }
+                    } catch (IOException e) {
+                        logger.warn("Failed to unfreeze virtual fragment {}: {}", frozen.description(), e.getMessage());
+                        // Keep the frozen fragment
+                        unfrozenVirtualFragments.add(frozen);
+                    }
+                } else {
+                    unfrozenVirtualFragments.add(fragment);
+                }
+            }
+
+            // Create new context with unfrozen fragments
+            return new Context(
+                    context.getId(),
+                    context.getContextManager(),
+                    List.copyOf(unfrozenEditableFiles),
+                    List.copyOf(unfrozenReadonlyFiles),
+                    List.copyOf(unfrozenVirtualFragments),
+                    context.getTaskHistory(),
+                    context.originalContents,
+                    context.getParsedOutput(),
+                    context.action
+            );
+        } catch (Exception e) {
+            logger.error("Failed to unfreeze context fragments, returning original context", e);
+            return context;
+        }
     }
 }
