@@ -30,6 +30,14 @@ import java.util.stream.Collectors;
 public final class FrozenFragment extends ContextFragment.VirtualFragment {
 
     private static final ConcurrentMap<String, FrozenFragment> INTERN_POOL = new ConcurrentHashMap<>();
+    
+    private static final ThreadLocal<MessageDigest> SHA256_DIGEST_THREAD_LOCAL = ThreadLocal.withInitial(() -> {
+        try {
+            return MessageDigest.getInstance("SHA-256");
+        } catch (NoSuchAlgorithmException e) {
+            throw new RuntimeException("SHA-256 algorithm not found", e);
+        }
+    });
 
     // Captured fragment state
     private final String contentHash; // SHA-256 hash of the content-defining fields
@@ -352,8 +360,8 @@ public final class FrozenFragment extends ContextFragment.VirtualFragment {
                                                boolean isTextFragment, String syntaxStyle,
                                                Set<CodeUnit> sources, Set<ProjectFile> files,
                                                String originalClassName, Map<String, String> meta) {
-        try {
-            MessageDigest md = MessageDigest.getInstance("SHA-256");
+        MessageDigest md = SHA256_DIGEST_THREAD_LOCAL.get();
+        md.reset(); // Reset the digest for reuse
 
             // Helper to update digest with a string
             BiConsumer<MessageDigest, String> updateWithString = (digest, str) -> {
@@ -410,10 +418,7 @@ public final class FrozenFragment extends ContextFragment.VirtualFragment {
                 }
                 hexString.append(hex);
             }
-            return hexString.toString();
-        } catch (NoSuchAlgorithmException e) {
-            throw new RuntimeException("SHA-256 algorithm not found", e); // Should not happen
-        }
+        return hexString.toString();
     }
 
     /**

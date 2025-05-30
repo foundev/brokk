@@ -27,7 +27,8 @@ import java.util.zip.ZipOutputStream;
 public final class HistoryIo {
     private static final Logger logger = LogManager.getLogger(HistoryIo.class);
     private static final ObjectMapper objectMapper = new ObjectMapper()
-            .configure(com.fasterxml.jackson.databind.SerializationFeature.CLOSE_CLOSEABLE, false);
+            .configure(SerializationFeature.CLOSE_CLOSEABLE, false)
+            .configure(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES, false);
 
     private HistoryIo() {}
 
@@ -41,33 +42,35 @@ public final class HistoryIo {
             zos.write(jsonBytes);
             zos.closeEntry();
 
-            // Write images
-            ch.getHistory().stream()
+            // Write images - collect unique FrozenFragments first to avoid duplicate ZIP entries
+            var uniqueImageFragments = ch.getHistory().stream()
                 .flatMap(ctx -> ctx.allFragments())
                 .filter(f -> !f.isText() && f instanceof FrozenFragment)
-                .forEach(f -> {
-                    FrozenFragment ff = (FrozenFragment) f;
-                    byte[] imageBytes = ff.imageBytesContent();
-                    if (imageBytes != null && imageBytes.length > 0) {
-                        try {
-                            ZipEntry entry = new ZipEntry("images/" + f.id() + ".png");
-                            entry.setMethod(ZipEntry.STORED);
-                            entry.setSize(imageBytes.length);
-                            entry.setCompressedSize(imageBytes.length);
-                            CRC32 crc = new CRC32();
-                            crc.update(imageBytes);
-                            entry.setCrc(crc.getValue());
+                .map(f -> (FrozenFragment) f)
+                .collect(java.util.stream.Collectors.toSet());
 
-                            zos.putNextEntry(entry);
-                            zos.write(imageBytes);
-                            zos.closeEntry();
-                        } catch (IOException e) {
-                            logger.error("Failed to write image for fragment {} to zip", f.id(), e);
-                            // Decide if we should throw UncheckedIOException or just log and continue
-                            // For now, logging and continuing to save the rest of the history.
-                        }
+            for (FrozenFragment ff : uniqueImageFragments) {
+                byte[] imageBytes = ff.imageBytesContent();
+                if (imageBytes != null && imageBytes.length > 0) {
+                    try {
+                        ZipEntry entry = new ZipEntry("images/" + ff.id() + ".png");
+                        entry.setMethod(ZipEntry.STORED);
+                        entry.setSize(imageBytes.length);
+                        entry.setCompressedSize(imageBytes.length);
+                        CRC32 crc = new CRC32();
+                        crc.update(imageBytes);
+                        entry.setCrc(crc.getValue());
+
+                        zos.putNextEntry(entry);
+                        zos.write(imageBytes);
+                        zos.closeEntry();
+                    } catch (IOException e) {
+                        logger.error("Failed to write image for fragment {} to zip", ff.id(), e);
+                        // Decide if we should throw UncheckedIOException or just log and continue
+                        // For now, logging and continuing to save the rest of the history.
                     }
-                });
+                }
+            }
         } catch (Exception e) {
             logger.error("Failed to write history zip file: {}", zip, e);
             throw new IOException("Failed to write history zip file: " + zip, e);

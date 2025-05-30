@@ -264,6 +264,89 @@ public class ContextSerializationTest {
     }
 
     @Test
+    void testWriteReadHistoryWithSharedImageFragment() throws Exception {
+        // Create a shared image
+        var sharedImage = createTestImage(Color.BLUE, 8, 8);
+        
+        // Create two PasteImageFragments with identical content and description
+        // This should result in the same FrozenFragment instance due to interning
+        var sharedDescription = "Shared Blue Image";
+        var liveImageFrag1 = new ContextFragment.PasteImageFragment(
+            mockContextManager, 
+            sharedImage, 
+            CompletableFuture.completedFuture(sharedDescription)
+        );
+        var liveImageFrag2 = new ContextFragment.PasteImageFragment(
+            mockContextManager, 
+            sharedImage, 
+            CompletableFuture.completedFuture(sharedDescription)
+        );
+        
+        // Create history with two contexts containing the shared image fragments
+        var originalHistory = new ContextHistory();
+        
+        // Context 1 with first image fragment
+        var ctx1 = new Context(mockContextManager, "Context 1 with shared image")
+            .addVirtualFragment(liveImageFrag1);
+        originalHistory.setInitialContext(ctx1);
+        
+        // Context 2 with second image fragment (same content, should intern to same FrozenFragment)
+        var ctx2 = new Context(mockContextManager, "Context 2 with shared image")
+            .addVirtualFragment(liveImageFrag2);
+        final Context finalCtx2 = ctx2;
+        originalHistory.pushContext(prev -> finalCtx2);
+        
+        // Write to ZIP - this should NOT throw ZipException: duplicate entry
+        Path zipFile = tempDir.resolve("shared_image_history.zip");
+        
+        // The main test: writeZip should not throw ZipException
+        assertDoesNotThrow(() -> HistoryIo.writeZip(originalHistory, zipFile));
+        
+        // Read back and verify
+        ContextHistory loadedHistory = HistoryIo.readZip(zipFile, mockContextManager);
+        
+        // Verify we have 2 contexts
+        assertEquals(2, loadedHistory.getHistory().size());
+        
+        // Verify both contexts contain the shared image fragment
+        var loadedCtx1 = loadedHistory.getHistory().get(0);
+        var loadedCtx2 = loadedHistory.getHistory().get(1);
+        
+        // Find the image fragments in each context
+        var imageFragment1 = loadedCtx1.virtualFragments()
+            .filter(f -> f instanceof FrozenFragment && !f.isText())
+            .map(f -> (FrozenFragment) f)
+            .findFirst()
+            .orElseThrow(() -> new AssertionError("Image fragment not found in loaded context 1"));
+            
+        var imageFragment2 = loadedCtx2.virtualFragments()
+            .filter(f -> f instanceof FrozenFragment && !f.isText())
+            .map(f -> (FrozenFragment) f)
+            .findFirst()
+            .orElseThrow(() -> new AssertionError("Image fragment not found in loaded context 2"));
+        
+        // Verify image content
+        assertNotNull(imageFragment1.imageBytesContent());
+        assertNotNull(imageFragment2.imageBytesContent());
+        assertTrue(imageFragment1.imageBytesContent().length > 0);
+        assertTrue(imageFragment2.imageBytesContent().length > 0);
+        
+        // Verify the image can be read back
+        var reconstructedImage1 = ImageIO.read(new java.io.ByteArrayInputStream(imageFragment1.imageBytesContent()));
+        var reconstructedImage2 = ImageIO.read(new java.io.ByteArrayInputStream(imageFragment2.imageBytesContent()));
+        assertNotNull(reconstructedImage1);
+        assertNotNull(reconstructedImage2);
+        assertEquals(8, reconstructedImage1.getWidth());
+        assertEquals(8, reconstructedImage1.getHeight());
+        assertEquals(8, reconstructedImage2.getWidth());
+        assertEquals(8, reconstructedImage2.getHeight());
+        
+        // Verify descriptions
+        assertEquals(sharedDescription, imageFragment1.description());
+        assertEquals(sharedDescription, imageFragment2.description());
+    }
+
+    @Test
     void testFragmentIdContinuityAfterLoad() throws IOException {
         var history = new ContextHistory();
         var projectFile = new ProjectFile(tempDir, "dummy.txt");

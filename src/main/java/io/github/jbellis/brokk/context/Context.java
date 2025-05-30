@@ -745,6 +745,26 @@ public class Context {
     }
 
     /**
+     * Helper method to freeze dynamic path fragments and add them to the appropriate collections.
+     * Non-dynamic fragments are added to their original collection, while frozen dynamic fragments
+     * are added to the virtual fragments collection.
+     */
+    private <T extends ContextFragment.PathFragment> void freezeAndAddPathFragments(
+            List<T> pathFragments, 
+            List<T> frozenPathFragments, 
+            List<ContextFragment.VirtualFragment> frozenVirtualFragments, 
+            IContextManager contextManager) throws IOException, InterruptedException {
+        for (var fragment : pathFragments) {
+            if (fragment.isDynamic()) {
+                var frozen = FrozenFragment.freeze(fragment, contextManager);
+                frozenVirtualFragments.add(frozen);
+            } else {
+                frozenPathFragments.add(fragment);
+            }
+        }
+    }
+
+    /**
      * Creates a new Context with dynamic fragments replaced by their frozen counterparts.
      * This method is used by ContextHistory to ensure that contexts stored in history
      * contain point-in-time snapshots that don't depend on the filesystem or analyzer.
@@ -755,50 +775,21 @@ public class Context {
         try {
             // Process editable files
             var frozenEditableFiles = new ArrayList<ContextFragment.ProjectPathFragment>();
-            for (var fragment : editableFiles) {
-                if (fragment.isDynamic()) {
-                    var frozen = FrozenFragment.freeze(fragment, contextManager);
-                    // FrozenFragment extends VirtualFragment, so we can't add it to editableFiles
-                    // Instead, we need to handle this differently - frozen editable files become virtual fragments
-                } else {
-                    frozenEditableFiles.add(fragment);
-                }
-            }
+            var frozenVirtualFragments = new ArrayList<ContextFragment.VirtualFragment>();
+
+            freezeAndAddPathFragments(editableFiles, frozenEditableFiles, frozenVirtualFragments, contextManager);
 
             // Process readonly files
             var frozenReadonlyFiles = new ArrayList<ContextFragment.PathFragment>();
-            for (var fragment : readonlyFiles) {
-                if (fragment.isDynamic()) {
-                    var frozen = FrozenFragment.freeze(fragment, contextManager);
-                    // Add frozen fragment as virtual fragment instead
-                } else {
-                    frozenReadonlyFiles.add(fragment);
-                }
-            }
+            freezeAndAddPathFragments(readonlyFiles, frozenReadonlyFiles, frozenVirtualFragments, contextManager);
 
             // Process virtual fragments
-            var frozenVirtualFragments = new ArrayList<ContextFragment.VirtualFragment>();
             for (var fragment : virtualFragments) {
                 if (fragment.isDynamic()) {
                     var frozen = FrozenFragment.freeze(fragment, contextManager);
                     frozenVirtualFragments.add(frozen);
                 } else {
                     frozenVirtualFragments.add(fragment);
-                }
-            }
-
-            // Add frozen path fragments to virtual fragments since FrozenFragment extends VirtualFragment
-            for (var fragment : editableFiles) {
-                if (fragment.isDynamic()) {
-                    var frozen = FrozenFragment.freeze(fragment, contextManager);
-                    frozenVirtualFragments.add(frozen);
-                }
-            }
-
-            for (var fragment : readonlyFiles) {
-                if (fragment.isDynamic()) {
-                    var frozen = FrozenFragment.freeze(fragment, contextManager);
-                    frozenVirtualFragments.add(frozen);
                 }
             }
 
