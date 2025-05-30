@@ -1219,7 +1219,11 @@ public interface ContextFragment {
                         // For now, this will likely not work as expected for FILE_SKELETONS from this method alone.
                         // The WorkspaceTools will handle creating SkeletonFragments for files correctly.
                         // This fetchSkeletons is more for CLASS_SKELETON type if called directly.
-                         analyzer.getFileFor(filePath).ifPresent(pf -> skeletonsMap.putAll(analyzer.getSkeletons(pf)));
+                        IContextManager cm = getContextManager();
+                        if (cm != null) {
+                            ProjectFile projectFile = cm.toFile(filePath);
+                            skeletonsMap.putAll(analyzer.getSkeletons(projectFile));
+                        }
                     }
                     break;
             }
@@ -1230,6 +1234,12 @@ public interface ContextFragment {
         public String text() {
             Map<CodeUnit, String> skeletons = fetchSkeletons();
             if (skeletons.isEmpty()) {
+                // Avoid showing "No summaries found for: " if analyzer is not ready yet,
+                // as it might fetch correctly on a subsequent refresh.
+                IAnalyzer analyzer = getAnalyzerNonBlocking();
+                if (analyzer == null || !analyzer.isCpg()) {
+                    return "Code intelligence is not ready. Summaries will be fetched later.";
+                }
                 return "No summaries found for: " + String.join(", ", targetIdentifiers);
             }
 
