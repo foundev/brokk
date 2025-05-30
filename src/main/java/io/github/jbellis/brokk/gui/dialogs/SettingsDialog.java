@@ -1,5 +1,6 @@
 package io.github.jbellis.brokk.gui.dialogs;
 
+import io.github.jbellis.brokk.GitHubAuth;
 import io.github.jbellis.brokk.Project;
 import io.github.jbellis.brokk.Project.DataRetentionPolicy;
 import io.github.jbellis.brokk.Service;
@@ -195,9 +196,11 @@ public class SettingsDialog extends JDialog implements ThemeAware {
         var quickModelsPanel = createQuickModelsPanel();
         globalSubTabbedPane.addTab("Quick Models", null, quickModelsPanel, "Define model aliases (shortcuts)");
 
-        // GitHub Tab
-        var gitHubPanel = createGitHubPanel();
-        globalSubTabbedPane.addTab("GitHub", null, gitHubPanel, "GitHub integration settings");
+        // GitHub Tab (conditionally added)
+        if (project != null && project.isGitHubRepo()) {
+            var gitHubPanel = createGitHubPanel();
+            globalSubTabbedPane.addTab("GitHub", null, gitHubPanel, "GitHub integration settings");
+        }
 
 
         // Enable/disable components within the Default Models panel based on project state
@@ -1714,6 +1717,7 @@ public class SettingsDialog extends JDialog implements ThemeAware {
             String oldToken = Project.getGitHubToken();
             if (!newToken.equals(oldToken)) {
                 Project.setGitHubToken(newToken);
+                GitHubAuth.invalidateInstance();
                 logger.debug("Applied GitHub Token");
             }
         }

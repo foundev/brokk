@@ -4,6 +4,8 @@ import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 import org.kohsuke.github.GHIssueState;
 import org.kohsuke.github.GHPullRequest;
+import io.github.jbellis.brokk.git.GitRepo;
+import org.kohsuke.github.GHIssue;
 import org.kohsuke.github.GHPullRequestCommitDetail;
 import org.kohsuke.github.GHRepository;
 import org.kohsuke.github.GitHub;
@@ -19,19 +21,90 @@ import java.util.List;
 public class GitHubAuth
 {
     private static final Logger logger = LogManager.getLogger(GitHubAuth.class);
+    private static GitHubAuth instance;
 
-    private final Project project;
     private final String owner;
     private final String repoName;
 
     private GitHub githubClient;
     private GHRepository ghRepository;
 
-    public GitHubAuth(Project project, String owner, String repoName)
+    public GitHubAuth(String owner, String repoName)
     {
-        this.project = project;
         this.owner = owner;
         this.repoName = repoName;
+    }
+
+    /**
+     * Gets the existing GitHubAuth instance, or creates a new one if not already created
+     * or if the instance is outdated (e.g., remote URL changed for the current project).
+     *
+     * @param project The current project, used to determine repository details.
+     * @return A GitHubAuth instance.
+     * @throws IOException If the Git repository is not available, the remote URL cannot be parsed,
+     *                     or connection to GitHub fails.
+     * @throws IllegalArgumentException If the project is null.
+     */
+    public static synchronized GitHubAuth getOrCreateInstance(Project project) throws IOException {
+        if (project == null) {
+            throw new IllegalArgumentException("Project cannot be null for GitHubAuth.");
+        }
+
+        var repo = (GitRepo) project.getRepo();
+        if (repo == null) {
+            if (instance != null) {
+                logger.info("Git repository not available for project '{}'. Invalidating GitHubAuth instance for {}/{}.",
+                            project.getRoot().getFileName().toString(), instance.getOwner(), instance.getRepoName());
+                instance = null;
+            }
+            throw new IOException("Git repository not available from project '" + project.getRoot().getFileName().toString() + "' for GitHubAuth.");
+        }
+
+        var remoteUrl = repo.getRemoteUrl();
+        // Use GitUiUtil for parsing owner/repo from URL
+        var currentOwnerRepo = io.github.jbellis.brokk.gui.GitUiUtil.parseOwnerRepoFromUrl(remoteUrl);
+
+        if (currentOwnerRepo == null) {
+            if (instance != null) {
+                logger.warn("Could not parse current owner/repo from remote URL for project '{}': {}. Invalidating GitHubAuth instance for {}/{}.",
+                            project.getRoot().getFileName().toString(), remoteUrl, instance.getOwner(), instance.getRepoName());
+                instance = null;
+            }
+            throw new IOException("Could not parse 'owner/repo' from remote: " + remoteUrl + " for GitHubAuth (project: " + project.getRoot().getFileName().toString() + ").");
+        }
+
+        if (instance != null &&
+                instance.getOwner().equals(currentOwnerRepo.owner()) &&
+                instance.getRepoName().equals(currentOwnerRepo.repo())) {
+            logger.debug("Using existing GitHubAuth instance for {}/{} (project {})", instance.getOwner(), instance.getRepoName(), project.getRoot().getFileName().toString());
+            return instance;
+        }
+
+        if (instance != null) {
+            logger.info("GitHubAuth instance for {}/{} (project {}) is outdated (current remote {}/{}). Re-creating.",
+                        instance.getOwner(), instance.getRepoName(), project.getRoot().getFileName().toString(), currentOwnerRepo.owner(), currentOwnerRepo.repo());
+        } else {
+            logger.info("No existing GitHubAuth instance. Creating new instance for {}/{} (project {})",
+                        currentOwnerRepo.owner(), currentOwnerRepo.repo(), project.getRoot().getFileName().toString());
+        }
+
+        GitHubAuth newAuth = new GitHubAuth(currentOwnerRepo.owner(), currentOwnerRepo.repo());
+        instance = newAuth;
+        logger.info("Created and set new GitHubAuth instance for {}/{} (project {})", newAuth.getOwner(), newAuth.getRepoName(), project.getRoot().getFileName().toString());
+        return instance;
+    }
+
+    /**
+     * Invalidates the current GitHubAuth instance.
+     * This is typically called when a GitHub token changes or an explicit reset is needed.
+     */
+    public static synchronized void invalidateInstance() {
+        if (instance != null) {
+            logger.info("Invalidating GitHubAuth instance for {}/{} due to token change or explicit request.", instance.getOwner(), instance.getRepoName());
+            instance = null;
+        } else {
+            logger.info("GitHubAuth instance is already null. No action taken for invalidation request.");
+        }
     }
 
     public String getOwner()
@@ -109,6 +182,16 @@ public class GitHubAuth
     public List<GHPullRequest> listOpenPullRequests(GHIssueState state) throws IOException
     {
         return getGhRepository().getPullRequests(state);
+    }
+
+    /**
+     * Lists issues for the connected repository based on the given state.
+     * Note: This may include Pull Requests as they are a type of Issue in GitHub's API.
+     * Filtering to exclude PRs can be done by checking `issue.isPullRequest()`.
+     */
+    public List<GHIssue> listIssues(GHIssueState state) throws IOException
+    {
+        return getGhRepository().getIssues(state);
     }
 
     /**

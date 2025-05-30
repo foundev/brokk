@@ -160,11 +160,9 @@ public final class GitUiUtil
                 var commitContent = repo.getFileContent(commitId, file);
 
                 SwingUtilities.invokeLater(() -> {
-                    var isDark = chrome.themeManager.isDarkTheme();
-                    var brokkDiffPanel = new BrokkDiffPanel.Builder(cm)
+                    var brokkDiffPanel = new BrokkDiffPanel.Builder(chrome.themeManager, cm)
                             .leftSource(new io.github.jbellis.brokk.difftool.ui.BufferSource.StringSource(parentContent, parentCommitId))
                             .rightSource(new io.github.jbellis.brokk.difftool.ui.BufferSource.StringSource(commitContent, commitId))
-                            .withTheme(isDark)
                             .build();
                     brokkDiffPanel.showInFrame(dialogTitle);
                 });
@@ -382,11 +380,9 @@ public final class GitUiUtil
                 String finalDialogTitle = "Diff: %s [Local vs %s]".formatted(file.getFileName(), baseCommitShort);
 
                 SwingUtilities.invokeLater(() -> {
-                    var isDark = chrome.themeManager.isDarkTheme();
-                    var brokkDiffPanel = new BrokkDiffPanel.Builder(cm)
+                    var brokkDiffPanel = new BrokkDiffPanel.Builder(chrome.themeManager, cm)
                             .leftSource(new io.github.jbellis.brokk.difftool.ui.BufferSource.StringSource(finalOldContent, finalBaseCommitTitle))
                             .rightSource(new io.github.jbellis.brokk.difftool.ui.BufferSource.FileSource(file.absPath().toFile(), file.toString()))
-                            .withTheme(isDark)
                             .build();
                     brokkDiffPanel.showInFrame(finalDialogTitle);
                 });
@@ -395,5 +391,65 @@ public final class GitUiUtil
             }
             return null;
         });
+    }
+
+    /**
+     * Holds a parsed "owner" and "repo" from a Git remote URL.
+     */
+    public record OwnerRepo(String owner, String repo) {
+    }
+    /**
+     * Parse a Git remote URL of form:
+     * - https://github.com/OWNER/REPO.git
+     * - git@github.com:OWNER/REPO.git
+     * - ssh://github.com/OWNER/REPO
+     * - or any variant that ends with OWNER/REPO(.git)
+     * This attempts to extract the last two path segments
+     * as "owner" and "repo". Returns null if it cannot.
+     */
+    public static OwnerRepo parseOwnerRepoFromUrl(String remoteUrl) {
+        if (remoteUrl == null || remoteUrl.isBlank()) {
+            logger.warn("Remote URL is blank or null for parsing owner/repo.");
+            return null;
+        }
+
+        // Strip trailing ".git" if present
+        String cleaned = remoteUrl.endsWith(".git")
+                         ? remoteUrl.substring(0, remoteUrl.length() - 4)
+                         : remoteUrl;
+
+        cleaned = cleaned.replace('\\', '/'); // Normalize path separators
+
+        // Remove protocol part (e.g., "https://", "ssh://")
+        int protocolIndex = cleaned.indexOf("://");
+        if (protocolIndex >= 0) {
+            cleaned = cleaned.substring(protocolIndex + 3);
+        }
+
+        // Remove user@ part (e.g., "git@")
+        int atIndex = cleaned.indexOf('@');
+        if (atIndex >= 0) {
+            cleaned = cleaned.substring(atIndex + 1);
+        }
+
+        // Split by '/' or ':' treating multiple delimiters as one
+        var segments = cleaned.split("[/:]+");
+
+        if (segments.length < 2) {
+            logger.warn("Unable to parse owner/repo from cleaned remote URL: {} (original: {})", cleaned, remoteUrl);
+            return null;
+        }
+
+        // The repository name is the last segment
+        String repo = segments[segments.length - 1];
+        // The owner is the second to last segment
+        String owner = segments[segments.length - 2];
+
+        if (owner.isBlank() || repo.isBlank()) {
+            logger.warn("Parsed blank owner or repo from remote URL: {} (owner: '{}', repo: '{}')", remoteUrl, owner, repo);
+            return null;
+        }
+        logger.debug("Parsed owner '{}' and repo '{}' from URL '{}'", owner, repo, remoteUrl);
+        return new OwnerRepo(owner, repo);
     }
 }

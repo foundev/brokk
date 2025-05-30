@@ -31,7 +31,10 @@ public class GitPanel extends JPanel
     private final GitLogTab gitLogTab;
 
     // The "Pull Requests" tab - conditionally added
-    private GitPullRequestsTab pullRequestsTab;
+    private GitPullRequestsTab pullRequestsTab; // Keep if you still want PRs
+
+    // The "Issues" tab - conditionally added
+    private GitIssuesTab issuesTab;
 
     // Tracks open file-history tabs by file path
     private final Map<String, GitHistoryTab> fileHistoryTabs = new HashMap<>();
@@ -85,10 +88,20 @@ public class GitPanel extends JPanel
         gitLogTab = new GitLogTab(chrome, contextManager);
         tabbedPane.addTab("Log", gitLogTab);
 
+        // Get project for GitHub specific tabs
+        var project = contextManager.getProject();
+
         // 3) Pull Requests tab (conditionally added)
-        if (Boolean.getBoolean("brokk.prtab")) {
+        if (project != null && project.isGitHubRepo() && Boolean.getBoolean("brokk.prtab")) {
             pullRequestsTab = new GitPullRequestsTab(chrome, contextManager, this);
             tabbedPane.addTab("Pull Requests", pullRequestsTab);
+        }
+
+        // 4) Issues tab (conditionally added)
+        // Ensure this property ("brokk.issuetab") is set if you want this tab to appear.
+        if (project != null && project.isGitHubRepo() && Boolean.getBoolean("brokk.issuetab")) {
+            issuesTab = new GitIssuesTab(chrome, contextManager, this);
+            tabbedPane.addTab("Issues", issuesTab);
         }
     }
 
