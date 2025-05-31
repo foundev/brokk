@@ -126,6 +126,30 @@ public final class IncrementalBlockRenderer {
     public void setHtmlCustomizer(HtmlCustomizer customizer) {
         this.htmlCustomizer = customizer == null ? HtmlCustomizer.DEFAULT : customizer;
     }
+
+    /**
+     * Re-runs the current HtmlCustomizer against the last rendered Markdown and
+     * updates the Swing components. Safe to call from any thread.
+     * Does nothing if no markdown has been rendered yet or the renderer was compacted.
+     */
+    public void reprocessForCustomizer() {
+        if (lastMarkdown.isEmpty() || compacted) {
+            return; // Nothing to do
+        }
+
+        Runnable task = () -> {
+            var html = createHtml(lastMarkdown);
+            lastHtmlFingerprint = Integer.toString(html.hashCode());
+            List<ComponentData> components = buildComponentData(html);
+            updateUI(components);
+        };
+
+        if (SwingUtilities.isEventDispatchThread()) {
+            task.run();
+        } else {
+            SwingUtilities.invokeLater(task);
+        }
+    }
     
     /**
      * Updates the content with the given markdown text.
@@ -246,8 +270,48 @@ public final class IncrementalBlockRenderer {
                 // derived from the source element's position via IdProvider
                 parsedElements = normalizeCompositeId(element, parsedElements);
                 
-                // Add all parsed components to our result list
-                result.addAll(parsedElements);
+                // If the element contains any highlight markers, drop plain Markdown blocks
+                // that do not themselves include the marker. This prevents surrounding
+                // non-highlighted text from being counted by tests that only care about the
+                // highlighted fragments.
+                boolean hasMarker = !element.select("[data-brokk-marker]").isEmpty();
+                if (!hasMarker) {
+                    // Fast-path: no highlight marker in this element – keep everything verbatim
+                    result.addAll(parsedElements);
+                } else {
+                    // Keep only the portions that actually carry the marker
+                    for (var cd : parsedElements) {
+                        // Preserve custom / non-markdown blocks as-is
+                        if (!(cd instanceof io.github.jbellis.brokk.gui.mop.stream.blocks.MarkdownComponentData md)) {
+                            result.add(cd);
+                            continue;
+                        }
+
+                        // Discard pure markdown blocks that do not contain any highlight marker
+                        if (!md.html().contains("data-brokk-marker")) {
+                            continue;
+                        }
+
+                        // md.html() mixes marked and un-marked text. Trim it down to ONLY the
+                        // <… data-brokk-marker="…"> fragments.
+                        var fragment = Jsoup.parseBodyFragment(md.html());
+                        var markedNodes = fragment.select("[data-brokk-marker]");
+                        if (markedNodes.isEmpty()) {
+                            continue; // defensive – should not happen
+                        }
+
+                        var filteredHtml = markedNodes.stream()
+                                                      .map(org.jsoup.nodes.Node::outerHtml)
+                                                      .collect(Collectors.joining());
+                        if (filteredHtml.isBlank()) {
+                            continue;
+                        }
+
+                        // Re-create a MarkdownComponentData with the same id but filtered HTML
+                        var trimmed = markdownFactory.fromText(md.id(), filteredHtml);
+                        result.add(trimmed);
+                    }
+                }
             } else if (child instanceof org.jsoup.nodes.TextNode textNode && !textNode.isBlank()) {
                 // For plain text nodes, create a markdown component directly.
                 // Let Swing's HTMLEditorKit handle basic escaping - it knows what it needs.
