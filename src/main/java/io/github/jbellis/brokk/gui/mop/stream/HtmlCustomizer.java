@@ -1,28 +1,34 @@
 package io.github.jbellis.brokk.gui.mop.stream;
 
+import org.jsoup.nodes.Element;
+
 /**
- * Functional interface allowing callers to tweak the raw HTML generated from
- * Markdown before Swing components are built.
+ * Functional interface allowing callers to tweak the parsed HTML DOM
+ * (already produced from Markdown) in&nbsp;place before Swing components
+ * are built.  Implementations may freely mutate the supplied element tree
+ * but MUST NOT replace the root element.
  */
 @FunctionalInterface
 public interface HtmlCustomizer {
 
     /**
-     * Identity customizer that returns the HTML unchanged.
+     * No-op customizer that leaves the DOM unchanged.
      */
-    HtmlCustomizer DEFAULT = html -> html;
+    HtmlCustomizer DEFAULT = root -> { };
 
     /**
      * Convenience accessor for the {@link #DEFAULT} instance.
      *
-     * @return an identity HtmlCustomizer
+     * @return an identity/no-op HtmlCustomizer
      */
     static HtmlCustomizer noOp() {
         return DEFAULT;
     }
+
     /**
-     * @param html raw HTML generated from Markdown
-     * @return customized HTML (may be the same instance)
+     * Mutate the supplied DOM tree in place.
+     *
+     * @param root the root element (typically {@code <body>})
      */
-    String customize(String html);
+    void customize(Element root);
 }

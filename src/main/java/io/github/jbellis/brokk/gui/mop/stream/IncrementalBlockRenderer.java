@@ -140,7 +140,7 @@ public final class IncrementalBlockRenderer {
         }
 
         var html = createHtml(markdown);
-        
+
         // Skip if nothing changed
         String htmlFp = html.hashCode() + "";
         if (htmlFp.equals(lastHtmlFingerprint)) {
@@ -197,12 +197,8 @@ public final class IncrementalBlockRenderer {
         var document = parser.parse(markdownString); // Parse the stored string
         var html = renderer.render(document);
 
-        // Apply optional customizer
-        try {
-            html = htmlCustomizer.customize(html);
-        } catch (Exception e) {
-            logger.warn("HtmlCustomizer threw exception; continuing with original HTML", e);
-        }
+        // No HtmlCustomizer call here any more; customization now happens
+        // on the already-parsed DOM in buildComponentData.
         return html;
     }
     
@@ -229,6 +225,13 @@ public final class IncrementalBlockRenderer {
         
         Document doc = Jsoup.parse(html);
         var body = doc.body();
+
+        // Allow in-place DOM customisation before component extraction
+        try {
+            htmlCustomizer.customize(body);
+        } catch (Exception e) {
+            logger.warn("HtmlCustomizer threw exception; proceeding with uncustomised DOM", e);
+        }
         
         // Initialize the MiniParser
         var miniParser = new MiniParser();
