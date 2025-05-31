@@ -27,6 +27,13 @@ public final class TextNodeMarkerCustomizer implements HtmlCustomizer {
             Set.of("code", "pre", "a", "script", "style", "img");
 
     /**
+     * Attribute used to mark wrapper elements created by this customizer.
+     * Any text inside an element bearing this attribute will be ignored on
+     * subsequent traversals, preventing repeated wrapping.
+     */
+    private static final String BROKK_MARKER_ATTR = "data-brokk-marker";
+
+    /**
      * @param term          the term to highlight (must not be empty)
      * @param caseSensitive true if the match should be case-sensitive
      * @param wholeWord     true to require word boundaries around the term
@@ -74,6 +81,7 @@ public final class TextNodeMarkerCustomizer implements HtmlCustomizer {
 
         private void process(TextNode tn) {
             if (tn.isBlank()) return;
+            if (hasAncestorMarker(tn)) return;
             if (tn.parent() instanceof Element el &&
                     SKIP_TAGS.contains(el.tagName().toLowerCase())) {
                 return; // skip inside forbidden tags
@@ -93,7 +101,13 @@ public final class TextNodeMarkerCustomizer implements HtmlCustomizer {
                 }
                 String match = text.substring(start, end);
                 String snippetHtml = wrapperStart + match + wrapperEnd;
-                pieces.addAll(Jsoup.parseBodyFragment(snippetHtml).body().childNodes());
+                var fragment = Jsoup.parseBodyFragment(snippetHtml).body().childNodes();
+                for (Node fragNode : fragment) {
+                    if (fragNode instanceof Element fragEl) {
+                        fragEl.attr(BROKK_MARKER_ATTR, "1");
+                    }
+                }
+                pieces.addAll(fragment);
                 last = end;
             } while (m.find());
 
@@ -101,10 +115,28 @@ public final class TextNodeMarkerCustomizer implements HtmlCustomizer {
                 pieces.add(new TextNode(text.substring(last)));
             }
 
+            Node ref = tn;
+            // insert each generated fragment AFTER the current node to avoid
+            // disturbing NodeTraversor's iteration order
             for (Node n : pieces) {
-                tn.before(n);
+                ref.after(n);
+                ref = n;
             }
+            // finally remove the original text node
             tn.remove();
+        }
+
+        /**
+         * Returns true if the node has an ancestor element that already
+         * carries the custom wrapper attribute, meaning it has been processed.
+         */
+        private boolean hasAncestorMarker(Node node) {
+            for (Node p = node.parent(); p != null; p = p.parent()) {
+                if (p instanceof Element e && e.hasAttr(BROKK_MARKER_ATTR)) {
+                    return true;
+                }
+            }
+            return false;
         }
     }
 }

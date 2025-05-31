@@ -46,7 +46,7 @@ public final class IncrementalBlockRenderer {
     private boolean compacted = false;
 
     // Per-instance HTML customizer; defaults to NO_OP to avoid null checks
-    private volatile HtmlCustomizer htmlCustomizer = HtmlCustomizer.DEFAULT;
+    private volatile HtmlCustomizer htmlCustomizer = new TextNodeMarkerCustomizer("the", true, true, "<strong>", "</strong>");
     
     // Component factories
     private static final Map<String, ComponentDataFactory> FACTORIES = 
