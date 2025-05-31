@@ -10,6 +10,7 @@ import io.github.jbellis.brokk.gui.mop.stream.blocks.ComponentDataFactory;
 import io.github.jbellis.brokk.gui.mop.stream.blocks.CompositeComponentData;
 import io.github.jbellis.brokk.gui.mop.stream.blocks.MarkdownComponentData;
 import io.github.jbellis.brokk.gui.mop.stream.blocks.MarkdownFactory;
+import io.github.jbellis.brokk.gui.mop.stream.HtmlCustomizer;
 import io.github.jbellis.brokk.gui.mop.stream.flex.BrokkMarkdownExtension;
 import io.github.jbellis.brokk.gui.mop.stream.flex.IdProvider;
 import org.apache.logging.log4j.LogManager;
@@ -44,6 +45,9 @@ public final class IncrementalBlockRenderer {
     private String lastHtmlFingerprint = "";
     private String lastMarkdown = "";
     private boolean compacted = false;
+
+    // Optional per-instance HTML customizer
+    private volatile HtmlCustomizer htmlCustomizer = null;
     
     // Component factories
     private static final Map<String, ComponentDataFactory> FACTORIES = 
@@ -116,6 +120,13 @@ public final class IncrementalBlockRenderer {
     public JComponent getRoot() {
         return root;
     }
+
+    /**
+     * Register or clear an HtmlCustomizer.
+     */
+    public void setHtmlCustomizer(HtmlCustomizer customizer) {
+        this.htmlCustomizer = customizer;
+    }
     
     /**
      * Updates the content with the given markdown text.
@@ -185,7 +196,18 @@ public final class IncrementalBlockRenderer {
         String markdownString = md.toString(); // Convert once
         this.lastMarkdown = markdownString;    // Store it for compaction
         var document = parser.parse(markdownString); // Parse the stored string
-        return renderer.render(document);  // Don't sanitize yet - let MarkdownComponentData handle it
+        var html = renderer.render(document);
+
+        // Apply optional customizer
+        var c = this.htmlCustomizer;
+        if (c != null) {
+            try {
+                html = c.customize(html);
+            } catch (Exception e) {
+                logger.warn("HtmlCustomizer threw exception; continuing with original HTML", e);
+            }
+        }
+        return html;
     }
     
     /**
