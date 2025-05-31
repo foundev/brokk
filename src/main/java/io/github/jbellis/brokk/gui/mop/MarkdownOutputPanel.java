@@ -12,7 +12,6 @@ import io.github.jbellis.brokk.util.Messages;
 import io.github.jbellis.brokk.gui.mop.stream.HtmlCustomizer;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
-import org.fife.ui.rsyntaxtextarea.Theme;
 
 import javax.swing.*;
 import java.awt.*;
@@ -65,7 +64,7 @@ public class MarkdownOutputPanel extends JPanel implements Scrollable, ThemeAwar
     private final ExecutorService compactExec;
 
     // Global HtmlCustomizer applied to every renderer
-    private HtmlCustomizer htmlCustomizer = null;
+    private HtmlCustomizer htmlCustomizer = HtmlCustomizer.DEFAULT;
 
     public MarkdownOutputPanel() {
         setLayout(new BoxLayout(this, BoxLayout.Y_AXIS));
@@ -286,9 +285,7 @@ public class MarkdownOutputPanel extends JPanel implements Scrollable, ThemeAwar
         // Create a new renderer for this message - disable edit blocks for user messages
         boolean enableEditBlocks = message.type() != ChatMessageType.USER;
         var renderer = new IncrementalBlockRenderer(isDarkTheme, enableEditBlocks);
-        if (htmlCustomizer != null) {
-            renderer.setHtmlCustomizer(htmlCustomizer);
-        }
+        renderer.setHtmlCustomizer(htmlCustomizer);
 
         // Create a new worker for this message
         var worker = new StreamingWorker(renderer);
@@ -413,8 +410,8 @@ public class MarkdownOutputPanel extends JPanel implements Scrollable, ThemeAwar
      * Sets or clears a global HtmlCustomizer for all renderers.
      */
     public void setHtmlCustomizer(HtmlCustomizer customizer) {
-        this.htmlCustomizer = customizer;
-        renderers().forEach(r -> r.setHtmlCustomizer(customizer));
+        this.htmlCustomizer = customizer == null ? HtmlCustomizer.DEFAULT : customizer;
+        renderers().forEach(r -> r.setHtmlCustomizer(this.htmlCustomizer));
     }
 
 

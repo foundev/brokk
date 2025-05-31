@@ -47,6 +47,7 @@ final class StreamingWorker {
 
     StreamingWorker(IncrementalBlockRenderer renderer) {
         this.renderer = renderer;
+        System.out.println("CREATED NEW RENDERER");
     }
 
     /* called from EDT */ 

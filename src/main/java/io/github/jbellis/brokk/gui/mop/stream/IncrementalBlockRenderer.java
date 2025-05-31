@@ -10,7 +10,6 @@ import io.github.jbellis.brokk.gui.mop.stream.blocks.ComponentDataFactory;
 import io.github.jbellis.brokk.gui.mop.stream.blocks.CompositeComponentData;
 import io.github.jbellis.brokk.gui.mop.stream.blocks.MarkdownComponentData;
 import io.github.jbellis.brokk.gui.mop.stream.blocks.MarkdownFactory;
-import io.github.jbellis.brokk.gui.mop.stream.HtmlCustomizer;
 import io.github.jbellis.brokk.gui.mop.stream.flex.BrokkMarkdownExtension;
 import io.github.jbellis.brokk.gui.mop.stream.flex.IdProvider;
 import org.apache.logging.log4j.LogManager;
@@ -46,8 +45,8 @@ public final class IncrementalBlockRenderer {
     private String lastMarkdown = "";
     private boolean compacted = false;
 
-    // Optional per-instance HTML customizer
-    private volatile HtmlCustomizer htmlCustomizer = null;
+    // Per-instance HTML customizer; defaults to NO_OP to avoid null checks
+    private volatile HtmlCustomizer htmlCustomizer = HtmlCustomizer.DEFAULT;
     
     // Component factories
     private static final Map<String, ComponentDataFactory> FACTORIES = 
@@ -125,7 +124,7 @@ public final class IncrementalBlockRenderer {
      * Register or clear an HtmlCustomizer.
      */
     public void setHtmlCustomizer(HtmlCustomizer customizer) {
-        this.htmlCustomizer = customizer;
+        this.htmlCustomizer = customizer == null ? HtmlCustomizer.DEFAULT : customizer;
     }
     
     /**
@@ -139,7 +138,7 @@ public final class IncrementalBlockRenderer {
         if (compacted) {
             throw new IllegalStateException("Cannot update content after compaction. Call compactMarkdown() only after streaming is complete.");
         }
-        
+
         var html = createHtml(markdown);
         
         // Skip if nothing changed
@@ -199,13 +198,10 @@ public final class IncrementalBlockRenderer {
         var html = renderer.render(document);
 
         // Apply optional customizer
-        var c = this.htmlCustomizer;
-        if (c != null) {
-            try {
-                html = c.customize(html);
-            } catch (Exception e) {
-                logger.warn("HtmlCustomizer threw exception; continuing with original HTML", e);
-            }
+        try {
+            html = htmlCustomizer.customize(html);
+        } catch (Exception e) {
+            logger.warn("HtmlCustomizer threw exception; continuing with original HTML", e);
         }
         return html;
     }
