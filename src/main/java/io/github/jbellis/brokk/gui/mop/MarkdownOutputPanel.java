@@ -65,8 +65,8 @@ public class MarkdownOutputPanel extends JPanel implements Scrollable, ThemeAwar
     private final ExecutorService compactExec;
 
     // Global HtmlCustomizer applied to every renderer
-    //private HtmlCustomizer htmlCustomizer = HtmlCustomizer.DEFAULT;
-    private HtmlCustomizer htmlCustomizer = new TextNodeMarkerCustomizer("the", true, true, "<strong>", "</strong>");
+    private HtmlCustomizer htmlCustomizer = HtmlCustomizer.DEFAULT;
+    //private HtmlCustomizer htmlCustomizer = new TextNodeMarkerCustomizer("the", true, true, "<strong>", "</strong>");
 
     public MarkdownOutputPanel() {
         setLayout(new BoxLayout(this, BoxLayout.Y_AXIS));

@@ -34,6 +34,19 @@ public final class TextNodeMarkerCustomizer implements HtmlCustomizer {
     private static final String BROKK_MARKER_ATTR = "data-brokk-marker";
 
     /**
+     * Attribute that carries a stable numeric id for later component lookup.
+     */
+    private static final String BROKK_ID_ATTR = "data-brokk-id";
+
+    /**
+     * Global id generator for {@link #BROKK_ID_ATTR}. Thread-safe, simple monotonic counter.
+     * We deliberately do not reset between customizer instances because we only
+     * need *uniqueness* inside a single JVM session.
+     */
+    private static final java.util.concurrent.atomic.AtomicInteger ID_GEN =
+            new java.util.concurrent.atomic.AtomicInteger(1);
+
+    /**
      * @param term          the term to highlight (must not be empty)
      * @param caseSensitive true if the match should be case-sensitive
      * @param wholeWord     true to require word boundaries around the term
@@ -105,6 +118,8 @@ public final class TextNodeMarkerCustomizer implements HtmlCustomizer {
                 for (Node fragNode : fragment) {
                     if (fragNode instanceof Element fragEl) {
                         fragEl.attr(BROKK_MARKER_ATTR, "1");
+                        fragEl.attr(BROKK_ID_ATTR,
+                                    Integer.toString(ID_GEN.getAndIncrement()));
                     }
                 }
                 pieces.addAll(fragment);

@@ -32,6 +32,11 @@ public class TextNodeMarkerCustomizerTest {
         var marks = after.select("mark");
         assertEquals(1, marks.size(), "Should wrap exactly one occurrence");
         assertEquals("test", marks.first().text(), "Wrapped text should match the search term");
+        // Each <mark> must have a numeric data-brokk-id
+        marks.forEach(m -> {
+            assertTrue(m.hasAttr("data-brokk-id"), "Marker must carry data-brokk-id");
+            assertTrue(m.attr("data-brokk-id").matches("\\d+"), "data-brokk-id must be numeric");
+        });
 
         // Ensure other variants remain untouched
         assertTrue(after.text().contains("Testing"), "Partial word 'Testing' must remain");

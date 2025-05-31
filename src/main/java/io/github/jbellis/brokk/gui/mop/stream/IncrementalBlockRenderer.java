@@ -20,6 +20,7 @@ import org.jsoup.nodes.Element;
 import org.jsoup.nodes.Node;
 
 import javax.swing.*;
+import java.awt.Component;
 import java.util.*;
 import java.util.stream.Collectors;
 
@@ -41,6 +42,9 @@ public final class IncrementalBlockRenderer {
 
     // Component tracking
     private final Map<Integer, Reconciler.BlockEntry> registry = new LinkedHashMap<>();
+
+    // Marker-id ► Swing component index, rebuilt after every reconcile
+    private final Map<Integer, JComponent> markerIndex = new HashMap<>();
     private String lastHtmlFingerprint = "";
     private String lastMarkdown = "";
     private boolean compacted = false;
@@ -211,6 +215,8 @@ public final class IncrementalBlockRenderer {
      */
     private void updateUI(List<ComponentData> components) {
         Reconciler.reconcile(root, components, registry, isDarkTheme);
+        // After components are (re)built update marker index
+        rebuildMarkerIndex();
     }
 
     public String createHtml(CharSequence md) {
@@ -460,5 +466,72 @@ public final class IncrementalBlockRenderer {
         if (acc == null || htmlBuf == null) return;
         var merged = markdownFactory.fromText(acc.id(), htmlBuf.toString());
         out.add(merged);
+    }
+
+    // ---------------------------------------------------------------------
+    //  Marker-ID indexing helpers
+    // ---------------------------------------------------------------------
+
+    /**
+     * Rebuilds the marker-id to component index by walking the component tree.
+     * Must be called on EDT.
+     */
+    private void rebuildMarkerIndex() {
+        assert SwingUtilities.isEventDispatchThread();
+        markerIndex.clear();
+        walkAndIndex(root);
+    }
+
+    private void walkAndIndex(Component c) {
+        if (c instanceof JComponent jc) {
+            var html = extractHtmlFromComponent(jc);
+            if (html != null && !html.isEmpty()) {
+                var matcher = java.util.regex.Pattern.compile("data-brokk-id\\s*=\\s*\"(\\d+)\"")
+                                                     .matcher(html);
+                while (matcher.find()) {
+                    try {
+                        int id = Integer.parseInt(matcher.group(1));
+                        markerIndex.put(id, jc);
+                    } catch (NumberFormatException ignore) {
+                        // should never happen – regex enforces digits
+                    }
+                }
+            }
+        }
+        if (c instanceof java.awt.Container container) {
+            for (var child : container.getComponents()) {
+                walkAndIndex(child);
+            }
+        }
+    }
+
+    /**
+     * Best-effort extraction of inner HTML/text from known Swing components.
+     */
+    private static String extractHtmlFromComponent(JComponent jc) {
+        if (jc instanceof javax.swing.JEditorPane jp) {
+            return jp.getText();
+        } else if (jc instanceof javax.swing.JLabel lbl) {
+            return lbl.getText();
+        }
+        return null;
+    }
+
+    // ---------------------------------------------------------------------
+    //  Public lookup API
+    // ---------------------------------------------------------------------
+
+    /**
+     * Returns the Swing component that displays the given marker id, if any.
+     */
+    public java.util.Optional<JComponent> findByMarkerId(int id) {
+        return java.util.Optional.ofNullable(markerIndex.get(id));
+    }
+
+    /**
+     * Returns all marker ids currently known to this renderer.
+     */
+    public java.util.Set<Integer> getIndexedMarkerIds() {
+        return java.util.Set.copyOf(markerIndex.keySet());
     }
 }
