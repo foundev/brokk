@@ -13,7 +13,7 @@ import java.util.Objects;
 /**
  * A reusable search bar panel that can be used with any component implementing SearchCallback.
  */
-public class SearchBarPanel extends JPanel implements SearchableComponent {
+public class SearchBarPanel extends JPanel {
     private static final String CP_FOREGROUND = "SearchBar.foreground";
     
     private JTextField searchField;
@@ -55,9 +55,24 @@ public class SearchBarPanel extends JPanel implements SearchableComponent {
         timer = new Timer(300, e -> performSearch());
         timer.setRepeats(false);
         
-        searchField.getDocument().addDocumentListener(SearchFieldHelper.createDelayedSearchListener(timer));
-        SearchFieldHelper.configureArrowKeyNavigation(searchField, this);
-        SearchFieldHelper.configureEnterKey(searchField, this);
+        searchField.getDocument().addDocumentListener(new DocumentListener() {
+            @Override
+            public void insertUpdate(DocumentEvent e) {
+                timer.restart();
+            }
+            
+            @Override
+            public void removeUpdate(DocumentEvent e) {
+                timer.restart();
+            }
+            
+            @Override
+            public void changedUpdate(DocumentEvent e) {
+                timer.restart();
+            }
+        });
+        
+        searchField.addActionListener(e -> performSearch());
         
         searchPanel.add(new JLabel("Find:"));
         searchPanel.add(searchField);
@@ -131,24 +146,20 @@ public class SearchBarPanel extends JPanel implements SearchableComponent {
         searchField.setText(text);
     }
     
-    @Override
     public void focusSearchField() {
         searchField.requestFocusInWindow();
     }
     
-    @Override
     public void findNext() {
         searchCallback.goToNextResult();
         updateNavigationResults();
     }
     
-    @Override
     public void findPrevious() {
         searchCallback.goToPreviousResult();
         updateNavigationResults();
     }
     
-    @Override
     public void clearSearch() {
         searchField.setText("");
         searchCallback.stopSearch();
@@ -157,7 +168,6 @@ public class SearchBarPanel extends JPanel implements SearchableComponent {
     }
     
     
-    @Override
     public void performSearch() {
         SearchResults results = searchCallback.performSearch(getCommand());
         updateSearchResults(results);
@@ -217,6 +227,22 @@ public class SearchBarPanel extends JPanel implements SearchableComponent {
             SearchResults results = markdownCallback.getCurrentResults();
             updateSearchResults(results);
         }
+    }
+    
+    /**
+     * Registers Ctrl/Cmd+F shortcut to focus the search field.
+     */
+    public void registerSearchFocusShortcut(JComponent targetComponent) {
+        KeyStroke focusSearchKey = KeyStroke.getKeyStroke(KeyEvent.VK_F, 
+            java.awt.Toolkit.getDefaultToolkit().getMenuShortcutKeyMaskEx());
+        
+        targetComponent.getInputMap(JComponent.WHEN_IN_FOCUSED_WINDOW).put(focusSearchKey, "focusSearch");
+        targetComponent.getActionMap().put("focusSearch", new AbstractAction() {
+            @Override
+            public void actionPerformed(ActionEvent e) {
+                focusSearchField();
+            }
+        });
     }
     
 }
