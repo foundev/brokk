@@ -43,12 +43,12 @@ public class MarkdownPanelSearchCallback implements SearchCallback {
             return SearchResults.noMatches();
         }
         
-        searchTerm = searchTerm.trim();
-        this.currentSearchTerm = searchTerm;
+        final String finalSearchTerm = searchTerm.trim();
+        this.currentSearchTerm = finalSearchTerm;
         
         // Create search customizer
         HtmlCustomizer searchCustomizer = new TextNodeMarkerCustomizer(
-            searchTerm,
+            finalSearchTerm,
             caseSensitive,
             false,  // don't require whole word matching for better search experience
             "<strong style='background-color:yellow; color:black;'>",
@@ -57,7 +57,7 @@ public class MarkdownPanelSearchCallback implements SearchCallback {
         
         // Apply search highlighting to all panels and collect marker IDs
         allMarkerIds.clear();
-        logger.debug("Applying search customizer for term: '{}'", searchTerm);
+        logger.debug("Applying search customizer for term: '{}'", finalSearchTerm);
         
         // Track how many panels need to be processed
         var panelCount = panels.size();
@@ -86,6 +86,12 @@ public class MarkdownPanelSearchCallback implements SearchCallback {
                     if (!allMarkerIds.isEmpty()) {
                         // Scroll to the first match
                         scrollToCurrentMarker();
+                    } else {
+                        // No matches found - clear any previous highlighting
+                        logger.debug("No matches found for term '{}', clearing previous highlights", finalSearchTerm);
+                        for (MarkdownOutputPanel p : panels) {
+                            p.setHtmlCustomizer(HtmlCustomizer.DEFAULT);
+                        }
                     }
                     
                     // Update the search bar panel with the actual results
