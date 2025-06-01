@@ -418,6 +418,22 @@ public class MarkdownOutputPanel extends JPanel implements Scrollable, ThemeAwar
             r.reprocessForCustomizer();           // Refresh already rendered content
         });
     }
+    
+    /**
+     * Sets or clears a global HtmlCustomizer for all renderers and executes a callback
+     * after the customizer has been applied and rendered.
+     */
+    public void setHtmlCustomizerWithCallback(HtmlCustomizer customizer, Runnable callback) {
+        this.htmlCustomizer = customizer == null ? HtmlCustomizer.DEFAULT : customizer;
+        var renderersList = renderers().toList();
+        renderersList.forEach(r -> {
+            r.setHtmlCustomizer(this.htmlCustomizer);
+            r.reprocessForCustomizer();           // Refresh already rendered content
+        });
+        
+        // Execute callback on EDT after all customizers have been processed
+        SwingUtilities.invokeLater(callback);
+    }
 
 
     // --- Spinner Logic ---

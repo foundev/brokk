@@ -516,7 +516,9 @@ public final class IncrementalBlockRenderer {
     private void rebuildMarkerIndex() {
         assert SwingUtilities.isEventDispatchThread();
         markerIndex.clear();
+        logger.debug("Rebuilding marker index for renderer with {} components", root.getComponentCount());
         walkAndIndex(root);
+        logger.debug("Marker index rebuilt with {} entries", markerIndex.size());
     }
 
     private void walkAndIndex(Component c) {
@@ -525,13 +527,19 @@ public final class IncrementalBlockRenderer {
             if (html != null && !html.isEmpty()) {
                 var matcher = java.util.regex.Pattern.compile("data-brokk-id\\s*=\\s*\"(\\d+)\"")
                                                      .matcher(html);
+                boolean foundAny = false;
                 while (matcher.find()) {
                     try {
                         int id = Integer.parseInt(matcher.group(1));
                         markerIndex.put(id, jc);
+                        foundAny = true;
+                        logger.trace("Found marker id {} in component {}", id, jc.getClass().getSimpleName());
                     } catch (NumberFormatException ignore) {
                         // should never happen – regex enforces digits
                     }
+                }
+                if (foundAny && logger.isDebugEnabled()) {
+                    logger.debug("Component {} contains marker(s)", jc.getClass().getSimpleName());
                 }
             }
         }
