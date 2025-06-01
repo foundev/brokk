@@ -115,7 +115,6 @@ public final class TextNodeMarkerCustomizer implements HtmlCustomizer {
             }
 
             String text = tn.getWholeText();
-//            System.out.println("TO CUSTMIZE " + text);
             Matcher m = pattern.matcher(text);
             if (!m.find()) return; // nothing to highlight
 
