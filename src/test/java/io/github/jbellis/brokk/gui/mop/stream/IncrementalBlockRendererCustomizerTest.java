@@ -31,7 +31,7 @@ public class IncrementalBlockRendererCustomizerTest {
         );
         renderer.setHtmlCustomizer(testHighlighter);
         
-        // Build component data
+        // Build component data - this should apply the customizer
         String html = renderer.createHtml(markdown);
         List<ComponentData> components = renderer.buildComponentData(html);
         
@@ -39,7 +39,7 @@ public class IncrementalBlockRendererCustomizerTest {
         String resultHtml = extractMarkdownHtml(components);
         
         // Verify customizer was applied
-        assertTrue(resultHtml.contains("<mark>"), "Should contain mark tags from customizer");
+        assertTrue(resultHtml.contains("<mark"), "Should contain mark tags from customizer");
         assertTrue(resultHtml.contains("data-brokk-marker"), "Should contain marker attributes");
         
         // Count occurrences of 'test' being highlighted
@@ -58,7 +58,7 @@ public class IncrementalBlockRendererCustomizerTest {
         String initialHtml = extractMarkdownHtml(initialComponents);
         
         // Should have no marks initially
-        assertFalse(initialHtml.contains("<mark>"), "Should not contain marks initially");
+        assertFalse(initialHtml.contains("<mark"), "Should not contain marks initially");
         
         // Set customizer for 'alpha'
         HtmlCustomizer alphaHighlighter = new TextNodeMarkerCustomizer(
@@ -75,7 +75,7 @@ public class IncrementalBlockRendererCustomizerTest {
         String reprocessedHtml = extractMarkdownHtml(reprocessedComponents);
         
         // Verify customizer was applied
-        assertTrue(reprocessedHtml.contains("<mark>"), "Should contain marks after reprocessing");
+        assertTrue(reprocessedHtml.contains("<mark"), "Should contain marks after reprocessing");
         assertTrue(reprocessedHtml.contains("alpha"), "Should highlight 'alpha'");
         assertFalse(reprocessedHtml.contains("<mark>beta"), "Should not highlight 'beta'");
     }
@@ -94,8 +94,8 @@ public class IncrementalBlockRendererCustomizerTest {
         List<ComponentData> appleComponents = renderer.buildComponentData(html);
         String appleHtml = extractMarkdownHtml(appleComponents);
         
-        assertTrue(appleHtml.contains("class='apple'"), "Should highlight apple with apple class");
-        assertFalse(appleHtml.contains("class='orange'"), "Should not have orange class");
+        assertTrue(appleHtml.contains("class=\"apple\""), "Should highlight apple with apple class");
+        assertFalse(appleHtml.contains("class=\"orange\""), "Should not have orange class");
         
         // Switch to highlighting 'orange'
         HtmlCustomizer orangeHighlighter = new TextNodeMarkerCustomizer(
@@ -106,8 +106,8 @@ public class IncrementalBlockRendererCustomizerTest {
         List<ComponentData> orangeComponents = renderer.buildComponentData(renderer.createHtml(markdown));
         String orangeHtml = extractMarkdownHtml(orangeComponents);
         
-        assertTrue(orangeHtml.contains("class='orange'"), "Should highlight orange with orange class");
-        assertFalse(orangeHtml.contains("class='apple'"), "Should not have apple class anymore");
+        assertTrue(orangeHtml.contains("class=\"orange\""), "Should highlight orange with orange class");
+        assertFalse(orangeHtml.contains("class=\"apple\""), "Should not have apple class anymore");
     }
 
     @Test
@@ -137,7 +137,7 @@ public class IncrementalBlockRendererCustomizerTest {
         String resultHtml = extractMarkdownHtml(components);
         
         // Should highlight 'test' in text but not in code blocks
-        assertTrue(resultHtml.contains("<mark>"), "Should contain mark tags");
+        assertTrue(resultHtml.contains("<mark"), "Should contain mark tags");
         
         // Count marks - should be less than total occurrences of 'test' due to code block protection
         long totalTestOccurrences = countMatches(markdown.toLowerCase(), "test");
@@ -172,7 +172,7 @@ public class IncrementalBlockRendererCustomizerTest {
             String compactedHtml = extractMarkdownHtml(compactedComponents);
             
             // Verify customizer works in compacted state
-            assertTrue(compactedHtml.contains("<mark>"), "Should contain marks in compacted state");
+            assertTrue(compactedHtml.contains("<mark"), "Should contain marks in compacted state");
             long markCount = countMatches(compactedHtml, "<mark");
             assertEquals(2, markCount, "Should highlight 'target' in both blocks");
         }
@@ -192,7 +192,7 @@ public class IncrementalBlockRendererCustomizerTest {
         // Should not contain any marker attributes
         assertFalse(resultHtml.contains("data-brokk-marker"), 
             "Should not contain marker attributes with no-op customizer");
-        assertFalse(resultHtml.contains("<mark>"), 
+        assertFalse(resultHtml.contains("<mark"), 
             "Should not contain mark tags with no-op customizer");
     }
 
@@ -234,7 +234,7 @@ public class IncrementalBlockRendererCustomizerTest {
         String resultHtml = extractMarkdownHtml(components);
         
         // Customizer should still be applied
-        assertTrue(resultHtml.contains("<mark>"), 
+        assertTrue(resultHtml.contains("<mark"), 
             "Customizer should persist across updates");
         assertTrue(resultHtml.contains("persistent"), 
             "Should highlight the target word");
