@@ -51,8 +51,8 @@ public class MarkdownPanelSearchCallback implements SearchCallback {
             finalSearchTerm,
             caseSensitive,
             false,  // don't require whole word matching for better search experience
-            "<strong style='background-color:yellow; color:black;'>",
-            "</strong>"
+            "<span style='background-color:yellow; color:black;'>",
+            "</span>"
         );
         
         // Apply search highlighting to all panels and collect marker IDs

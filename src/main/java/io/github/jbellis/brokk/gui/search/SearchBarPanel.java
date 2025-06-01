@@ -33,23 +33,10 @@ public class SearchBarPanel extends JPanel {
         this(searchCallback, true, true);
     }
     
-    /**
-     * Creates a search bar panel with the given callback and case sensitivity option.
-     * 
-     * @param searchCallback The callback to handle search operations
-     * @param showCaseSensitive Whether to show the case sensitive checkbox
-     */
     public SearchBarPanel(SearchCallback searchCallback, boolean showCaseSensitive) {
         this(searchCallback, showCaseSensitive, true);
     }
     
-    /**
-     * Creates a search bar panel with the given callback and UI options.
-     * 
-     * @param searchCallback The callback to handle search operations
-     * @param showCaseSensitive Whether to show the case sensitive checkbox
-     * @param showNavigation Whether to show navigation buttons and result counter
-     */
     public SearchBarPanel(SearchCallback searchCallback, boolean showCaseSensitive, boolean showNavigation) {
         this.searchCallback = searchCallback;
         this.showCaseSensitive = showCaseSensitive;

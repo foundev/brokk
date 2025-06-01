@@ -608,7 +608,7 @@ public class Chrome implements AutoCloseable, IConsoleIO, IContextManager.Contex
         
         // Create search callback and search bar panel
         var searchCallback = new MarkdownPanelSearchCallback(markdownPanels);
-        var searchBarPanel = new SearchBarPanel(searchCallback, true, showNavigation); // showCaseSensitive=true, configurable showNavigation
+        var searchBarPanel = new SearchBarPanel(searchCallback, true, showNavigation);
         searchCallback.setSearchBarPanel(searchBarPanel);
         searchBarPanel.setBackground(contentPanel.getBackground());
         
@@ -840,7 +840,7 @@ public class Chrome implements AutoCloseable, IConsoleIO, IContextManager.Contex
                             // For ExternalFile, ProjectFile arg to PreviewTextPanel is null.
                             // Pass `fragment` (which is `pf`) to PreviewTextPanel for context.
                             var panel = new PreviewTextPanel(contextManager, null, externalFileContent, externalFileSyntaxStyle, themeManager, fragment);
-                            showPreviewFrame(contextManager, "Preview: " + externalFile.toString(), panel);
+                            showPreviewFrame(contextManager, "Preview: " + externalFile, panel);
                         } catch (IOException ex) {
                             toolErrorRaw("Error reading external file for preview: " + ex.getMessage());
                             logger.error("Error reading external file {} for preview", externalFile.absPath(), ex);
