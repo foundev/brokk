@@ -45,10 +45,12 @@ public final class IncrementalBlockRenderer {
 
     // Marker-id ► Swing component index, rebuilt after every reconcile
     private final Map<Integer, JComponent> markerIndex = new HashMap<>();
+    
+    // Content tracking
     private String lastHtmlFingerprint = "";
-    private String lastMarkdown = "";
-    private String originalMarkdown = "";  // Store original markdown before compaction
-    private boolean compacted = false;
+    private String currentMarkdown = "";  // The current markdown content (always markdown, never HTML)
+    private String compactedHtml = "";    // HTML content after compaction (empty if not compacted)
+    private boolean compacted = false;    // Whether content has been compacted for better text selection
 
     // Per-instance HTML customizer; defaults to NO_OP to avoid null checks
     private volatile HtmlCustomizer htmlCustomizer = HtmlCustomizer.DEFAULT;
@@ -138,21 +140,19 @@ public final class IncrementalBlockRenderer {
      * Does nothing if no markdown has been rendered yet.
      */
     public void reprocessForCustomizer() {
-        // Use original markdown if available (post-compaction), otherwise use lastMarkdown
-        String markdownToProcess = compacted && !originalMarkdown.isEmpty() ? originalMarkdown : lastMarkdown;
-        
-        if (markdownToProcess.isEmpty()) {
+        // Always use currentMarkdown for reprocessing
+        if (currentMarkdown.isEmpty()) {
             return; // nothing rendered yet
         }
         
         // Quick optimisation: bail out if the new customizer would not change anything
-        if (!wouldAffect(markdownToProcess)) {
+        if (!wouldAffect(currentMarkdown)) {
             return;
         }
 
         Runnable task = () -> {
             // Always process from markdown for consistency
-            var html = createHtml(markdownToProcess);
+            var html = createHtml(currentMarkdown);
             lastHtmlFingerprint = Integer.toString(html.hashCode());
             List<ComponentData> components = buildComponentData(html);
             
@@ -213,7 +213,7 @@ public final class IncrementalBlockRenderer {
             return;
         }
         lastHtmlFingerprint = htmlFp;
-        lastMarkdown = markdown;
+        currentMarkdown = markdown;
         
         // Extract component data from HTML
         List<ComponentData> components = buildComponentData(html);
@@ -260,7 +260,7 @@ public final class IncrementalBlockRenderer {
         // Parse with Flexmark
         // Parser.parse expects a String or BasedSequence. Convert CharSequence to String.
         String markdownString = md.toString(); // Convert once
-        this.lastMarkdown = markdownString;    // Store it for compaction
+        this.currentMarkdown = markdownString;    // Store current markdown
         var document = parser.parse(markdownString); // Parse the stored string
         return renderer.render(document);
     }
@@ -403,11 +403,11 @@ public final class IncrementalBlockRenderer {
         if (compacted) {
             return null;
         }
-        if (lastMarkdown.isEmpty()) {
+        if (currentMarkdown.isEmpty()) {
             return null;
         }
 
-        var html = createHtml(lastMarkdown);
+        var html = createHtml(currentMarkdown);
         var originalComponents = buildComponentData(html);
         var merged = mergeMarkdownBlocks(originalComponents, roundId);
         //System.out.println("-----");
@@ -431,13 +431,10 @@ public final class IncrementalBlockRenderer {
         }
 
         // Case 1: No initial markdown content. Mark as compacted and do nothing else.
-        if (lastMarkdown.isEmpty()) {
+        if (currentMarkdown.isEmpty()) {
             compacted = true;
             return;
         }
-
-        // Store original markdown before compaction
-        this.originalMarkdown = lastMarkdown;
 
         // Case 2: buildCompactedSnapshot decided not to produce components (e.g., it thought it was already compacted, or content was empty).
         // Mark as compacted.
@@ -453,8 +450,8 @@ public final class IncrementalBlockRenderer {
         updateUI(mergedComponents); 
         compacted = true;
 
-        // Update lastMarkdown and lastHtmlFingerprint to reflect the merged state.
-        this.lastMarkdown = mergedComponents.stream()
+        // Store the compacted HTML for future reference
+        this.compactedHtml = mergedComponents.stream()
                                          .filter(cd -> cd instanceof MarkdownComponentData)
                                          .map(cd -> ((MarkdownComponentData) cd).html())
                                          .collect(Collectors.joining("\n"));
