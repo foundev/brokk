@@ -47,6 +47,7 @@ public final class IncrementalBlockRenderer {
     private final Map<Integer, JComponent> markerIndex = new HashMap<>();
     private String lastHtmlFingerprint = "";
     private String lastMarkdown = "";
+    private String originalMarkdown = "";  // Store original markdown before compaction
     private boolean compacted = false;
 
     // Per-instance HTML customizer; defaults to NO_OP to avoid null checks
@@ -137,60 +138,34 @@ public final class IncrementalBlockRenderer {
      * Does nothing if no markdown has been rendered yet.
      */
     public void reprocessForCustomizer() {
-        if (lastMarkdown.isEmpty()) {
+        // Use original markdown if available (post-compaction), otherwise use lastMarkdown
+        String markdownToProcess = compacted && !originalMarkdown.isEmpty() ? originalMarkdown : lastMarkdown;
+        
+        if (markdownToProcess.isEmpty()) {
             return; // nothing rendered yet
         }
+        
         // Quick optimisation: bail out if the new customizer would not change anything
-        if (!wouldAffect(lastMarkdown)) {
+        if (!wouldAffect(markdownToProcess)) {
             return;
         }
 
         Runnable task = () -> {
-            List<ComponentData> components;
+            // Always process from markdown for consistency
+            var html = createHtml(markdownToProcess);
+            lastHtmlFingerprint = Integer.toString(html.hashCode());
+            List<ComponentData> components = buildComponentData(html);
             
             if (compacted) {
-                // In compacted state, lastMarkdown contains HTML, not markdown
-                // We need to extract the existing HTML from components and reprocess
-                components = getCurrentComponentData();
-                if (components.isEmpty()) {
-                    return;
-                }
-                
-                // Apply customizer to each MarkdownComponentData's HTML
-                var updatedComponents = new ArrayList<ComponentData>();
-                for (var cd : components) {
-                    if (cd instanceof MarkdownComponentData md) {
-                        // Parse the HTML, apply customizer, rebuild component
-                        var doc = Jsoup.parseBodyFragment(md.html());
-                        var body = doc.body();
-                        
-                        try {
-                            htmlCustomizer.customize(body);
-                        } catch (Exception e) {
-                            logger.warn("HtmlCustomizer threw exception during reprocess", e);
-                        }
-                        
-                        // Create new MarkdownComponentData with customized HTML
-                        var customizedHtml = body.html();
-                        updatedComponents.add(markdownFactory.fromText(md.id(), customizedHtml));
-                    } else {
-                        // Keep non-markdown components as-is
-                        updatedComponents.add(cd);
-                    }
-                }
-                
-                // Clear and rebuild UI
+                // Re-apply compaction after processing
+                components = mergeMarkdownBlocks(components, -1L);
+                // Clear and rebuild UI for compacted state
                 root.removeAll();
                 registry.clear();
                 markerIndex.clear();
-                updateUI(updatedComponents);
-            } else {
-                // Normal path - lastMarkdown contains actual markdown
-                var html = createHtml(lastMarkdown);
-                lastHtmlFingerprint = Integer.toString(html.hashCode());
-                components = buildComponentData(html);
-                updateUI(components);
             }
+            
+            updateUI(components);
         };
 
         if (SwingUtilities.isEventDispatchThread()) {
@@ -200,34 +175,15 @@ public final class IncrementalBlockRenderer {
         }
     }
 
-    /**
-     * Extracts the current ComponentData from the registry.
-     * This is used when reprocessing in compacted state.
-     */
-    private List<ComponentData> getCurrentComponentData() {
-        // In compacted state, we need to reconstruct ComponentData from the stored HTML
-        // Since we know lastMarkdown contains the compacted HTML after compaction,
-        // we can parse it to get the components
-        if (compacted && !lastMarkdown.isEmpty()) {
-            // lastMarkdown contains HTML in compacted state
-            var doc = Jsoup.parseBodyFragment(lastMarkdown);
-            var body = doc.body();
-            
-            // Extract all the HTML content as a single MarkdownComponentData
-            // This preserves the compacted state
-            return List.of(markdownFactory.fromText(1, body.html()));
-        }
-        return List.of();
-    }
     
     /**
      * Returns false when the current htmlCustomizer can be proven to have no
      * impact on the supplied markdown, allowing us to skip re-rendering.
      */
-    private boolean wouldAffect(String markdown) {
+    private boolean wouldAffect(String text) {
         if (htmlCustomizer instanceof TextNodeMarkerCustomizer tnmc) {
             try {
-                return tnmc.mightMatch(markdown);
+                return tnmc.mightMatch(text);
             } catch (Exception e) {
                 // fall through – be conservative
                 logger.debug("wouldAffect: conservative fallback after exception", e);
@@ -479,6 +435,9 @@ public final class IncrementalBlockRenderer {
             compacted = true;
             return;
         }
+
+        // Store original markdown before compaction
+        this.originalMarkdown = lastMarkdown;
 
         // Case 2: buildCompactedSnapshot decided not to produce components (e.g., it thought it was already compacted, or content was empty).
         // Mark as compacted.
