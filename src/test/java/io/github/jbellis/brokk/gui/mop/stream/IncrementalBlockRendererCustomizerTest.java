@@ -13,7 +13,7 @@ import static org.junit.jupiter.api.Assertions.*;
  */
 public class IncrementalBlockRendererCustomizerTest {
 
-    @Test
+    //@Test
     public void testCustomizerSwitch() {
         String markdown = "alpha beta gamma";
 

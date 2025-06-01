@@ -50,7 +50,7 @@ public final class IncrementalBlockRenderer {
     private boolean compacted = false;
 
     // Per-instance HTML customizer; defaults to NO_OP to avoid null checks
-    private volatile HtmlCustomizer htmlCustomizer = new TextNodeMarkerCustomizer("the", true, true, "<strong>", "</strong>");
+    private volatile HtmlCustomizer htmlCustomizer = HtmlCustomizer.DEFAULT;
     
     // Component factories
     private static final Map<String, ComponentDataFactory> FACTORIES = 
@@ -134,18 +134,63 @@ public final class IncrementalBlockRenderer {
     /**
      * Re-runs the current HtmlCustomizer against the last rendered Markdown and
      * updates the Swing components. Safe to call from any thread.
-     * Does nothing if no markdown has been rendered yet or the renderer was compacted.
+     * Does nothing if no markdown has been rendered yet.
      */
     public void reprocessForCustomizer() {
-        if (lastMarkdown.isEmpty() || compacted) {
-            return; // Nothing to do
+        if (lastMarkdown.isEmpty()) {
+            return; // nothing rendered yet
+        }
+        // Quick optimisation: bail out if the new customizer would not change anything
+        if (!wouldAffect(lastMarkdown)) {
+            return;
         }
 
         Runnable task = () -> {
-            var html = createHtml(lastMarkdown);
-            lastHtmlFingerprint = Integer.toString(html.hashCode());
-            List<ComponentData> components = buildComponentData(html);
-            updateUI(components);
+            List<ComponentData> components;
+            
+            if (compacted) {
+                // In compacted state, lastMarkdown contains HTML, not markdown
+                // We need to extract the existing HTML from components and reprocess
+                components = getCurrentComponentData();
+                if (components.isEmpty()) {
+                    return;
+                }
+                
+                // Apply customizer to each MarkdownComponentData's HTML
+                var updatedComponents = new ArrayList<ComponentData>();
+                for (var cd : components) {
+                    if (cd instanceof MarkdownComponentData md) {
+                        // Parse the HTML, apply customizer, rebuild component
+                        var doc = Jsoup.parseBodyFragment(md.html());
+                        var body = doc.body();
+                        
+                        try {
+                            htmlCustomizer.customize(body);
+                        } catch (Exception e) {
+                            logger.warn("HtmlCustomizer threw exception during reprocess", e);
+                        }
+                        
+                        // Create new MarkdownComponentData with customized HTML
+                        var customizedHtml = body.html();
+                        updatedComponents.add(markdownFactory.fromText(md.id(), customizedHtml));
+                    } else {
+                        // Keep non-markdown components as-is
+                        updatedComponents.add(cd);
+                    }
+                }
+                
+                // Clear and rebuild UI
+                root.removeAll();
+                registry.clear();
+                markerIndex.clear();
+                updateUI(updatedComponents);
+            } else {
+                // Normal path - lastMarkdown contains actual markdown
+                var html = createHtml(lastMarkdown);
+                lastHtmlFingerprint = Integer.toString(html.hashCode());
+                components = buildComponentData(html);
+                updateUI(components);
+            }
         };
 
         if (SwingUtilities.isEventDispatchThread()) {
@@ -153,6 +198,42 @@ public final class IncrementalBlockRenderer {
         } else {
             SwingUtilities.invokeLater(task);
         }
+    }
+
+    /**
+     * Extracts the current ComponentData from the registry.
+     * This is used when reprocessing in compacted state.
+     */
+    private List<ComponentData> getCurrentComponentData() {
+        // In compacted state, we need to reconstruct ComponentData from the stored HTML
+        // Since we know lastMarkdown contains the compacted HTML after compaction,
+        // we can parse it to get the components
+        if (compacted && !lastMarkdown.isEmpty()) {
+            // lastMarkdown contains HTML in compacted state
+            var doc = Jsoup.parseBodyFragment(lastMarkdown);
+            var body = doc.body();
+            
+            // Extract all the HTML content as a single MarkdownComponentData
+            // This preserves the compacted state
+            return List.of(markdownFactory.fromText(1, body.html()));
+        }
+        return List.of();
+    }
+    
+    /**
+     * Returns false when the current htmlCustomizer can be proven to have no
+     * impact on the supplied markdown, allowing us to skip re-rendering.
+     */
+    private boolean wouldAffect(String markdown) {
+        if (htmlCustomizer instanceof TextNodeMarkerCustomizer tnmc) {
+            try {
+                return tnmc.mightMatch(markdown);
+            } catch (Exception e) {
+                // fall through – be conservative
+                logger.debug("wouldAffect: conservative fallback after exception", e);
+            }
+        }
+        return true; // unknown customizer types => assume yes
     }
     
     /**
@@ -225,11 +306,7 @@ public final class IncrementalBlockRenderer {
         String markdownString = md.toString(); // Convert once
         this.lastMarkdown = markdownString;    // Store it for compaction
         var document = parser.parse(markdownString); // Parse the stored string
-        var html = renderer.render(document);
-
-        // No HtmlCustomizer call here any more; customization now happens
-        // on the already-parsed DOM in buildComponentData.
-        return html;
+        return renderer.render(document);
     }
     
     /**
@@ -275,49 +352,50 @@ public final class IncrementalBlockRenderer {
                 // For stability of IDs, ensure composites get a deterministic ID
                 // derived from the source element's position via IdProvider
                 parsedElements = normalizeCompositeId(element, parsedElements);
-                
+
+                result.addAll(parsedElements);
                 // If the element contains any highlight markers, drop plain Markdown blocks
                 // that do not themselves include the marker. This prevents surrounding
                 // non-highlighted text from being counted by tests that only care about the
                 // highlighted fragments.
-                boolean hasMarker = !element.select("[data-brokk-marker]").isEmpty();
-                if (!hasMarker) {
-                    // Fast-path: no highlight marker in this element – keep everything verbatim
-                    result.addAll(parsedElements);
-                } else {
-                    // Keep only the portions that actually carry the marker
-                    for (var cd : parsedElements) {
-                        // Preserve custom / non-markdown blocks as-is
-                        if (!(cd instanceof io.github.jbellis.brokk.gui.mop.stream.blocks.MarkdownComponentData md)) {
-                            result.add(cd);
-                            continue;
-                        }
-
-                        // Discard pure markdown blocks that do not contain any highlight marker
-                        if (!md.html().contains("data-brokk-marker")) {
-                            continue;
-                        }
-
-                        // md.html() mixes marked and un-marked text. Trim it down to ONLY the
-                        // <… data-brokk-marker="…"> fragments.
-                        var fragment = Jsoup.parseBodyFragment(md.html());
-                        var markedNodes = fragment.select("[data-brokk-marker]");
-                        if (markedNodes.isEmpty()) {
-                            continue; // defensive – should not happen
-                        }
-
-                        var filteredHtml = markedNodes.stream()
-                                                      .map(org.jsoup.nodes.Node::outerHtml)
-                                                      .collect(Collectors.joining());
-                        if (filteredHtml.isBlank()) {
-                            continue;
-                        }
-
-                        // Re-create a MarkdownComponentData with the same id but filtered HTML
-                        var trimmed = markdownFactory.fromText(md.id(), filteredHtml);
-                        result.add(trimmed);
-                    }
-                }
+//                boolean hasMarker = !element.select("[data-brokk-marker]").isEmpty();
+//                if (!hasMarker) {
+//                    // Fast-path: no highlight marker in this element – keep everything verbatim
+//                    result.addAll(parsedElements);
+//                } else {
+//                    // Keep only the portions that actually carry the marker
+//                    for (var cd : parsedElements) {
+//                        // Preserve custom / non-markdown blocks as-is
+//                        if (!(cd instanceof io.github.jbellis.brokk.gui.mop.stream.blocks.MarkdownComponentData md)) {
+//                            result.add(cd);
+//                            continue;
+//                        }
+//
+//                        // Discard pure markdown blocks that do not contain any highlight marker
+//                        if (!md.html().contains("data-brokk-marker")) {
+//                            continue;
+//                        }
+//
+//                        // md.html() mixes marked and un-marked text. Trim it down to ONLY the
+//                        // <… data-brokk-marker="…"> fragments.
+//                        var fragment = Jsoup.parseBodyFragment(md.html());
+//                        var markedNodes = fragment.select("[data-brokk-marker]");
+//                        if (markedNodes.isEmpty()) {
+//                            continue; // defensive – should not happen
+//                        }
+//
+//                        var filteredHtml = markedNodes.stream()
+//                                                      .map(org.jsoup.nodes.Node::outerHtml)
+//                                                      .collect(Collectors.joining());
+//                        if (filteredHtml.isBlank()) {
+//                            continue;
+//                        }
+//
+//                        // Re-create a MarkdownComponentData with the same id but filtered HTML
+//                        var trimmed = markdownFactory.fromText(md.id(), filteredHtml);
+//                        result.add(trimmed);
+//                    }
+//                }
             } else if (child instanceof org.jsoup.nodes.TextNode textNode && !textNode.isBlank()) {
                 // For plain text nodes, create a markdown component directly.
                 // Let Swing's HTMLEditorKit handle basic escaping - it knows what it needs.
@@ -376,6 +454,9 @@ public final class IncrementalBlockRenderer {
         var html = createHtml(lastMarkdown);
         var originalComponents = buildComponentData(html);
         var merged = mergeMarkdownBlocks(originalComponents, roundId);
+        //System.out.println("-----");
+        //System.out.println(html);
+        //System.out.println(merged);
         return merged;
     }
 
