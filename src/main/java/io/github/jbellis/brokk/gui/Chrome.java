@@ -721,13 +721,62 @@ public class Chrome implements AutoCloseable, IConsoleIO, IContextManager.Contex
                     compactionFutures.add(markdownPanel.scheduleCompaction());
                 }
 
+                // Create a main panel to hold search bar and scrollPane
+                JPanel previewContentPanel = new JPanel(new BorderLayout());
+                previewContentPanel.setBackground(messagesContainer.getBackground());
+
+                // Search UI
+                JPanel searchBarPanel = new JPanel(new FlowLayout(FlowLayout.LEFT, 5, 5));
+                searchBarPanel.setBackground(previewContentPanel.getBackground());
+                JTextField searchField = new JTextField(30);
+                JButton searchButton = new JButton("Search");
+                JButton clearButton = new JButton("Clear");
+
+                searchBarPanel.add(new JLabel("Find:"));
+                searchBarPanel.add(searchField);
+                searchBarPanel.add(searchButton);
+                searchBarPanel.add(clearButton);
+
+                previewContentPanel.add(searchBarPanel, BorderLayout.NORTH);
+                previewContentPanel.add(scrollPane, BorderLayout.CENTER);
+
+                searchButton.addActionListener(e -> {
+                    String searchTerm = searchField.getText();
+                    if (searchTerm != null && !searchTerm.trim().isEmpty()) {
+                        var searchCustomizer = new io.github.jbellis.brokk.gui.mop.stream.TextNodeMarkerCustomizer(
+                                searchTerm.trim(),
+                                false, // case-insensitive
+                                true,  // whole word
+                                "<strong style='background-color:yellow; color:black;'>", // highlight style
+                                "</strong>"
+                        );
+                        for (Component comp : messagesContainer.getComponents()) {
+                            if (comp instanceof MarkdownOutputPanel mop) {
+                                mop.setHtmlCustomizer(searchCustomizer);
+                            }
+                        }
+                    }
+                });
+
+                clearButton.addActionListener(e -> {
+                    searchField.setText("");
+                    for (Component comp : messagesContainer.getComponents()) {
+                        if (comp instanceof MarkdownOutputPanel mop) {
+                            mop.setHtmlCustomizer(io.github.jbellis.brokk.gui.mop.stream.HtmlCustomizer.DEFAULT);
+                        }
+                    }
+                });
+                
+                searchField.addActionListener(e -> searchButton.doClick());
+
+
                 // When all panels are compacted, scroll to the top
                 CompletableFuture
                         .allOf(compactionFutures.toArray(CompletableFuture[]::new))
                         .thenRun(() -> SwingUtilities.invokeLater(() ->
                                 scrollPane.getViewport().setViewPosition(new Point(0, 0))));
 
-                showPreviewFrame(contextManager, title, scrollPane); // Use helper
+                showPreviewFrame(contextManager, title, previewContentPanel); // Use new panel with search
                 return;
             }
 

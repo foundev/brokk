@@ -75,6 +75,20 @@ public final class TextNodeMarkerCustomizer implements HtmlCustomizer {
         this.pattern = Pattern.compile(regex, flags);
     }
 
+    /**
+     * Fast check used by renderers to see if this customizer could possibly
+     * influence the supplied text.  Returns {@code true} if the term occurs
+     * at least once according to the current configuration.
+     *
+     * @param text input to test (may be {@code null})
+     */
+    public boolean mightMatch(String text) {
+        if (text == null || text.isEmpty()) {
+            return false;
+        }
+        return pattern.matcher(text).find();
+    }
+
     @Override
     public void customize(Element root) {
         if (root == null) {
