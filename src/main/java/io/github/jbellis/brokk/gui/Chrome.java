@@ -9,6 +9,8 @@ import io.github.jbellis.brokk.git.GitRepo;
 import io.github.jbellis.brokk.gui.dialogs.PreviewImagePanel;
 import io.github.jbellis.brokk.gui.dialogs.PreviewTextPanel;
 import io.github.jbellis.brokk.gui.mop.MarkdownOutputPanel;
+import io.github.jbellis.brokk.gui.search.MarkdownPanelSearchCallback;
+import io.github.jbellis.brokk.gui.search.SearchBarPanel;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 import org.jetbrains.annotations.Nullable;
@@ -712,12 +714,15 @@ public class Chrome implements AutoCloseable, IConsoleIO, IContextManager.Contex
 
                 List<TaskEntry> taskEntries = outputFragment.entries();
                 var compactionFutures = new ArrayList<CompletableFuture<?>>();
+                var markdownPanels = new ArrayList<MarkdownOutputPanel>();
+                
                 for (TaskEntry entry : taskEntries) {
                     var markdownPanel = new MarkdownOutputPanel();
                     markdownPanel.updateTheme(themeManager != null && themeManager.isDarkTheme());
                     markdownPanel.setText(entry);
                     markdownPanel.setBorder(BorderFactory.createMatteBorder(0, 0, 1, 0, Color.GRAY));
                     messagesContainer.add(markdownPanel);
+                    markdownPanels.add(markdownPanel);
                     compactionFutures.add(markdownPanel.scheduleCompaction());
                 }
 
@@ -725,49 +730,13 @@ public class Chrome implements AutoCloseable, IConsoleIO, IContextManager.Contex
                 JPanel previewContentPanel = new JPanel(new BorderLayout());
                 previewContentPanel.setBackground(messagesContainer.getBackground());
 
-                // Search UI
-                JPanel searchBarPanel = new JPanel(new FlowLayout(FlowLayout.LEFT, 5, 5));
+                // Create search callback and search bar panel
+                var searchCallback = new MarkdownPanelSearchCallback(markdownPanels);
+                var searchBarPanel = new SearchBarPanel(searchCallback);
                 searchBarPanel.setBackground(previewContentPanel.getBackground());
-                JTextField searchField = new JTextField(30);
-                JButton searchButton = new JButton("Search");
-                JButton clearButton = new JButton("Clear");
-
-                searchBarPanel.add(new JLabel("Find:"));
-                searchBarPanel.add(searchField);
-                searchBarPanel.add(searchButton);
-                searchBarPanel.add(clearButton);
 
                 previewContentPanel.add(searchBarPanel, BorderLayout.NORTH);
                 previewContentPanel.add(scrollPane, BorderLayout.CENTER);
-
-                searchButton.addActionListener(e -> {
-                    String searchTerm = searchField.getText();
-                    if (searchTerm != null && !searchTerm.trim().isEmpty()) {
-                        var searchCustomizer = new io.github.jbellis.brokk.gui.mop.stream.TextNodeMarkerCustomizer(
-                                searchTerm.trim(),
-                                false, // case-insensitive
-                                true,  // whole word
-                                "<strong style='background-color:yellow; color:black;'>", // highlight style
-                                "</strong>"
-                        );
-                        for (Component comp : messagesContainer.getComponents()) {
-                            if (comp instanceof MarkdownOutputPanel mop) {
-                                mop.setHtmlCustomizer(searchCustomizer);
-                            }
-                        }
-                    }
-                });
-
-                clearButton.addActionListener(e -> {
-                    searchField.setText("");
-                    for (Component comp : messagesContainer.getComponents()) {
-                        if (comp instanceof MarkdownOutputPanel mop) {
-                            mop.setHtmlCustomizer(io.github.jbellis.brokk.gui.mop.stream.HtmlCustomizer.DEFAULT);
-                        }
-                    }
-                });
-                
-                searchField.addActionListener(e -> searchButton.doClick());
 
 
                 // When all panels are compacted, scroll to the top
