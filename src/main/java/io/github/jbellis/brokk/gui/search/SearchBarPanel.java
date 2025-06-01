@@ -21,6 +21,7 @@ public class SearchBarPanel extends JPanel {
     private Timer timer;
     private final SearchCallback searchCallback;
     private final boolean showCaseSensitive;
+    private final boolean showNavigation;
     private JCheckBox caseSensitiveCheckBox;
     
     /**
@@ -29,7 +30,7 @@ public class SearchBarPanel extends JPanel {
      * @param searchCallback The callback to handle search operations
      */
     public SearchBarPanel(SearchCallback searchCallback) {
-        this(searchCallback, true);
+        this(searchCallback, true, true);
     }
     
     /**
@@ -39,8 +40,20 @@ public class SearchBarPanel extends JPanel {
      * @param showCaseSensitive Whether to show the case sensitive checkbox
      */
     public SearchBarPanel(SearchCallback searchCallback, boolean showCaseSensitive) {
+        this(searchCallback, showCaseSensitive, true);
+    }
+    
+    /**
+     * Creates a search bar panel with the given callback and UI options.
+     * 
+     * @param searchCallback The callback to handle search operations
+     * @param showCaseSensitive Whether to show the case sensitive checkbox
+     * @param showNavigation Whether to show navigation buttons and result counter
+     */
+    public SearchBarPanel(SearchCallback searchCallback, boolean showCaseSensitive, boolean showNavigation) {
         this.searchCallback = searchCallback;
         this.showCaseSensitive = showCaseSensitive;
+        this.showNavigation = showNavigation;
         init();
     }
     
@@ -84,43 +97,49 @@ public class SearchBarPanel extends JPanel {
             searchPanel.add(caseSensitiveCheckBox);
         }
         
-        // Buttons row
-        JPanel buttonPanel = new JPanel(new FlowLayout(FlowLayout.CENTER, 5, 5));
+        // Add components to main panel
+        add(Box.createVerticalStrut(5));
+        add(searchPanel);
         
-        JButton previousButton = new JButton("Previous");
-        if (hasIcon("/images/prev.png")) {
-            previousButton.setIcon(new ImageIcon(Objects.requireNonNull(getClass().getResource("/images/prev.png"))));
+        if (showNavigation) {
+            // Buttons row
+            JPanel buttonPanel = new JPanel(new FlowLayout(FlowLayout.CENTER, 5, 5));
+            
+            JButton previousButton = new JButton("Previous");
+            if (hasIcon("/images/prev.png")) {
+                previousButton.setIcon(new ImageIcon(Objects.requireNonNull(getClass().getResource("/images/prev.png"))));
+            }
+            previousButton.addActionListener(getPreviousAction());
+            initButton(previousButton);
+            
+            JButton nextButton = new JButton("Next");
+            if (hasIcon("/images/next.png")) {
+                nextButton.setIcon(new ImageIcon(Objects.requireNonNull(getClass().getResource("/images/next.png"))));
+            }
+            nextButton.addActionListener(getNextAction());
+            initButton(nextButton);
+            
+            JButton clearButton = new JButton("Clear");
+            clearButton.addActionListener(getClearAction());
+            initButton(clearButton);
+            
+            buttonPanel.add(previousButton);
+            buttonPanel.add(Box.createHorizontalStrut(5));
+            buttonPanel.add(nextButton);
+            buttonPanel.add(Box.createHorizontalStrut(5));
+            buttonPanel.add(clearButton);
+            
+            add(Box.createVerticalStrut(5));
+            add(buttonPanel);
         }
-        previousButton.addActionListener(getPreviousAction());
-        initButton(previousButton);
-        
-        JButton nextButton = new JButton("Next");
-        if (hasIcon("/images/next.png")) {
-            nextButton.setIcon(new ImageIcon(Objects.requireNonNull(getClass().getResource("/images/next.png"))));
-        }
-        nextButton.addActionListener(getNextAction());
-        initButton(nextButton);
-        
-        JButton clearButton = new JButton("Clear");
-        clearButton.addActionListener(getClearAction());
-        initButton(clearButton);
-        
-        buttonPanel.add(previousButton);
-        buttonPanel.add(Box.createHorizontalStrut(5));
-        buttonPanel.add(nextButton);
-        buttonPanel.add(Box.createHorizontalStrut(5));
-        buttonPanel.add(clearButton);
         
         // Search result label
         searchResult = new JLabel();
         
-        // Add components to main panel
-        add(Box.createVerticalStrut(5));
-        add(searchPanel);
-        add(Box.createVerticalStrut(5));
-        add(buttonPanel);
-        add(Box.createVerticalStrut(5));
-        add(searchResult);
+        if (showNavigation) {
+            add(Box.createVerticalStrut(5));
+            add(searchResult);
+        }
     }
     
     private boolean hasIcon(String path) {

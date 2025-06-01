@@ -730,9 +730,9 @@ public class Chrome implements AutoCloseable, IConsoleIO, IContextManager.Contex
                 JPanel previewContentPanel = new JPanel(new BorderLayout());
                 previewContentPanel.setBackground(messagesContainer.getBackground());
 
-                // Create search callback and search bar panel
+                // Create search callback and search bar panel (without navigation for preview)
                 var searchCallback = new MarkdownPanelSearchCallback(markdownPanels);
-                var searchBarPanel = new SearchBarPanel(searchCallback);
+                var searchBarPanel = new SearchBarPanel(searchCallback, false, false); // showCaseSensitive=true, showNavigation=false
                 searchCallback.setSearchBarPanel(searchBarPanel);
                 searchBarPanel.setBackground(previewContentPanel.getBackground());
 
