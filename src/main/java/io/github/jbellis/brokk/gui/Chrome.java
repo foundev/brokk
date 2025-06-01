@@ -738,6 +738,9 @@ public class Chrome implements AutoCloseable, IConsoleIO, IContextManager.Contex
 
                 previewContentPanel.add(searchBarPanel, BorderLayout.NORTH);
                 previewContentPanel.add(scrollPane, BorderLayout.CENTER);
+                
+                // Register Ctrl/Cmd+F to focus search field
+                searchBarPanel.registerSearchFocusShortcut(previewContentPanel);
 
 
                 // When all panels are compacted, scroll to the top

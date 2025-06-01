@@ -7,12 +7,13 @@ import javax.swing.event.DocumentListener;
 import java.awt.*;
 import java.awt.event.ActionEvent;
 import java.awt.event.ActionListener;
+import java.awt.event.KeyEvent;
 import java.util.Objects;
 
 /**
  * A reusable search bar panel that can be used with any component implementing SearchCallback.
  */
-public class SearchBarPanel extends JPanel {
+public class SearchBarPanel extends JPanel implements SearchableComponent {
     private static final String CP_FOREGROUND = "SearchBar.foreground";
     
     private JTextField searchField;
@@ -49,8 +50,14 @@ public class SearchBarPanel extends JPanel {
         // Search field row
         JPanel searchPanel = new JPanel(new FlowLayout(FlowLayout.LEFT, 5, 5));
         searchField = new JTextField(20);
-        searchField.getDocument().addDocumentListener(getSearchAction());
-        searchField.addActionListener(e -> performSearch());
+        
+        // Timer for delayed search
+        timer = new Timer(300, e -> performSearch());
+        timer.setRepeats(false);
+        
+        searchField.getDocument().addDocumentListener(SearchFieldHelper.createDelayedSearchListener(timer));
+        SearchFieldHelper.configureArrowKeyNavigation(searchField, this);
+        SearchFieldHelper.configureEnterKey(searchField, this);
         
         searchPanel.add(new JLabel("Find:"));
         searchPanel.add(searchField);
@@ -99,10 +106,6 @@ public class SearchBarPanel extends JPanel {
         add(buttonPanel);
         add(Box.createVerticalStrut(5));
         add(searchResult);
-        
-        // Timer for delayed search
-        timer = new Timer(300, executeSearch());
-        timer.setRepeats(false);
     }
     
     private boolean hasIcon(String path) {
@@ -128,35 +131,34 @@ public class SearchBarPanel extends JPanel {
         searchField.setText(text);
     }
     
+    @Override
     public void focusSearchField() {
         searchField.requestFocusInWindow();
     }
     
-    private DocumentListener getSearchAction() {
-        return new DocumentListener() {
-            public void changedUpdate(DocumentEvent e) {
-                timer.restart();
-            }
-            
-            public void insertUpdate(DocumentEvent e) {
-                timer.restart();
-            }
-            
-            public void removeUpdate(DocumentEvent e) {
-                timer.restart();
-            }
-        };
+    @Override
+    public void findNext() {
+        searchCallback.goToNextResult();
+        updateNavigationResults();
     }
     
-    private ActionListener executeSearch() {
-        return new ActionListener() {
-            public void actionPerformed(ActionEvent ae) {
-                performSearch();
-            }
-        };
+    @Override
+    public void findPrevious() {
+        searchCallback.goToPreviousResult();
+        updateNavigationResults();
     }
     
-    private void performSearch() {
+    @Override
+    public void clearSearch() {
+        searchField.setText("");
+        searchCallback.stopSearch();
+        searchResult.setIcon(null);
+        searchResult.setText("");
+    }
+    
+    
+    @Override
+    public void performSearch() {
         SearchResults results = searchCallback.performSearch(getCommand());
         updateSearchResults(results);
     }
@@ -198,26 +200,15 @@ public class SearchBarPanel extends JPanel {
     }
     
     private ActionListener getClearAction() {
-        return ae -> {
-            searchField.setText("");
-            searchCallback.stopSearch();
-            searchResult.setIcon(null);
-            searchResult.setText("");
-        };
+        return ae -> clearSearch();
     }
     
     private ActionListener getPreviousAction() {
-        return ae -> {
-            searchCallback.goToPreviousResult();
-            updateNavigationResults();
-        };
+        return ae -> findPrevious();
     }
     
     private ActionListener getNextAction() {
-        return ae -> {
-            searchCallback.goToNextResult();
-            updateNavigationResults();
-        };
+        return ae -> findNext();
     }
     
     private void updateNavigationResults() {
@@ -227,4 +218,5 @@ public class SearchBarPanel extends JPanel {
             updateSearchResults(results);
         }
     }
+    
 }
