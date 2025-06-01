@@ -567,6 +567,62 @@ public class Chrome implements AutoCloseable, IConsoleIO, IContextManager.Contex
     }
 
     /**
+     * Creates a searchable content panel with a MarkdownOutputPanel and integrated search bar.
+     * This is shared functionality used by both preview windows and detached output windows.
+     *
+     * @param markdownPanels List of MarkdownOutputPanel instances to make searchable
+     * @param showNavigation Whether to show navigation buttons and result counter
+     * @return A JPanel containing the search bar and content
+     */
+    public static JPanel createSearchableContentPanel(List<MarkdownOutputPanel> markdownPanels, boolean showNavigation) {
+        if (markdownPanels.isEmpty()) {
+            return new JPanel(); // Return empty panel if no content
+        }
+        
+        // If single panel, create a scroll pane for it
+        JComponent contentComponent;
+        if (markdownPanels.size() == 1) {
+            var scrollPane = new JScrollPane(markdownPanels.get(0));
+            scrollPane.setBorder(BorderFactory.createEmptyBorder(10, 10, 10, 10));
+            scrollPane.getVerticalScrollBar().setUnitIncrement(16);
+            contentComponent = scrollPane;
+        } else {
+            // Multiple panels - create container with BoxLayout
+            JPanel messagesContainer = new JPanel();
+            messagesContainer.setLayout(new BoxLayout(messagesContainer, BoxLayout.Y_AXIS));
+            messagesContainer.setBackground(markdownPanels.get(0).getBackground());
+            
+            for (MarkdownOutputPanel panel : markdownPanels) {
+                messagesContainer.add(panel);
+            }
+            
+            var scrollPane = new JScrollPane(messagesContainer);
+            scrollPane.setBorder(BorderFactory.createEmptyBorder(10, 10, 10, 10));
+            scrollPane.getVerticalScrollBar().setUnitIncrement(16);
+            contentComponent = scrollPane;
+        }
+        
+        // Create main content panel to hold search bar and content
+        JPanel contentPanel = new JPanel(new BorderLayout());
+        contentPanel.setBackground(markdownPanels.get(0).getBackground());
+        
+        // Create search callback and search bar panel
+        var searchCallback = new MarkdownPanelSearchCallback(markdownPanels);
+        var searchBarPanel = new SearchBarPanel(searchCallback, true, showNavigation); // showCaseSensitive=true, configurable showNavigation
+        searchCallback.setSearchBarPanel(searchBarPanel);
+        searchBarPanel.setBackground(contentPanel.getBackground());
+        
+        // Add components to content panel
+        contentPanel.add(searchBarPanel, BorderLayout.NORTH);
+        contentPanel.add(contentComponent, BorderLayout.CENTER);
+        
+        // Register Ctrl/Cmd+F to focus search field
+        searchBarPanel.registerSearchFocusShortcut(contentPanel);
+        
+        return contentPanel;
+    }
+
+    /**
      * Creates and shows a standard preview JFrame for a given component.
      * Handles title, default close operation, loading/saving bounds using the "preview" key,
      * and visibility.
@@ -726,21 +782,8 @@ public class Chrome implements AutoCloseable, IConsoleIO, IContextManager.Contex
                     compactionFutures.add(markdownPanel.scheduleCompaction());
                 }
 
-                // Create a main panel to hold search bar and scrollPane
-                JPanel previewContentPanel = new JPanel(new BorderLayout());
-                previewContentPanel.setBackground(messagesContainer.getBackground());
-
-                // Create search callback and search bar panel (without navigation for preview)
-                var searchCallback = new MarkdownPanelSearchCallback(markdownPanels);
-                var searchBarPanel = new SearchBarPanel(searchCallback, false, false); // showCaseSensitive=true, showNavigation=false
-                searchCallback.setSearchBarPanel(searchBarPanel);
-                searchBarPanel.setBackground(previewContentPanel.getBackground());
-
-                previewContentPanel.add(searchBarPanel, BorderLayout.NORTH);
-                previewContentPanel.add(scrollPane, BorderLayout.CENTER);
-                
-                // Register Ctrl/Cmd+F to focus search field
-                searchBarPanel.registerSearchFocusShortcut(previewContentPanel);
+                // Use shared utility method to create searchable content panel (without navigation for preview)
+                JPanel previewContentPanel = createSearchableContentPanel(markdownPanels, false);
 
 
                 // When all panels are compacted, scroll to the top
