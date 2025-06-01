@@ -23,9 +23,14 @@ public class MarkdownPanelSearchCallback implements SearchCallback {
     private String currentSearchTerm = "";
     private List<Integer> allMarkerIds = new ArrayList<>();
     private int currentMarkerIndex = -1;
+    private SearchBarPanel searchBarPanel;
     
     public MarkdownPanelSearchCallback(List<MarkdownOutputPanel> panels) {
         this.panels = panels;
+    }
+    
+    public void setSearchBarPanel(SearchBarPanel panel) {
+        this.searchBarPanel = panel;
     }
     
     @Override
@@ -82,13 +87,20 @@ public class MarkdownPanelSearchCallback implements SearchCallback {
                         // Scroll to the first match
                         scrollToCurrentMarker();
                     }
+                    
+                    // Update the search bar panel with the actual results
+                    if (searchBarPanel != null) {
+                        SwingUtilities.invokeLater(() -> {
+                            searchBarPanel.updateSearchResults(getCurrentResults());
+                        });
+                    }
                 }
             });
         }
         
-        // For now, return a placeholder result. The actual count will be updated when marker IDs are collected.
-        // This is a limitation of the async nature, but the UI will still work.
-        return SearchResults.withMatches(1, 1);
+        // Return "searching" state since the actual search happens asynchronously
+        // The UI should show something like "Searching..." rather than "1 of 1"
+        return SearchResults.noMatches();
     }
     
     @Override

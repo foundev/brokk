@@ -161,7 +161,7 @@ public class SearchBarPanel extends JPanel {
         updateSearchResults(results);
     }
     
-    private void updateSearchResults(SearchResults results) {
+    public void updateSearchResults(SearchResults results) {
         boolean notFound = results == null || results.isEmpty();
         String searchText = searchField.getText();
         
