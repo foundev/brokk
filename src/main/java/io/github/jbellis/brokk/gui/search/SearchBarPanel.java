@@ -207,10 +207,24 @@ public class SearchBarPanel extends JPanel {
     }
     
     private ActionListener getPreviousAction() {
-        return ae -> searchCallback.goToPreviousResult();
+        return ae -> {
+            searchCallback.goToPreviousResult();
+            updateNavigationResults();
+        };
     }
     
     private ActionListener getNextAction() {
-        return ae -> searchCallback.goToNextResult();
+        return ae -> {
+            searchCallback.goToNextResult();
+            updateNavigationResults();
+        };
+    }
+    
+    private void updateNavigationResults() {
+        // For callbacks that support getCurrentResults, update the display
+        if (searchCallback instanceof MarkdownPanelSearchCallback markdownCallback) {
+            SearchResults results = markdownCallback.getCurrentResults();
+            updateSearchResults(results);
+        }
     }
 }

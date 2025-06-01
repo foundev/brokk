@@ -481,7 +481,7 @@ public class MarkdownOutputPanel extends JPanel implements Scrollable, ThemeAwar
         return bubbles.stream().map(Bubble::worker);
     }
 
-    private Stream<IncrementalBlockRenderer> renderers() {
+    public Stream<IncrementalBlockRenderer> renderers() {
         return bubbles.stream().map(Bubble::renderer);
     }
 
@@ -731,6 +731,7 @@ public class MarkdownOutputPanel extends JPanel implements Scrollable, ThemeAwar
     public boolean getScrollableTracksViewportHeight() {
         return false;
     }
+
 
     /**
      * Cleans up resources used by this panel, particularly shutting down background thread pools.
