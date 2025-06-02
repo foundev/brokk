@@ -23,6 +23,8 @@ public class SearchBarPanel extends JPanel {
     private final boolean showCaseSensitive;
     private final boolean showNavigation;
     private JCheckBox caseSensitiveCheckBox;
+    private final int minimumSearchChars; // Default minimum characters to trigger search
+    private boolean validSearchActive = false; // Track if a valid search is currently active
     
     /**
      * Creates a search bar panel with the given callback.
@@ -38,9 +40,14 @@ public class SearchBarPanel extends JPanel {
     }
     
     public SearchBarPanel(SearchCallback searchCallback, boolean showCaseSensitive, boolean showNavigation) {
+        this(searchCallback, showCaseSensitive, showNavigation, 1);
+    }
+    
+    public SearchBarPanel(SearchCallback searchCallback, boolean showCaseSensitive, boolean showNavigation, int minimumSearchChars) {
         this.searchCallback = searchCallback;
         this.showCaseSensitive = showCaseSensitive;
         this.showNavigation = showNavigation;
+        this.minimumSearchChars = Math.max(1, minimumSearchChars); // Ensure at least 1 character
         init();
     }
     
@@ -58,17 +65,28 @@ public class SearchBarPanel extends JPanel {
         searchField.getDocument().addDocumentListener(new DocumentListener() {
             @Override
             public void insertUpdate(DocumentEvent e) {
-                timer.restart();
+                restartTimerIfNeeded();
             }
             
             @Override
             public void removeUpdate(DocumentEvent e) {
-                timer.restart();
+                restartTimerIfNeeded();
             }
             
             @Override
             public void changedUpdate(DocumentEvent e) {
-                timer.restart();
+                restartTimerIfNeeded();
+            }
+            
+            private void restartTimerIfNeeded() {
+                String searchText = searchField.getText();
+                
+                // Only restart timer if:
+                // 1. Text is long enough to trigger a search, OR
+                // 2. We have an active search that might need to be cleared
+                if (searchText.length() >= minimumSearchChars || validSearchActive) {
+                    timer.restart();
+                }
             }
         });
         
@@ -168,15 +186,42 @@ public class SearchBarPanel extends JPanel {
     
     public void clearSearch() {
         searchField.setText("");
-        searchCallback.stopSearch();
+        if (validSearchActive) {
+            searchCallback.stopSearch();
+            validSearchActive = false;
+        }
         searchResult.setIcon(null);
         searchResult.setText("");
     }
     
-    
     public void performSearch() {
-        SearchResults results = searchCallback.performSearch(getCommand());
-        updateSearchResults(results);
+        String searchText = searchField.getText();
+        
+        // Only perform search if the text meets minimum length requirement
+        if (searchText.length() >= minimumSearchChars) {
+            SearchResults results = searchCallback.performSearch(getCommand());
+            updateSearchResults(results);
+            validSearchActive = true;
+        } else if (!searchText.isEmpty()) {
+            if (validSearchActive) {
+                searchCallback.stopSearch();
+                validSearchActive = false;
+            }
+            searchResult.setText("Enter at least " + minimumSearchChars + " characters to search");
+            // Reset any error color
+            Color originalColor = (Color) searchField.getClientProperty(CP_FOREGROUND);
+            if (originalColor != null) {
+                searchField.setForeground(originalColor);
+                searchField.putClientProperty(CP_FOREGROUND, null);
+            }
+        } else {
+            // Empty text - clear search only if a valid search was active
+            if (validSearchActive) {
+                searchCallback.stopSearch();
+                validSearchActive = false;
+            }
+            searchResult.setText("");
+        }
     }
     
     public void updateSearchResults(SearchResults results) {
