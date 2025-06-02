@@ -535,4 +535,48 @@ public final class IncrementalBlockRenderer {
     public java.util.Set<Integer> getIndexedMarkerIds() {
         return java.util.Set.copyOf(markerIndex.keySet());
     }
+    
+    /**
+     * Updates the style of a specific marker by its ID.
+     * This method performs in-place DOM manipulation to avoid regenerating all marker IDs.
+     */
+    public void updateMarkerStyle(int markerId, boolean isCurrent) {
+        assert SwingUtilities.isEventDispatchThread();
+        Optional<JComponent> component = findByMarkerId(markerId);
+        
+        if (component.isEmpty()) {
+            logger.debug("updateMarkerStyle: Marker ID {} not found", markerId);
+            return;
+        }
+        
+        JComponent comp = component.get();
+        String html = extractHtmlFromComponent(comp);
+        if (html == null || html.isEmpty()) {
+            logger.debug("updateMarkerStyle: No HTML content found in component for marker ID {}", markerId);
+            return;
+        }
+        
+        // Find and update the span with the specific marker ID
+        String pattern = "(<span[^>]*data-brokk-id\\s*=\\s*\"" + markerId + "\"[^>]*)(style\\s*=\\s*\"[^\"]*\")?([^>]*>)";
+        String newStyle = isCurrent 
+            ? "style=\"background-color:#ff9500; color:black; outline:2px solid #ff6600; border-radius:2px;\""
+            : "style=\"background-color:yellow; color:black;\"";
+            
+        String updatedHtml = html.replaceAll(pattern, "$1" + newStyle + "$3");
+        
+        if (!updatedHtml.equals(html)) {
+            // Update the component with the new HTML
+            if (comp instanceof javax.swing.JEditorPane editorPane) {
+                editorPane.setText(updatedHtml);
+                logger.debug("updateMarkerStyle: Updated marker ID {} style, isCurrent={}", markerId, isCurrent);
+            } else if (comp instanceof javax.swing.JLabel label) {
+                label.setText(updatedHtml);
+                logger.debug("updateMarkerStyle: Updated marker ID {} style in label, isCurrent={}", markerId, isCurrent);
+            }
+            comp.revalidate();
+            comp.repaint();
+        } else {
+            logger.debug("updateMarkerStyle: No style change needed for marker ID {}", markerId);
+        }
+    }
 }

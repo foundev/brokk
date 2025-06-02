@@ -19,6 +19,9 @@ public final class TextNodeMarkerCustomizer implements HtmlCustomizer {
     private final Pattern pattern;
     private final String wrapperStart;
     private final String wrapperEnd;
+    private final Integer currentMarkerId;
+    private final String currentMatchWrapperStart;
+    private final String currentMatchWrapperEnd;
 
     /**
      * Tags inside which we deliberately skip highlighting.
@@ -58,6 +61,27 @@ public final class TextNodeMarkerCustomizer implements HtmlCustomizer {
                                     boolean wholeWord,
                                     String wrapperStart,
                                     String wrapperEnd) {
+        this(term, caseSensitive, wholeWord, wrapperStart, wrapperEnd, null, null, null);
+    }
+
+    /**
+     * @param term                      the term to highlight (must not be empty)
+     * @param caseSensitive            true if the match should be case-sensitive
+     * @param wholeWord                true to require word boundaries around the term
+     * @param wrapperStart             snippet inserted before the match (may contain HTML)
+     * @param wrapperEnd               snippet inserted after  the match (may contain HTML)
+     * @param currentMarkerId          the marker ID that should be highlighted differently (nullable)
+     * @param currentMatchWrapperStart snippet inserted before the current match (nullable)
+     * @param currentMatchWrapperEnd   snippet inserted after the current match (nullable)
+     */
+    public TextNodeMarkerCustomizer(String term,
+                                    boolean caseSensitive,
+                                    boolean wholeWord,
+                                    String wrapperStart,
+                                    String wrapperEnd,
+                                    Integer currentMarkerId,
+                                    String currentMatchWrapperStart,
+                                    String currentMatchWrapperEnd) {
         Objects.requireNonNull(term, "term");
         Objects.requireNonNull(wrapperStart, "wrapperStart");
         Objects.requireNonNull(wrapperEnd, "wrapperEnd");
@@ -66,6 +90,9 @@ public final class TextNodeMarkerCustomizer implements HtmlCustomizer {
         }
         this.wrapperStart = wrapperStart;
         this.wrapperEnd = wrapperEnd;
+        this.currentMarkerId = currentMarkerId;
+        this.currentMatchWrapperStart = currentMatchWrapperStart;
+        this.currentMatchWrapperEnd = currentMatchWrapperEnd;
 
         int flags = caseSensitive ? 0 : Pattern.CASE_INSENSITIVE | Pattern.UNICODE_CASE;
         var regex = Pattern.quote(term);
@@ -126,13 +153,25 @@ public final class TextNodeMarkerCustomizer implements HtmlCustomizer {
                     pieces.add(new TextNode(text.substring(last, start)));
                 }
                 String match = text.substring(start, end);
-                String snippetHtml = wrapperStart + match + wrapperEnd;
+                
+                // Generate the marker ID for this match
+                int markerId = ID_GEN.getAndIncrement();
+                
+                // Determine which wrapper to use based on whether this is the current match
+                String wrapStart = wrapperStart;
+                String wrapEnd = wrapperEnd;
+                if (currentMarkerId != null && currentMarkerId.equals(markerId) 
+                    && currentMatchWrapperStart != null && currentMatchWrapperEnd != null) {
+                    wrapStart = currentMatchWrapperStart;
+                    wrapEnd = currentMatchWrapperEnd;
+                }
+                
+                String snippetHtml = wrapStart + match + wrapEnd;
                 var fragment = Jsoup.parseBodyFragment(snippetHtml).body().childNodes();
                 for (Node fragNode : fragment) {
                     if (fragNode instanceof Element fragEl) {
                         fragEl.attr(BROKK_MARKER_ATTR, "1");
-                        fragEl.attr(BROKK_ID_ATTR,
-                                    Integer.toString(ID_GEN.getAndIncrement()));
+                        fragEl.attr(BROKK_ID_ATTR, Integer.toString(markerId));
                     }
                 }
                 pieces.addAll(fragment);
