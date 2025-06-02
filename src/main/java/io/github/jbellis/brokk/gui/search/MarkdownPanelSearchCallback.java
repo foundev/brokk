@@ -2,6 +2,7 @@ package io.github.jbellis.brokk.gui.search;
 
 import io.github.jbellis.brokk.gui.mop.MarkdownOutputPanel;
 import io.github.jbellis.brokk.gui.mop.stream.HtmlCustomizer;
+import io.github.jbellis.brokk.gui.mop.stream.IncrementalBlockRenderer;
 import io.github.jbellis.brokk.gui.mop.stream.TextNodeMarkerCustomizer;
 
 import javax.swing.*;
@@ -75,15 +76,10 @@ public class MarkdownPanelSearchCallback implements SearchCallback {
             panel.setHtmlCustomizerWithCallback(searchCustomizer, () -> {
                 // This runs after each panel's customizer is applied
                 if (processedCount.incrementAndGet() == panelCount) {
-                    // All panels processed, now collect marker IDs
-                    logger.debug("All panels processed, collecting marker IDs");
-                    for (MarkdownOutputPanel p : panels) {
-                        p.renderers().forEach(renderer -> {
-                            var markerIds = renderer.getIndexedMarkerIds();
-                            logger.debug("Renderer has {} marker IDs: {}", markerIds.size(), markerIds);
-                            allMarkerIds.addAll(markerIds);
-                        });
-                    }
+                    // All panels processed, now collect marker IDs in visual order
+                    logger.debug("All panels processed, collecting marker IDs in visual order");
+                    allMarkerIds.clear();
+                    collectMarkerIdsInVisualOrder();
                     
                     logger.debug("Total marker IDs found: {}", allMarkerIds.size());
                     
@@ -259,6 +255,61 @@ public class MarkdownPanelSearchCallback implements SearchCallback {
         allMarkerIds.clear();
         currentMarkerIndex = -1;
         previousHighlightedMarkerId = null;
+    }
+    
+    /**
+     * Collects marker IDs from all panels and renderers in visual order (top to bottom).
+     * This ensures that search navigation follows the natural reading order of the document.
+     */
+    private void collectMarkerIdsInVisualOrder() {
+        // Helper class to track marker position context
+        record MarkerContext(int markerId, int panelIndex, int rendererIndex) {}
+        
+        List<MarkerContext> markerContexts = new ArrayList<>();
+        
+        // Collect markers with their position context
+        for (int panelIndex = 0; panelIndex < panels.size(); panelIndex++) {
+            MarkdownOutputPanel panel = panels.get(panelIndex);
+            List<IncrementalBlockRenderer> rendererList = panel.renderers().toList();
+            
+            for (int rendererIndex = 0; rendererIndex < rendererList.size(); rendererIndex++) {
+                IncrementalBlockRenderer renderer = rendererList.get(rendererIndex);
+                var markerIds = renderer.getIndexedMarkerIds();
+                
+                logger.debug("Panel {} renderer {} has {} marker IDs: {}", 
+                           panelIndex, rendererIndex, markerIds.size(), markerIds);
+                
+                // Convert marker IDs to contexts for sorting
+                for (int markerId : markerIds) {
+                    markerContexts.add(new MarkerContext(markerId, panelIndex, rendererIndex));
+                }
+            }
+        }
+        
+        // Sort by visual position: panel index first, then renderer index, then marker ID
+        // The marker ID acts as a tiebreaker for markers within the same renderer,
+        // maintaining the natural document order since IDs are generated sequentially
+        markerContexts.sort((a, b) -> {
+            if (a.panelIndex != b.panelIndex) {
+                return Integer.compare(a.panelIndex, b.panelIndex);
+            }
+            if (a.rendererIndex != b.rendererIndex) {
+                return Integer.compare(a.rendererIndex, b.rendererIndex);
+            }
+            return Integer.compare(a.markerId, b.markerId);
+        });
+        
+        // Extract the sorted marker IDs
+        allMarkerIds.clear();
+        for (MarkerContext context : markerContexts) {
+            allMarkerIds.add(context.markerId);
+        }
+        
+        logger.debug("Collected {} marker IDs in visual order", allMarkerIds.size());
+        if (logger.isDebugEnabled() && !allMarkerIds.isEmpty()) {
+            logger.debug("First 5 marker IDs: {}", 
+                       allMarkerIds.subList(0, Math.min(5, allMarkerIds.size())));
+        }
     }
     
     public String getCurrentSearchTerm() {
