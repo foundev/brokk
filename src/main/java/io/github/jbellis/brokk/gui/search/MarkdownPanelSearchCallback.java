@@ -92,11 +92,22 @@ public class MarkdownPanelSearchCallback implements SearchCallback {
                         // Scroll to the first match
                         scrollToCurrentMarker();
                     } else {
-                        // No matches found - clear any previous highlighting
-                        logger.debug("No matches found for term '{}', clearing previous highlights", finalSearchTerm);
+                        // No matches found - clear search state and highlighting, then scroll to top
+                        logger.debug("No matches found for term '{}', stopping search and clearing highlights", finalSearchTerm);
+                        
+                        // Clear search state first
+                        currentSearchTerm = "";
+                        allMarkerIds.clear();
+                        currentMarkerIndex = -1;
+                        previousHighlightedMarkerId = null;
+                        
+                        // Clear highlighting from all panels
                         for (MarkdownOutputPanel p : panels) {
                             p.setHtmlCustomizer(HtmlCustomizer.DEFAULT);
                         }
+                        
+                        // Scroll to top when no matches found
+                        scrollToTop();
                     }
                     
                     // Update the search bar panel with the actual results
@@ -227,11 +238,24 @@ public class MarkdownPanelSearchCallback implements SearchCallback {
                                 // Convert bounds to viewport coordinates if needed
                                 bounds = SwingUtilities.convertRectangle(comp.getParent(), bounds, scrollPane.getViewport().getView());
                             }
-                            // Adjust to show some context around the match
-                            bounds.y = Math.max(0, bounds.y - 50);
-                            bounds.height += 100;
-                            scrollPane.getViewport().scrollRectToVisible(bounds);
-                            logger.debug("Scrolled to bounds: {}", bounds);
+                            
+                            // Position the found marker near the top of the viewport for better context
+                            JViewport viewport = scrollPane.getViewport();
+                            Rectangle viewRect = viewport.getViewRect();
+                            
+                            // Calculate desired position: put the marker about 1/4 down from the top
+                            int desiredY = Math.max(0, bounds.y - (viewRect.height / 4));
+                            
+                            // Ensure we don't scroll past the end of the content
+                            Component view = viewport.getView();
+                            int maxY = Math.max(0, view.getHeight() - viewRect.height);
+                            desiredY = Math.min(desiredY, maxY);
+                            
+                            // Set the viewport position directly for precise control
+                            viewport.setViewPosition(new Point(viewRect.x, desiredY));
+                            
+                            logger.debug("Scrolled to position: y={} (marker bounds: {}, viewport height: {})", 
+                                       desiredY, bounds, viewRect.height);
                             break;
                         }
                         parent = parent.getParent();
@@ -255,6 +279,29 @@ public class MarkdownPanelSearchCallback implements SearchCallback {
         allMarkerIds.clear();
         currentMarkerIndex = -1;
         previousHighlightedMarkerId = null;
+        
+        // Scroll to top after clearing search
+        scrollToTop();
+    }
+    
+    /**
+     * Scrolls all panels to the top.
+     */
+    private void scrollToTop() {
+        SwingUtilities.invokeLater(() -> {
+            for (MarkdownOutputPanel panel : panels) {
+                // Find scroll pane containing this panel
+                Container parent = panel.getParent();
+                while (parent != null) {
+                    if (parent instanceof JScrollPane scrollPane) {
+                        scrollPane.getViewport().setViewPosition(new Point(0, 0));
+                        logger.debug("Scrolled panel to top after clearing search");
+                        break;
+                    }
+                    parent = parent.getParent();
+                }
+            }
+        });
     }
     
     /**
