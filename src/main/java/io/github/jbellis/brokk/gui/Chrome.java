@@ -636,6 +636,10 @@ public class Chrome implements AutoCloseable, IConsoleIO, IContextManager.Contex
     public void showPreviewFrame(ContextManager contextManager, String title, JComponent contentComponent) {
         JFrame previewFrame = newFrame(title);
         previewFrame.setContentPane(contentComponent);
+        previewFrame.setBackground(themeManager != null && themeManager.isDarkTheme()
+                                        ? UIManager.getColor("chat_background")
+                                        : Color.WHITE);
+
         // Set initial default close operation. This will be checked/modified by the WindowListener.
         previewFrame.setDefaultCloseOperation(JFrame.DISPOSE_ON_CLOSE);
 
