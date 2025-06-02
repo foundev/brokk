@@ -826,13 +826,7 @@ public class HistoryOutputPanel extends JPanel {
             add(contentPanel);
             
             // Schedule compaction after everything is set up
-            outputPanel.scheduleCompaction().thenRun(() -> SwingUtilities.invokeLater(() -> {
-                // Find the scroll pane within the content panel to scroll to top
-                Component scrollPane = findScrollPane(contentPanel);
-                if (scrollPane instanceof JScrollPane jsp) {
-                    jsp.getViewport().setViewPosition(new Point(0, 0));
-                }
-            }));
+            outputPanel.scheduleCompaction();
 
             // Load saved size and position, or use defaults
             var bounds = project.getOutputWindowBounds();

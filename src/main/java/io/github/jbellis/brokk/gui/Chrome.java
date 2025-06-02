@@ -823,8 +823,13 @@ public class Chrome implements AutoCloseable, IConsoleIO, IContextManager.Contex
                 // When all panels are compacted, scroll to the top
                 CompletableFuture
                         .allOf(compactionFutures.toArray(CompletableFuture[]::new))
-                        .thenRun(() -> SwingUtilities.invokeLater(() ->
-                                                                          scrollPane.getViewport().setViewPosition(new Point(0, 0))));
+                        .thenRun(() -> SwingUtilities.invokeLater(() -> {
+                            // Find the scroll pane within the searchable content panel
+                            Component foundScrollPane = findScrollPaneIn(previewContentPanel);
+                            if (foundScrollPane instanceof JScrollPane jsp) {
+                                jsp.getViewport().setViewPosition(new Point(0, 0));
+                            }
+                        }));
 
                 showPreviewFrame(contextManager, title, previewContentPanel); // Use new panel with search
                 return;
@@ -1379,5 +1384,22 @@ public class Chrome implements AutoCloseable, IConsoleIO, IContextManager.Contex
     @Override
     public void showMessageDialog(String message, String title, int messageType) {
         JOptionPane.showMessageDialog(frame, message, title, messageType);
+    }
+
+    /**
+     * Helper method to find JScrollPane component within a container
+     */
+    private static Component findScrollPaneIn(Container container) {
+        for (Component comp : container.getComponents()) {
+            if (comp instanceof JScrollPane) {
+                return comp;
+            } else if (comp instanceof Container subContainer) {
+                Component found = findScrollPaneIn(subContainer);
+                if (found != null) {
+                    return found;
+                }
+            }
+        }
+        return null;
     }
 }
