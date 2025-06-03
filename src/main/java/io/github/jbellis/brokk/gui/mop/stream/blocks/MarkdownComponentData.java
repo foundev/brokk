@@ -2,6 +2,8 @@ package io.github.jbellis.brokk.gui.mop.stream.blocks;
 
 import io.github.jbellis.brokk.gui.mop.ThemeColors;
 import io.github.jbellis.brokk.gui.mop.stream.IncrementalBlockRenderer;
+import io.github.jbellis.brokk.difftool.utils.Colors;
+import io.github.jbellis.brokk.difftool.utils.ColorUtil;
 
 import javax.swing.*;
 import javax.swing.text.DefaultCaret;
@@ -70,15 +72,9 @@ public record MarkdownComponentData(int id, String html) implements ComponentDat
         var ss = kit.getStyleSheet();
 
         // Base background and text color
-        var bgColorHex = String.format("#%02x%02x%02x",
-                                       bgColor.getRed(),
-                                       bgColor.getGreen(),
-                                       bgColor.getBlue());
+        var bgColorHex = ColorUtil.toHex(bgColor);
         var textColor = ThemeColors.getColor(isDarkTheme, "chat_text");
-        var textColorHex = String.format("#%02x%02x%02x",
-                                         textColor.getRed(),
-                                         textColor.getGreen(),
-                                         textColor.getBlue());
+        var textColorHex = ColorUtil.toHex(textColor);
         var linkColor = ThemeColors.getColorHex(isDarkTheme, "link_color_hex");
 
         // Define theme-specific colors
@@ -118,6 +114,13 @@ public record MarkdownComponentData(int id, String html) implements ComponentDat
         ss.addRule("td { padding: 8px; }");
         ss.addRule("tr:nth-child(even) { background-color: " + ThemeColors.getColorHex(isDarkTheme, "message_background") + "; }");
         ss.addRule("tr:hover { background-color: " + ThemeColors.getColorHex(isDarkTheme, "chat_background") + "; }");
+        
+        // Search highlighting classes - using same colors as diff tool (Colors.SEARCH and Colors.CURRENT_SEARCH)
+        var searchColorHex = ColorUtil.toHex(Colors.SEARCH);
+        var currentSearchColorHex = ColorUtil.toHex(Colors.CURRENT_SEARCH);
+        
+        ss.addRule(".brokk-search-highlight { background-color: " + searchColorHex + "; color: black; }");
+        ss.addRule(".brokk-search-current { background-color: " + currentSearchColorHex + "; color: black; }");
 
         return htmlPane;
     }

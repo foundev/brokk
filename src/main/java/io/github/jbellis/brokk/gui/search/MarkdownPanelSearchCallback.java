@@ -57,16 +57,13 @@ public class MarkdownPanelSearchCallback implements SearchCallback {
         this.currentCaseSensitive = caseSensitive;
         this.previousHighlightedMarkerId = null;
         
-        // Create search customizer (initially without current match highlighting)
+        // Create search customizer with CSS classes instead of inline styles
         HtmlCustomizer searchCustomizer = new TextNodeMarkerCustomizer(
             finalSearchTerm,
             caseSensitive,
             false,  // don't require whole word matching for better search experience
-            "<span style='background-color:yellow; color:black;'>",
-            "</span>",
-            null,  // No current match initially
-            null,
-            null
+            "<span class=\"brokk-search-highlight\">",
+            "</span>"
         );
         
         // Apply search highlighting to all panels and collect marker IDs

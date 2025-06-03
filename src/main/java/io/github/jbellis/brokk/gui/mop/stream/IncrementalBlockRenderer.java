@@ -24,6 +24,8 @@ import java.awt.Component;
 import java.util.*;
 import java.util.stream.Collectors;
 
+import static java.util.regex.Pattern.*;
+
 /**
  * Renders markdown content incrementally, reusing existing components when possible to minimize flickering
  * and maintain scroll/caret positions during updates.
@@ -481,8 +483,7 @@ public final class IncrementalBlockRenderer {
         if (c instanceof JComponent jc) {
             var html = extractHtmlFromComponent(jc);
             if (html != null && !html.isEmpty()) {
-                var matcher = java.util.regex.Pattern.compile("data-brokk-id\\s*=\\s*\"(\\d+)\"")
-                                                     .matcher(html);
+                var matcher = compile("data-brokk-id\\s*=\\s*\"(\\d+)\"") .matcher(html);
                 boolean foundAny = false;
                 while (matcher.find()) {
                     try {
@@ -510,9 +511,9 @@ public final class IncrementalBlockRenderer {
      * Best-effort extraction of inner HTML/text from known Swing components.
      */
     private static String extractHtmlFromComponent(JComponent jc) {
-        if (jc instanceof javax.swing.JEditorPane jp) {
+        if (jc instanceof JEditorPane jp) {
             return jp.getText();
-        } else if (jc instanceof javax.swing.JLabel lbl) {
+        } else if (jc instanceof JLabel lbl) {
             return lbl.getText();
         }
         return null;
@@ -527,20 +528,20 @@ public final class IncrementalBlockRenderer {
      */
     public java.util.Optional<JComponent> findByMarkerId(int id) {
         assert SwingUtilities.isEventDispatchThread() : "findByMarkerId must be called on EDT";
-        return java.util.Optional.ofNullable(markerIndex.get(id));
+        return Optional.ofNullable(markerIndex.get(id));
     }
 
     /**
      * Returns all marker ids currently known to this renderer.
      */
-    public java.util.Set<Integer> getIndexedMarkerIds() {
+    public Set<Integer> getIndexedMarkerIds() {
         assert SwingUtilities.isEventDispatchThread() : "getIndexedMarkerIds must be called on EDT";
-        return java.util.Set.copyOf(markerIndex.keySet());
+        return Set.copyOf(markerIndex.keySet());
     }
     
     /**
-     * Updates the style of a specific marker by its ID.
-     * This method performs in-place DOM manipulation to avoid regenerating all marker IDs.
+     * Updates the style of a specific marker by its ID using CSS classes.
+     * This method performs regex replacement to avoid regenerating all marker IDs.
      */
     public void updateMarkerStyle(int markerId, boolean isCurrent) {
         assert SwingUtilities.isEventDispatchThread();
@@ -558,27 +559,27 @@ public final class IncrementalBlockRenderer {
             return;
         }
         
-        // Find and update the span with the specific marker ID
-        String pattern = "(<span[^>]*data-brokk-id\\s*=\\s*\"" + markerId + "\"[^>]*)(style\\s*=\\s*\"[^\"]*\")?([^>]*>)";
-        String newStyle = isCurrent 
-            ? "style=\"background-color:#ff9500; color:black; outline:2px solid #ff6600; border-radius:2px;\""
-            : "style=\"background-color:yellow; color:black;\"";
+        // Find and update the span with the specific marker ID - replace class attribute
+        String pattern = "(<span[^>]*data-brokk-id\\s*=\\s*\"" + markerId + "\"[^>]*)(class\\s*=\\s*\"[^\"]*\")?([^>]*>)";
+        String newClass = isCurrent 
+            ? " class=\"brokk-search-current\""
+            : " class=\"brokk-search-highlight\"";
             
-        String updatedHtml = html.replaceAll(pattern, "$1" + newStyle + "$3");
+        String updatedHtml = html.replaceAll(pattern, "$1" + newClass + "$3");
         
         if (!updatedHtml.equals(html)) {
             // Update the component with the new HTML
-            if (comp instanceof javax.swing.JEditorPane editorPane) {
+            if (comp instanceof JEditorPane editorPane) {
                 editorPane.setText(updatedHtml);
-                logger.debug("updateMarkerStyle: Updated marker ID {} style, isCurrent={}", markerId, isCurrent);
-            } else if (comp instanceof javax.swing.JLabel label) {
+                logger.debug("updateMarkerStyle: Updated marker ID {} class, isCurrent={}", markerId, isCurrent);
+            } else if (comp instanceof JLabel label) {
                 label.setText(updatedHtml);
-                logger.debug("updateMarkerStyle: Updated marker ID {} style in label, isCurrent={}", markerId, isCurrent);
+                logger.debug("updateMarkerStyle: Updated marker ID {} class in label, isCurrent={}", markerId, isCurrent);
             }
             comp.revalidate();
             comp.repaint();
         } else {
-            logger.debug("updateMarkerStyle: No style change needed for marker ID {}", markerId);
+            logger.debug("updateMarkerStyle: No class change needed for marker ID {}", markerId);
         }
     }
 }
