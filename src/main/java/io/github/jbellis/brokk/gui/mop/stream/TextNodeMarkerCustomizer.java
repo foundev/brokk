@@ -6,6 +6,7 @@ import org.jsoup.select.NodeTraversor;
 import org.jsoup.select.NodeVisitor;
 
 import java.util.*;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
@@ -19,9 +20,6 @@ public final class TextNodeMarkerCustomizer implements HtmlCustomizer {
     private final Pattern pattern;
     private final String wrapperStart;
     private final String wrapperEnd;
-    private final Integer currentMarkerId;
-    private final String currentMatchWrapperStart;
-    private final String currentMatchWrapperEnd;
 
     /**
      * Tags inside which we deliberately skip highlighting.
@@ -46,8 +44,8 @@ public final class TextNodeMarkerCustomizer implements HtmlCustomizer {
      * We deliberately do not reset between customizer instances because we only
      * need *uniqueness* inside a single JVM session.
      */
-    private static final java.util.concurrent.atomic.AtomicInteger ID_GEN =
-            new java.util.concurrent.atomic.AtomicInteger(1);
+    private static final AtomicInteger ID_GEN =
+            new AtomicInteger(1);
 
     /**
      * @param term          the term to highlight (must not be empty)
@@ -61,27 +59,6 @@ public final class TextNodeMarkerCustomizer implements HtmlCustomizer {
                                     boolean wholeWord,
                                     String wrapperStart,
                                     String wrapperEnd) {
-        this(term, caseSensitive, wholeWord, wrapperStart, wrapperEnd, null, null, null);
-    }
-
-    /**
-     * @param term                      the term to highlight (must not be empty)
-     * @param caseSensitive            true if the match should be case-sensitive
-     * @param wholeWord                true to require word boundaries around the term
-     * @param wrapperStart             snippet inserted before the match (may contain HTML)
-     * @param wrapperEnd               snippet inserted after  the match (may contain HTML)
-     * @param currentMarkerId          the marker ID that should be highlighted differently (nullable)
-     * @param currentMatchWrapperStart snippet inserted before the current match (nullable)
-     * @param currentMatchWrapperEnd   snippet inserted after the current match (nullable)
-     */
-    public TextNodeMarkerCustomizer(String term,
-                                    boolean caseSensitive,
-                                    boolean wholeWord,
-                                    String wrapperStart,
-                                    String wrapperEnd,
-                                    Integer currentMarkerId,
-                                    String currentMatchWrapperStart,
-                                    String currentMatchWrapperEnd) {
         Objects.requireNonNull(term, "term");
         Objects.requireNonNull(wrapperStart, "wrapperStart");
         Objects.requireNonNull(wrapperEnd, "wrapperEnd");
@@ -90,9 +67,6 @@ public final class TextNodeMarkerCustomizer implements HtmlCustomizer {
         }
         this.wrapperStart = wrapperStart;
         this.wrapperEnd = wrapperEnd;
-        this.currentMarkerId = currentMarkerId;
-        this.currentMatchWrapperStart = currentMatchWrapperStart;
-        this.currentMatchWrapperEnd = currentMatchWrapperEnd;
 
         int flags = caseSensitive ? 0 : Pattern.CASE_INSENSITIVE | Pattern.UNICODE_CASE;
         var regex = Pattern.quote(term);
@@ -142,12 +116,11 @@ public final class TextNodeMarkerCustomizer implements HtmlCustomizer {
             }
 
             String text = tn.getWholeText();
+            // Quick check if there's anything to highlight
+            if (!pattern.matcher(text).find()) return; // nothing to highlight
+            
+            // Create a new matcher for the actual highlighting process
             Matcher m = pattern.matcher(text);
-            boolean found = m.find();
-            if (!found) return; // nothing to highlight
-
-            // Reset matcher to start from beginning since we called find() above
-            m.reset();
             
             List<Node> pieces = new ArrayList<>();
             int last = 0;
@@ -161,16 +134,8 @@ public final class TextNodeMarkerCustomizer implements HtmlCustomizer {
                 // Generate the marker ID for this match
                 int markerId = ID_GEN.getAndIncrement();
                 
-                // Determine which wrapper to use based on whether this is the current match
-                String wrapStart = wrapperStart;
-                String wrapEnd = wrapperEnd;
-                if (currentMarkerId != null && currentMarkerId.equals(markerId) 
-                    && currentMatchWrapperStart != null && currentMatchWrapperEnd != null) {
-                    wrapStart = currentMatchWrapperStart;
-                    wrapEnd = currentMatchWrapperEnd;
-                }
-                
-                String snippetHtml = wrapStart + match + wrapEnd;
+                // Use the provided wrappers
+                var snippetHtml  = wrapperStart + match + wrapperEnd;
                 var fragment = Jsoup.parseBodyFragment(snippetHtml).body().childNodes();
                 for (Node fragNode : fragment) {
                     if (fragNode instanceof Element fragEl) {

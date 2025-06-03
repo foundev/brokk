@@ -24,7 +24,7 @@ public class MarkdownPanelSearchCallback implements SearchCallback {
     private final List<MarkdownOutputPanel> panels;
     private String currentSearchTerm = "";
     private boolean currentCaseSensitive = false;
-    private List<Integer> allMarkerIds = new ArrayList<>();
+    private final List<Integer> allMarkerIds = new ArrayList<>();
     private int currentMarkerIndex = -1;
     private SearchBarPanel searchBarPanel;
     private Integer previousHighlightedMarkerId = null;
@@ -50,23 +50,19 @@ public class MarkdownPanelSearchCallback implements SearchCallback {
         final String finalSearchTerm = searchTerm.trim();
         
         // If only case sensitivity changed, we need to ensure old highlights are cleared
-        boolean onlyCaseChanged = finalSearchTerm.equals(this.currentSearchTerm) && 
-                                 caseSensitive != this.currentCaseSensitive;
+        boolean onlyCaseChanged = isOnlyCaseChange(finalSearchTerm, caseSensitive);
         
         this.currentSearchTerm = finalSearchTerm;
         this.currentCaseSensitive = caseSensitive;
         this.previousHighlightedMarkerId = null;
         
-        // Create search customizer (initially without current match highlighting)
+        // Create search customizer with CSS classes instead of inline styles
         HtmlCustomizer searchCustomizer = new TextNodeMarkerCustomizer(
             finalSearchTerm,
             caseSensitive,
             false,  // don't require whole word matching for better search experience
-            "<span style='background-color:yellow; color:black;'>",
-            "</span>",
-            null,  // No current match initially
-            null,
-            null
+            "<span class=\"" + SearchConstants.SEARCH_HIGHLIGHT_CLASS + "\">",
+            "</span>"
         );
         
         // Apply search highlighting to all panels and collect marker IDs
@@ -386,5 +382,14 @@ public class MarkdownPanelSearchCallback implements SearchCallback {
             return SearchResults.noMatches();
         }
         return SearchResults.withMatches(allMarkerIds.size(), currentMarkerIndex + 1);
+    }
+    
+    /**
+     * Checks if the search change is only a case sensitivity change
+     * (same search term, different case sensitivity setting).
+     */
+    private boolean isOnlyCaseChange(String newTerm, boolean newCaseSensitive) {
+        return newTerm.equals(this.currentSearchTerm) && 
+               newCaseSensitive != this.currentCaseSensitive;
     }
 }
