@@ -116,12 +116,11 @@ public final class TextNodeMarkerCustomizer implements HtmlCustomizer {
             }
 
             String text = tn.getWholeText();
+            // Quick check if there's anything to highlight
+            if (!pattern.matcher(text).find()) return; // nothing to highlight
+            
+            // Create a new matcher for the actual highlighting process
             Matcher m = pattern.matcher(text);
-            boolean found = m.find();
-            if (!found) return; // nothing to highlight
-
-            // Reset matcher to start from beginning since we called find() above
-            m.reset();
             
             List<Node> pieces = new ArrayList<>();
             int last = 0;
