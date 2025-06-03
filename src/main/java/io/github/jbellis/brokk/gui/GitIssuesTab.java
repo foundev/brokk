@@ -40,13 +40,13 @@ public class GitIssuesTab extends JPanel {
     private static final Pattern IMAGE_MARKDOWN_PATTERN = Pattern.compile("!\\[(?:[^\\]]*)\\]\\(([^\\)]+)\\)");
 
     // Issue Table Column Indices
-    private static final int ISSUE_COL_NUMBER    = 0;
-    private static final int ISSUE_COL_TITLE     = 1;
-    private static final int ISSUE_COL_AUTHOR    = 2;
-    private static final int ISSUE_COL_UPDATED   = 3;
-    private static final int ISSUE_COL_LABELS    = 4;
+    private static final int ISSUE_COL_NUMBER = 0;
+    private static final int ISSUE_COL_TITLE = 1;
+    private static final int ISSUE_COL_AUTHOR = 2;
+    private static final int ISSUE_COL_UPDATED = 3;
+    private static final int ISSUE_COL_LABELS = 4;
     private static final int ISSUE_COL_ASSIGNEES = 5;
-    private static final int ISSUE_COL_STATUS    = 6;
+    private static final int ISSUE_COL_STATUS = 6;
 
     private final Chrome chrome;
     private final ContextManager contextManager;
@@ -86,11 +86,11 @@ public class GitIssuesTab extends JPanel {
         this.gitPanel = gitPanel;
         this.gfmRenderer = new GfmRenderer();
         this.httpClient = new OkHttpClient.Builder()
-                                .connectTimeout(5, TimeUnit.SECONDS)
-                                .readTimeout(10, TimeUnit.SECONDS)
-                                .writeTimeout(5, TimeUnit.SECONDS)
-                                .followRedirects(true)
-                                .build();
+                .connectTimeout(5, TimeUnit.SECONDS)
+                .readTimeout(10, TimeUnit.SECONDS)
+                .writeTimeout(5, TimeUnit.SECONDS)
+                .followRedirects(true)
+                .build();
 
         // Split panel with Issues on left (larger) and issue description on right (smaller)
         JSplitPane splitPane = new JSplitPane(JSplitPane.HORIZONTAL_SPLIT);
@@ -146,7 +146,8 @@ public class GitIssuesTab extends JPanel {
 
         // Issue Table
         issueTableModel = new DefaultTableModel(
-                new Object[]{"#", "Title", "Author", "Updated", "Labels", "Assignees", "Status"}, 0) {
+                new Object[]{"#", "Title", "Author", "Updated", "Labels", "Assignees", "Status"}, 0)
+        {
             @Override
             public boolean isCellEditable(int row, int column) {
                 return false;
@@ -499,11 +500,12 @@ public class GitIssuesTab extends JPanel {
                     }
                     labels = issue.getLabels().stream().map(GHLabel::getName).collect(Collectors.joining(", "));
                     assignees = issue.getAssignees().stream()
-                                     .map(GHUser::getLogin) // GHUser.getLogin() does not throw IOException
-                                     .filter(login -> login != null && !login.isBlank())
-                                     .collect(Collectors.joining(", "));
+                            .map(GHUser::getLogin) // GHUser.getLogin() does not throw IOException
+                            .filter(login -> login != null && !login.isBlank())
+                            .collect(Collectors.joining(", "));
                     statusValue = issue.getState().toString();
-                } catch (IOException ex) { // This catch is for outer operations like issue.getUser(), issue.getUpdatedAt() etc.
+                } catch (
+                        IOException ex) { // This catch is for outer operations like issue.getUser(), issue.getUpdatedAt() etc.
                     logger.warn("Could not get metadata for issue #{}", issue.getNumber(), ex);
                 }
 
@@ -550,110 +552,124 @@ public class GitIssuesTab extends JPanel {
         if (selectedRow == -1 || selectedRow >= displayedIssues.size()) {
             return;
         }
-        GHIssue issue = displayedIssues.get(selectedRow); // Effectively final for lambda
+        GHIssue issue = displayedIssues.get(selectedRow);
+        captureIssue(issue);
+    }
 
-        // Use a local final variable for authorLogin to ensure it's effectively final for the lambda
-        String authorLoginValue;
-        try {
-            authorLoginValue = (issue.getUser() != null) ? issue.getUser().getLogin() : "N/A";
-        } catch (java.io.IOException e) {
-            logger.warn("Could not retrieve author for issue #{}", issue.getNumber(), e);
-            authorLoginValue = "N/A"; // Fallback
-        }
-        final String capturedAuthorLogin = authorLoginValue;
-
-        String collectedLabels = issue.getLabels().stream()
-                                   .map(GHLabel::getName)
-                                   .collect(Collectors.joining(", "));
-        final String actualFinalLabelsStr = collectedLabels.isEmpty() ? "None" : collectedLabels;
-
-        String collectedAssignees = issue.getAssignees().stream()
-                                      .map(GHUser::getLogin)
-                                      .collect(Collectors.joining(", "));
-        final String actualFinalAssigneesStr = collectedAssignees.isEmpty() ? "None" : collectedAssignees;
-
-        String originalMarkdownBody = issue.getBody() == null || issue.getBody().isBlank() ? "*No description provided.*" : issue.getBody();
+    private void captureIssue(GHIssue issue) {
+        String capturedAuthorLogin = getAuthorLogin(issue);
+        String actualFinalLabelsStr = getCollectedLabels(issue);
+        String actualFinalAssigneesStr = getCollectedAssignees(issue);
+        String originalMarkdownBody = (issue.getBody() == null || issue.getBody().isBlank()) ? "*No description provided.*" : issue.getBody();
 
         contextManager.submitContextTask("Capturing Issue #" + issue.getNumber(), () -> {
-            List<String> imageReferenceTexts = new ArrayList<>();
-            Matcher matcher = IMAGE_MARKDOWN_PATTERN.matcher(originalMarkdownBody);
-
-            while (matcher.find()) {
-                String imageUrl = matcher.group(1);
-                try {
-                    URI imageUri = new URI(imageUrl);
-                    if (ImageUtil.isImageUri(imageUri, this.httpClient)) {
-                        chrome.systemOutput("Downloading image: " + imageUrl);
-                        Image image = ImageUtil.downloadImage(imageUri, this.httpClient);
-                        if (image != null) {
-                            // Manually create and add the ImageFragment
-                            String imageDescription = "Image from issue #" + issue.getNumber() + ": " + imageUrl;
-                            // Ensure the description is not overly long for typical display, but provides uniqueness
-                            if (imageDescription.length() > 150) { // Truncate if too long
-                                imageDescription = imageDescription.substring(0, 147) + "...";
-                            }
-                            // Add it to the context, providing the description, and get the fragment back
-                            ContextFragment.PasteImageFragment imageFragment = contextManager.addPastedImageFragment(image, imageDescription);
-
-                            imageReferenceTexts.add(String.format("- %s (Fragment ID: %d)", imageFragment.description(), imageFragment.id()));
-                            chrome.systemOutput("Attached image '" + imageFragment.description() + "' to context.");
-                        } else {
-                            logger.warn("Failed to download image identified by ImageUtil: {}", imageUrl);
-                        }
-                    }
-                } catch (URISyntaxException e) {
-                    logger.warn("Invalid image URI syntax in issue body: {}", imageUrl, e);
-                } catch (Exception e) {
-                    logger.error("Unexpected error processing image {}: {}", imageUrl, e.getMessage(), e);
-                }
-            }
-
-            StringBuilder markdownContentBuilder = new StringBuilder();
-            markdownContentBuilder.append(String.format("""
-                # Issue #%d: %s
-
-                **Author:** %s
-                **Status:** %s
-                **URL:** %s
-                **Labels:** %s
-                **Assignees:** %s
-
-                ---
-
-                %s
-                """.stripIndent(),
-                issue.getNumber(),
-                issue.getTitle(),
-                capturedAuthorLogin,
-                issue.getState().toString(),
-                issue.getHtmlUrl().toString(),
-                actualFinalLabelsStr,
-                actualFinalAssigneesStr,
-                originalMarkdownBody
-            ));
-
-            if (!imageReferenceTexts.isEmpty()) {
-                markdownContentBuilder.append("\n\n---\n**Attached Images:**\n");
-                for (String ref : imageReferenceTexts) {
-                    markdownContentBuilder.append(ref).append("\n");
-                }
-            }
-
-            List<ChatMessage> messages = List.of(
-                    new CustomMessage(Map.of("text", markdownContentBuilder.toString()))
-            );
-            String fragmentDescription = String.format("GitHub Issue #%d: %s", issue.getNumber(), issue.getTitle());
-
-            ContextFragment.TaskFragment taskFragment = new ContextFragment.TaskFragment(
-                this.contextManager,
-                messages,
-                fragmentDescription
-            );
-
-            this.contextManager.addVirtualFragment(taskFragment);
+            List<String> imageReferenceTexts = processImages(issue, originalMarkdownBody);
+            String markdownContent = buildMarkdownContent(issue, capturedAuthorLogin, actualFinalLabelsStr, actualFinalAssigneesStr, originalMarkdownBody, imageReferenceTexts);
+            createAndAddFragment(issue, markdownContent);
             String imageMessage = imageReferenceTexts.isEmpty() ? "" : " with " + imageReferenceTexts.size() + " image(s) referenced";
             chrome.systemOutput("Issue #" + issue.getNumber() + " captured to workspace" + imageMessage + ".");
         });
+    }
+
+    private String getAuthorLogin(GHIssue issue) {
+        try {
+            return (issue.getUser() != null) ? issue.getUser().getLogin() : "N/A";
+        } catch (java.io.IOException e) {
+            logger.warn("Could not retrieve author for issue #{}", issue.getNumber(), e);
+            return "N/A"; // Fallback
+        }
+    }
+
+    private String getCollectedLabels(GHIssue issue) {
+        return issue.getLabels().stream()
+                .map(GHLabel::getName)
+                .collect(Collectors.joining(", "));
+    }
+
+    private String getCollectedAssignees(GHIssue issue) {
+        return issue.getAssignees().stream()
+                .map(GHUser::getLogin)
+                .collect(Collectors.joining(", "));
+    }
+
+    private List<String> processImages(GHIssue issue, String originalMarkdownBody) {
+        List<String> imageReferenceTexts = new ArrayList<>();
+        Matcher matcher = IMAGE_MARKDOWN_PATTERN.matcher(originalMarkdownBody);
+
+        while (matcher.find()) {
+            String imageUrl = matcher.group(1);
+            try {
+                URI imageUri = new URI(imageUrl);
+                if (ImageUtil.isImageUri(imageUri, this.httpClient)) {
+                    chrome.systemOutput("Downloading image: " + imageUrl);
+                    Image image = ImageUtil.downloadImage(imageUri, this.httpClient);
+                    if (image != null) {
+                        String imageDescription = "Image from issue #" + issue.getNumber() + ": " + imageUrl;
+                        if (imageDescription.length() > 150) {
+                            imageDescription = imageDescription.substring(0, 147) + "...";
+                        }
+                        ContextFragment.PasteImageFragment imageFragment = contextManager.addPastedImageFragment(image, imageDescription);
+                        imageReferenceTexts.add(String.format("- %s (Fragment ID: %d)", imageFragment.description(), imageFragment.id()));
+                        chrome.systemOutput("Attached image '" + imageFragment.description() + "' to context.");
+                    } else {
+                        logger.warn("Failed to download image identified by ImageUtil: {}", imageUrl);
+                    }
+                }
+            } catch (URISyntaxException e) {
+                logger.warn("Invalid image URI syntax in issue body: {}", imageUrl, e);
+            } catch (Exception e) {
+                logger.error("Unexpected error processing image {}: {}", imageUrl, e.getMessage(), e);
+            }
+        }
+        return imageReferenceTexts;
+    }
+
+    private String buildMarkdownContent(GHIssue issue, String capturedAuthorLogin, String actualFinalLabelsStr, String actualFinalAssigneesStr, String originalMarkdownBody, List<String> imageReferenceTexts) {
+        var markdownContentBuilder = new StringBuilder();
+        markdownContentBuilder.append(String.format("""
+                                                    # Issue #%d: %s
+                                                    
+                                                    **Author:** %s
+                                                    **Status:** %s
+                                                    **URL:** %s
+                                                    **Labels:** %s
+                                                    **Assignees:** %s
+                                                    
+                                                    ---
+                                                    
+                                                    %s
+                                                    """.stripIndent(),
+                                                    issue.getNumber(),
+                                                    issue.getTitle(),
+                                                    capturedAuthorLogin,
+                                                    issue.getState().toString(),
+                                                    issue.getHtmlUrl().toString(),
+                                                    actualFinalLabelsStr.isEmpty() ? "None" : actualFinalLabelsStr,
+                                                    actualFinalAssigneesStr.isEmpty() ? "None" : actualFinalAssigneesStr,
+                                                    originalMarkdownBody
+        ));
+
+        if (!imageReferenceTexts.isEmpty()) {
+            markdownContentBuilder.append("\n\n---\n**Attached Images:**\n");
+            imageReferenceTexts.forEach(ref -> markdownContentBuilder.append(ref).append("\n"));
+        }
+
+        return markdownContentBuilder.toString();
+    }
+
+    private void createAndAddFragment(GHIssue issue, String markdownContent) {
+        List<ChatMessage> messages = List.of(
+                new CustomMessage(Map.of("text", markdownContent))
+        );
+        var fragmentDescription = String.format("GitHub Issue #%d: %s", issue.getNumber(), issue.getTitle());
+
+        var taskFragment = new ContextFragment.TaskFragment(
+                this.contextManager,
+                messages,
+                fragmentDescription
+        );
+
+        this.contextManager.addVirtualFragment(taskFragment);
     }
 
     private void copySelectedIssueDescription() {
