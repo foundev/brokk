@@ -70,31 +70,69 @@ public class ImageUtil {
      * @return true if the URI content type starts with "image/", false otherwise.
      */
     public static boolean isImageUri(URI uri, OkHttpClient client) {
-        Request request = new Request.Builder()
+        // 1. Try HEAD request
+        Request headRequest = new Request.Builder()
                 .url(uri.toString())
-                .head() // Send a HEAD request
+                .head()
                 .build();
 
-        try (Response response = client.newCall(request).execute()) {
+        try (Response response = client.newCall(headRequest).execute()) {
             if (response.isSuccessful()) {
                 String contentType = response.header("Content-Type");
                 if (contentType != null) {
-                    logger.debug("URL {} Content-Type: {}", uri, contentType);
-                    return contentType.toLowerCase().startsWith("image/");
+                    String lowerContentType = contentType.toLowerCase();
+                    logger.debug("HEAD request to {} - Content-Type: {}", uri, contentType);
+                    if (lowerContentType.startsWith("image/") ||
+                        lowerContentType.equals("application/octet-stream") ||
+                        lowerContentType.equals("binary/octet-stream")) {
+                        return true;
+                    }
+                    // If content type is not image-like, but HEAD was successful,
+                    // we might not need to fallback if it's clearly not an image (e.g. text/html).
+                    // However, to be robust against misconfigured servers, we can still fallback.
+                    // For now, if HEAD is successful and Content-Type is definitive (and not image), we can stop.
+                    // If it's ambiguous, the fallback will help.
+                    if (lowerContentType.startsWith("text/") || lowerContentType.startsWith("application/json") || lowerContentType.startsWith("application/xml")) {
+                        logger.debug("HEAD request to {} successful with non-image Content-Type: {}. Not an image.", uri, contentType);
+                        return false;
+                    }
                 } else {
-                    logger.warn("URL {} did not return a Content-Type header.", uri);
+                    logger.warn("HEAD request to {} successful but no Content-Type header. Proceeding to fallback.", uri);
                 }
             } else {
-                logger.warn("HEAD request to {} failed with code: {}", uri, response.code());
+                logger.warn("HEAD request to {} failed with code: {}. Proceeding to fallback.", uri, response.code());
             }
         } catch (IOException e) {
-            // Log common issues like UnknownHostException or ConnectTimeoutException at a less severe level
-            if (e instanceof java.net.UnknownHostException || e instanceof java.net.SocketTimeoutException) {
-                logger.warn("IOException during HEAD request to {}: {}", uri, e.getMessage());
-            } else {
-                logger.error("IOException during HEAD request to {}: {}", uri, e.getMessage());
-            }
+            logger.warn("IOException during HEAD request to {}: {}. Proceeding to fallback.", uri, e.getMessage());
         }
+
+        // 2. Fallback to Range GET request
+        Request rangeGetRequest = new Request.Builder()
+                .url(uri.toString())
+                .addHeader("Range", "bytes=0-1023") // Request first 1KB
+                .get()
+                .build();
+
+        try (Response response = client.newCall(rangeGetRequest).execute()) {
+            // Successful responses for range requests can be 200 (if server ignores Range) or 206 (Partial Content)
+            if (response.isSuccessful()) { // isSuccessful covers 200-299
+                String contentType = response.header("Content-Type");
+                if (contentType != null) {
+                    String lowerContentType = contentType.toLowerCase();
+                    logger.debug("Range GET request to {} - Content-Type: {}", uri, contentType);
+                    return lowerContentType.startsWith("image/")
+                           || lowerContentType.equals("application/octet-stream")
+                           || lowerContentType.equals("binary/octet-stream");
+                } else {
+                    logger.warn("Range GET request to {} successful but no Content-Type header.", uri);
+                }
+            } else {
+                logger.warn("Range GET request to {} failed with code: {}", uri, response.code());
+            }
+        } catch (IOException e) {
+            logger.error("IOException during Range GET request to {}: {}", uri, e.getMessage());
+        }
+
         return false;
     }
 

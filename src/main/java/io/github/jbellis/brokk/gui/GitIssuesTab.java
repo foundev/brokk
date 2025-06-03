@@ -85,12 +85,7 @@ public class GitIssuesTab extends JPanel {
         this.contextManager = contextManager;
         this.gitPanel = gitPanel;
         this.gfmRenderer = new GfmRenderer();
-        this.httpClient = new OkHttpClient.Builder()
-                .connectTimeout(5, TimeUnit.SECONDS)
-                .readTimeout(10, TimeUnit.SECONDS)
-                .writeTimeout(5, TimeUnit.SECONDS)
-                .followRedirects(true)
-                .build();
+        this.httpClient = initializeHttpClient(contextManager, chrome);
 
         // Split panel with Issues on left (larger) and issue description on right (smaller)
         JSplitPane splitPane = new JSplitPane(JSplitPane.HORIZONTAL_SPLIT);
@@ -256,6 +251,24 @@ public class GitIssuesTab extends JPanel {
         });
 
         updateIssueList(); // async
+    }
+
+    private OkHttpClient initializeHttpClient(ContextManager contextManager, Chrome chrome) {
+        OkHttpClient client;
+        try {
+            GitHubAuth auth = GitHubAuth.getOrCreateInstance(contextManager.getProject());
+            client = auth.authenticatedClient();
+        } catch (IOException e) {
+            logger.error("Failed to initialize authenticated GitHub client for GitIssuesTab, falling back to unauthenticated client.", e);
+            client = new OkHttpClient.Builder()
+                    .connectTimeout(5, TimeUnit.SECONDS)
+                    .readTimeout(10, TimeUnit.SECONDS)
+                    .writeTimeout(5, TimeUnit.SECONDS)
+                    .followRedirects(true)
+                    .build();
+            chrome.toolErrorRaw("Could not authenticate with GitHub for image downloads. Private images may not load.");
+        }
+        return client;
     }
 
     private void disableIssueActionsAndClearDetails() {
@@ -564,8 +577,8 @@ public class GitIssuesTab extends JPanel {
 
         contextManager.submitContextTask("Capturing Issue #" + issue.getNumber(), () -> {
             List<String> imageReferenceTexts = processImages(issue, originalMarkdownBody);
-            String markdownContent = buildMarkdownContent(issue, capturedAuthorLogin, actualFinalLabelsStr, actualFinalAssigneesStr, originalMarkdownBody, imageReferenceTexts);
-            createAndAddFragment(issue, markdownContent);
+            List<ChatMessage> messages = buildMarkdownContent(issue, capturedAuthorLogin, actualFinalLabelsStr, actualFinalAssigneesStr, originalMarkdownBody, imageReferenceTexts);
+            createAndAddFragment(issue, messages);
             String imageMessage = imageReferenceTexts.isEmpty() ? "" : " with " + imageReferenceTexts.size() + " image(s) referenced";
             chrome.systemOutput("Issue #" + issue.getNumber() + " captured to workspace" + imageMessage + ".");
         });
@@ -604,12 +617,12 @@ public class GitIssuesTab extends JPanel {
                     chrome.systemOutput("Downloading image: " + imageUrl);
                     Image image = ImageUtil.downloadImage(imageUri, this.httpClient);
                     if (image != null) {
-                        String imageDescription = "Image from issue #" + issue.getNumber() + ": " + imageUrl;
+                        String imageDescription = "Github issue #" + issue.getNumber() + " (" + imageUrl + ")";
                         if (imageDescription.length() > 150) {
                             imageDescription = imageDescription.substring(0, 147) + "...";
                         }
                         ContextFragment.PasteImageFragment imageFragment = contextManager.addPastedImageFragment(image, imageDescription);
-                        imageReferenceTexts.add(String.format("- %s (Fragment ID: %d)", imageFragment.description(), imageFragment.id()));
+                        imageReferenceTexts.add(imageFragment.format());
                         chrome.systemOutput("Attached image '" + imageFragment.description() + "' to context.");
                     } else {
                         logger.warn("Failed to download image identified by ImageUtil: {}", imageUrl);
@@ -624,7 +637,7 @@ public class GitIssuesTab extends JPanel {
         return imageReferenceTexts;
     }
 
-    private String buildMarkdownContent(GHIssue issue, String capturedAuthorLogin, String actualFinalLabelsStr, String actualFinalAssigneesStr, String originalMarkdownBody, List<String> imageReferenceTexts) {
+    private List<ChatMessage> buildMarkdownContent(GHIssue issue, String capturedAuthorLogin, String actualFinalLabelsStr, String actualFinalAssigneesStr, String originalMarkdownBody, List<String> imageReferenceTexts) {
         var markdownContentBuilder = new StringBuilder();
         markdownContentBuilder.append(String.format("""
                                                     # Issue #%d: %s
@@ -649,18 +662,22 @@ public class GitIssuesTab extends JPanel {
                                                     originalMarkdownBody
         ));
 
+        List<ChatMessage> messages = new ArrayList<>();
+        messages.add(new CustomMessage(Map.of("text", markdownContentBuilder.toString())));
+        
         if (!imageReferenceTexts.isEmpty()) {
-            markdownContentBuilder.append("\n\n---\n**Attached Images:**\n");
-            imageReferenceTexts.forEach(ref -> markdownContentBuilder.append(ref).append("\n"));
+            markdownContentBuilder = new StringBuilder();
+            markdownContentBuilder.append("## Referenced ImageFragments\n");
+            StringBuilder finalMarkdownContentBuilder = markdownContentBuilder;
+            imageReferenceTexts.forEach(ref -> finalMarkdownContentBuilder.append(ref).append("\n"));
+            messages.add(new CustomMessage(Map.of("text", finalMarkdownContentBuilder.toString())));
         }
-
-        return markdownContentBuilder.toString();
+        
+        return messages;
     }
 
-    private void createAndAddFragment(GHIssue issue, String markdownContent) {
-        List<ChatMessage> messages = List.of(
-                new CustomMessage(Map.of("text", markdownContent))
-        );
+    private void createAndAddFragment(GHIssue issue, List<ChatMessage> messages) {
+
         var fragmentDescription = String.format("GitHub Issue #%d: %s", issue.getNumber(), issue.getTitle());
 
         var taskFragment = new ContextFragment.TaskFragment(
