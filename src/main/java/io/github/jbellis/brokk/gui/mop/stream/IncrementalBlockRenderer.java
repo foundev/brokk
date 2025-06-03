@@ -23,6 +23,7 @@ import org.jsoup.nodes.Node;
 import javax.swing.*;
 import java.awt.Component;
 import java.util.*;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 
@@ -51,7 +52,7 @@ public final class IncrementalBlockRenderer {
     private final Map<Integer, Reconciler.BlockEntry> registry = new LinkedHashMap<>();
 
     // Marker-id ► Swing component index, rebuilt after every reconcile
-    private final Map<Integer, JComponent> markerIndex = new HashMap<>();
+    private final Map<Integer, JComponent> markerIndex = new ConcurrentHashMap<>();
     
     // Content tracking
     private String lastHtmlFingerprint = "";
