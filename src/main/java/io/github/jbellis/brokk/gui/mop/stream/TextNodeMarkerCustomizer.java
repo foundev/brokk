@@ -95,6 +95,25 @@ public final class TextNodeMarkerCustomizer implements HtmlCustomizer {
         if (root == null) {
             return;
         }
+
+        // ------------------------------------------------------------------
+        // 1.  Remove any highlight wrappers left from a previous search.
+        //     We unwrap each element that bears BROKK_MARKER_ATTR by hoisting
+        //     its children into the same position and then deleting the wrapper
+        //     itself.  After this step the DOM contains *no* search markup.
+        // ------------------------------------------------------------------
+        for (var el : root.select("[" + BROKK_MARKER_ATTR + "]")) {
+            // Copy to avoid ConcurrentModificationException while rewriting
+            var children = new ArrayList<Node>(el.childNodes());
+            for (Node child : children) {
+                el.before(child);
+            }
+            el.remove();
+        }
+
+        // ------------------------------------------------------------------
+        // 2.  Add fresh highlights in a single traversal.
+        // ------------------------------------------------------------------
         NodeTraversor.traverse(new Visitor(), root);
     }
 
