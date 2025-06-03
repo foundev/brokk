@@ -189,6 +189,7 @@ public class GitIssuesTab extends JPanel {
         openInBrowserButton.setToolTipText("Open the selected issue in your web browser");
         openInBrowserButton.setEnabled(false);
         openInBrowserButton.addActionListener(e -> openSelectedIssueInBrowser());
+        openInBrowserButton.addActionListener(e -> openSelectedIssueInBrowser());
         issueButtonPanel.add(openInBrowserButton);
         issueButtonPanel.add(Box.createHorizontalStrut(new Constants().H_GAP));
 
@@ -585,14 +586,12 @@ public class GitIssuesTab extends JPanel {
                         Image image = ImageUtil.downloadImage(imageUri, this.httpClient);
                         if (image != null) {
                             // Manually create and add the ImageFragment
-                            String imageDescription = "Image from issue " + issue.getNumber() + ": " + imageUrl;
+                            String imageDescription = "Image from issue #" + issue.getNumber() + ": " + imageUrl;
                             // Ensure the description is not overly long for typical display, but provides uniqueness
                             if (imageDescription.length() > 150) { // Truncate if too long
                                 imageDescription = imageDescription.substring(0, 147) + "...";
                             }
-                            // Use the fully qualified nested class name, assuming ImageFragment is a static nested class of ContextFragment
-                            ContextFragment.ImageFragment imageFragment = new ContextFragment.ImageFragment(contextManager, image, imageDescription);
-                            contextManager.addVirtualFragment(imageFragment); // Add it to the context
+                            contextManager.addPastedImageFragment(image); // Add it to the context
 
                             // Now we have imageFragment.description() and imageFragment.id()
                             imageReferenceTexts.add(String.format("- %s (Fragment ID: %d)", imageFragment.description(), imageFragment.id()));
@@ -655,7 +654,6 @@ public class GitIssuesTab extends JPanel {
             this.contextManager.addVirtualFragment(taskFragment);
             String imageMessage = imageReferenceTexts.isEmpty() ? "" : " with " + imageReferenceTexts.size() + " image(s) referenced";
             chrome.systemOutput("Issue #" + issue.getNumber() + " captured to workspace" + imageMessage + ".");
-            return null; // Explicitly return null for Callable<Void>
         });
     }
 
