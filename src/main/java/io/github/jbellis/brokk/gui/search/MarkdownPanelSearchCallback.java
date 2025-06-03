@@ -10,6 +10,7 @@ import java.awt.*;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
+import java.util.concurrent.atomic.AtomicInteger;
 
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
@@ -47,6 +48,11 @@ public class MarkdownPanelSearchCallback implements SearchCallback {
         }
         
         final String finalSearchTerm = searchTerm.trim();
+        
+        // If only case sensitivity changed, we need to ensure old highlights are cleared
+        boolean onlyCaseChanged = finalSearchTerm.equals(this.currentSearchTerm) && 
+                                 caseSensitive != this.currentCaseSensitive;
+        
         this.currentSearchTerm = finalSearchTerm;
         this.currentCaseSensitive = caseSensitive;
         this.previousHighlightedMarkerId = null;
@@ -69,13 +75,13 @@ public class MarkdownPanelSearchCallback implements SearchCallback {
         
         // Track how many panels need to be processed
         var panelCount = panels.size();
-        var processedCount = new java.util.concurrent.atomic.AtomicInteger(0);
+        var remainingOperations = new AtomicInteger(panelCount);
         
-        // Apply customizer to all panels with callback
+        // Apply customizer to all panels
         for (MarkdownOutputPanel panel : panels) {
-            panel.setHtmlCustomizerWithCallback(searchCustomizer, () -> {
+            Runnable processSearchResults = () -> {
                 // This runs after each panel's customizer is applied
-                if (processedCount.incrementAndGet() == panelCount) {
+                if (remainingOperations.decrementAndGet() == 0) {
                     // All panels processed, now collect marker IDs in visual order
                     logger.debug("All panels processed, collecting marker IDs in visual order");
                     allMarkerIds.clear();
@@ -117,7 +123,19 @@ public class MarkdownPanelSearchCallback implements SearchCallback {
                         });
                     }
                 }
-            });
+            };
+            
+            if (onlyCaseChanged) {
+                // For case-only changes, chain the operations to ensure proper sequencing
+                logger.debug("Case sensitivity changed - clearing old highlights first");
+                panel.setHtmlCustomizerWithCallback(HtmlCustomizer.DEFAULT, () -> {
+                    // After clearing is complete, apply the search customizer
+                    panel.setHtmlCustomizerWithCallback(searchCustomizer, processSearchResults);
+                });
+            } else {
+                // Normal search - just apply the search customizer
+                panel.setHtmlCustomizerWithCallback(searchCustomizer, processSearchResults);
+            }
         }
         
         // Return "searching" state since the actual search happens asynchronously

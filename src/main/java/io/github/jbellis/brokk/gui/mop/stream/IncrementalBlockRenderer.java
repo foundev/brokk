@@ -526,6 +526,7 @@ public final class IncrementalBlockRenderer {
      * Returns the Swing component that displays the given marker id, if any.
      */
     public java.util.Optional<JComponent> findByMarkerId(int id) {
+        assert SwingUtilities.isEventDispatchThread() : "findByMarkerId must be called on EDT";
         return java.util.Optional.ofNullable(markerIndex.get(id));
     }
 
@@ -533,6 +534,7 @@ public final class IncrementalBlockRenderer {
      * Returns all marker ids currently known to this renderer.
      */
     public java.util.Set<Integer> getIndexedMarkerIds() {
+        assert SwingUtilities.isEventDispatchThread() : "getIndexedMarkerIds must be called on EDT";
         return java.util.Set.copyOf(markerIndex.keySet());
     }
     

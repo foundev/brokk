@@ -143,11 +143,15 @@ public final class TextNodeMarkerCustomizer implements HtmlCustomizer {
 
             String text = tn.getWholeText();
             Matcher m = pattern.matcher(text);
-            if (!m.find()) return; // nothing to highlight
+            boolean found = m.find();
+            if (!found) return; // nothing to highlight
 
+            // Reset matcher to start from beginning since we called find() above
+            m.reset();
+            
             List<Node> pieces = new ArrayList<>();
             int last = 0;
-            do {
+            while (m.find()) {
                 int start = m.start(), end = m.end();
                 if (start > last) {
                     pieces.add(new TextNode(text.substring(last, start)));
@@ -176,7 +180,7 @@ public final class TextNodeMarkerCustomizer implements HtmlCustomizer {
                 }
                 pieces.addAll(fragment);
                 last = end;
-            } while (m.find());
+            }
 
             if (last < text.length()) {
                 pieces.add(new TextNode(text.substring(last)));
