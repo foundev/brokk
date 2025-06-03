@@ -21,6 +21,10 @@ import org.apache.logging.log4j.Logger;
 public class MarkdownPanelSearchCallback implements SearchCallback {
     private static final Logger logger = LogManager.getLogger(MarkdownPanelSearchCallback.class);
     
+    // Constants for configuration
+    private static final double SCROLL_POSITION_RATIO = 0.25; // Position marker 1/4 from top of viewport
+    private static final boolean REQUIRE_WHOLE_WORD = false; // Don't require whole word matching for better search experience
+    
     private final List<MarkdownOutputPanel> panels;
     private String currentSearchTerm = "";
     private boolean currentCaseSensitive = false;
@@ -60,7 +64,7 @@ public class MarkdownPanelSearchCallback implements SearchCallback {
         HtmlCustomizer searchCustomizer = new TextNodeMarkerCustomizer(
             finalSearchTerm,
             caseSensitive,
-            false,  // don't require whole word matching for better search experience
+            REQUIRE_WHOLE_WORD,
             "<span class=\"" + SearchConstants.SEARCH_HIGHLIGHT_CLASS + "\">",
             "</span>"
         );
@@ -78,60 +82,11 @@ public class MarkdownPanelSearchCallback implements SearchCallback {
             Runnable processSearchResults = () -> {
                 // This runs after each panel's customizer is applied
                 if (remainingOperations.decrementAndGet() == 0) {
-                    // All panels processed, now collect marker IDs in visual order
-                    logger.debug("All panels processed, collecting marker IDs in visual order");
-                    allMarkerIds.clear();
-                    collectMarkerIdsInVisualOrder();
-                    
-                    logger.debug("Total marker IDs found: {}", allMarkerIds.size());
-                    
-                    // Reset current position
-                    currentMarkerIndex = allMarkerIds.isEmpty() ? -1 : 0;
-                    
-                    if (!allMarkerIds.isEmpty()) {
-                        // Highlight the first match as current
-                        updateCurrentMatchHighlighting();
-                        // Scroll to the first match
-                        scrollToCurrentMarker();
-                    } else {
-                        // No matches found - clear search state and highlighting, then scroll to top
-                        logger.debug("No matches found for term '{}', stopping search and clearing highlights", finalSearchTerm);
-                        
-                        // Clear search state first
-                        currentSearchTerm = "";
-                        allMarkerIds.clear();
-                        currentMarkerIndex = -1;
-                        previousHighlightedMarkerId = null;
-                        
-                        // Clear highlighting from all panels
-                        for (MarkdownOutputPanel p : panels) {
-                            p.setHtmlCustomizer(HtmlCustomizer.DEFAULT);
-                        }
-                        
-                        // Scroll to top when no matches found
-                        scrollToTop();
-                    }
-                    
-                    // Update the search bar panel with the actual results
-                    if (searchBarPanel != null) {
-                        SwingUtilities.invokeLater(() -> {
-                            searchBarPanel.updateSearchResults(getCurrentResults());
-                        });
-                    }
+                    handleSearchComplete(finalSearchTerm);
                 }
             };
             
-            if (onlyCaseChanged) {
-                // For case-only changes, chain the operations to ensure proper sequencing
-                logger.debug("Case sensitivity changed - clearing old highlights first");
-                panel.setHtmlCustomizerWithCallback(HtmlCustomizer.DEFAULT, () -> {
-                    // After clearing is complete, apply the search customizer
-                    panel.setHtmlCustomizerWithCallback(searchCustomizer, processSearchResults);
-                });
-            } else {
-                // Normal search - just apply the search customizer
-                panel.setHtmlCustomizerWithCallback(searchCustomizer, processSearchResults);
-            }
+            applySearchToPanel(panel, searchCustomizer, processSearchResults, onlyCaseChanged);
         }
         
         // Return "searching" state since the actual search happens asynchronously
@@ -141,54 +96,37 @@ public class MarkdownPanelSearchCallback implements SearchCallback {
     
     @Override
     public void goToPreviousResult() {
-        if (allMarkerIds.isEmpty()) {
-            logger.debug("goToPreviousResult: No search results to navigate");
-            return;
-        }
-        
-        int previousIndex = currentMarkerIndex;
-        // Move to previous match (wrap around to end if at beginning)
-        currentMarkerIndex = (currentMarkerIndex - 1 + allMarkerIds.size()) % allMarkerIds.size();
-        
-        int currentMarkerId = allMarkerIds.get(currentMarkerIndex);
-        logger.info("goToPreviousResult: Moving from index {} to {} (marker ID: {})", 
-                    previousIndex, currentMarkerIndex, currentMarkerId);
-        
-        updateCurrentMatchHighlighting();
-        scrollToCurrentMarker();
-        
-        // Update the search bar panel
-        if (searchBarPanel != null) {
-            SwingUtilities.invokeLater(() -> {
-                searchBarPanel.updateSearchResults(getCurrentResults());
-            });
-        }
+        navigateToResult(-1, "goToPreviousResult");
     }
     
     @Override
     public void goToNextResult() {
-        if (allMarkerIds.isEmpty()) {
-            logger.debug("goToNextResult: No search results to navigate");
+        navigateToResult(1, "goToNextResult");
+    }
+    
+    /**
+     * Unified navigation method for moving between search results.
+     * 
+     * @param direction The direction to navigate: 1 for next, -1 for previous
+     * @param methodName The name of the calling method for logging
+     */
+    private void navigateToResult(int direction, String methodName) {
+        if (!canNavigate()) {
+            logger.debug("{}: No search results to navigate", methodName);
             return;
         }
         
         int previousIndex = currentMarkerIndex;
-        // Move to next match (wrap around to beginning if at end)
-        currentMarkerIndex = (currentMarkerIndex + 1) % allMarkerIds.size();
+        // Move to next/previous match with proper wrap-around
+        currentMarkerIndex = Math.floorMod(currentMarkerIndex + direction, allMarkerIds.size());
         
         int currentMarkerId = allMarkerIds.get(currentMarkerIndex);
-        logger.info("goToNextResult: Moving from index {} to {} (marker ID: {})", 
-                    previousIndex, currentMarkerIndex, currentMarkerId);
+        logger.info("{}: Moving from index {} to {} (marker ID: {})", 
+                    methodName, previousIndex, currentMarkerIndex, currentMarkerId);
         
         updateCurrentMatchHighlighting();
         scrollToCurrentMarker();
-        
-        // Update the search bar panel
-        if (searchBarPanel != null) {
-            SwingUtilities.invokeLater(() -> {
-                searchBarPanel.updateSearchResults(getCurrentResults());
-            });
-        }
+        notifySearchBarPanel();
     }
     
     private void updateCurrentMatchHighlighting() {
@@ -257,8 +195,8 @@ public class MarkdownPanelSearchCallback implements SearchCallback {
                             JViewport viewport = scrollPane.getViewport();
                             Rectangle viewRect = viewport.getViewRect();
                             
-                            // Calculate desired position: put the marker about 1/4 down from the top
-                            int desiredY = Math.max(0, bounds.y - (viewRect.height / 4));
+                            // Calculate desired position: put the marker at configured position from the top
+                            int desiredY = Math.max(0, bounds.y - (int)(viewRect.height * SCROLL_POSITION_RATIO));
                             
                             // Ensure we don't scroll past the end of the content
                             Component view = viewport.getView();
@@ -391,5 +329,96 @@ public class MarkdownPanelSearchCallback implements SearchCallback {
     private boolean isOnlyCaseChange(String newTerm, boolean newCaseSensitive) {
         return newTerm.equals(this.currentSearchTerm) && 
                newCaseSensitive != this.currentCaseSensitive;
+    }
+    
+    /**
+     * Checks if navigation to search results is possible.
+     */
+    private boolean canNavigate() {
+        return !allMarkerIds.isEmpty() && currentMarkerIndex >= 0;
+    }
+    
+    /**
+     * Applies search customizer to a panel, handling case-only changes appropriately.
+     */
+    private void applySearchToPanel(MarkdownOutputPanel panel, HtmlCustomizer searchCustomizer, 
+                                   Runnable onComplete, boolean onlyCaseChanged) {
+        if (onlyCaseChanged) {
+            // For case-only changes, chain the operations to ensure proper sequencing
+            logger.debug("Case sensitivity changed - clearing old highlights first");
+            panel.setHtmlCustomizerWithCallback(HtmlCustomizer.DEFAULT, () -> {
+                // After clearing is complete, apply the search customizer
+                panel.setHtmlCustomizerWithCallback(searchCustomizer, onComplete);
+            });
+        } else {
+            // Normal search - just apply the search customizer
+            panel.setHtmlCustomizerWithCallback(searchCustomizer, onComplete);
+        }
+    }
+    
+    /**
+     * Handles the completion of search processing across all panels.
+     */
+    private void handleSearchComplete(String finalSearchTerm) {
+        // All panels processed, now collect marker IDs in visual order
+        logger.debug("All panels processed, collecting marker IDs in visual order");
+        allMarkerIds.clear();
+        collectMarkerIdsInVisualOrder();
+        
+        logger.debug("Total marker IDs found: {}", allMarkerIds.size());
+        
+        // Reset current position
+        currentMarkerIndex = allMarkerIds.isEmpty() ? -1 : 0;
+        
+        if (!allMarkerIds.isEmpty()) {
+            handleSearchResults();
+        } else {
+            handleNoSearchResults(finalSearchTerm);
+        }
+        
+        notifySearchBarPanel();
+    }
+    
+    /**
+     * Handles the case when search results are found.
+     */
+    private void handleSearchResults() {
+        // Highlight the first match as current
+        updateCurrentMatchHighlighting();
+        // Scroll to the first match
+        scrollToCurrentMarker();
+    }
+    
+    /**
+     * Handles the case when no search results are found.
+     */
+    private void handleNoSearchResults(String searchTerm) {
+        // No matches found - clear search state and highlighting, then scroll to top
+        logger.debug("No matches found for term '{}', stopping search and clearing highlights", searchTerm);
+        
+        // Clear search state first
+        currentSearchTerm = "";
+        allMarkerIds.clear();
+        currentMarkerIndex = -1;
+        previousHighlightedMarkerId = null;
+        
+        // Clear highlighting from all panels
+        for (MarkdownOutputPanel p : panels) {
+            p.setHtmlCustomizer(HtmlCustomizer.DEFAULT);
+        }
+        
+        // Scroll to top when no matches found
+        scrollToTop();
+    }
+    
+    /**
+     * Notifies the search bar panel of current results.
+     */
+    private void notifySearchBarPanel() {
+        if (searchBarPanel != null) {
+            SwingUtilities.invokeLater(() -> {
+                searchBarPanel.updateSearchResults(getCurrentResults());
+            });
+        }
     }
 }
