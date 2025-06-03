@@ -62,7 +62,7 @@ public class MarkdownPanelSearchCallback implements SearchCallback {
             finalSearchTerm,
             caseSensitive,
             false,  // don't require whole word matching for better search experience
-            "<span class=\"brokk-search-highlight\">",
+            "<span class=\"" + SearchConstants.SEARCH_HIGHLIGHT_CLASS + "\">",
             "</span>"
         );
         

@@ -2,6 +2,7 @@ package io.github.jbellis.brokk.gui.mop.stream.blocks;
 
 import io.github.jbellis.brokk.gui.mop.ThemeColors;
 import io.github.jbellis.brokk.gui.mop.stream.IncrementalBlockRenderer;
+import io.github.jbellis.brokk.gui.search.SearchConstants;
 import io.github.jbellis.brokk.difftool.utils.Colors;
 import io.github.jbellis.brokk.difftool.utils.ColorUtil;
 
@@ -119,8 +120,8 @@ public record MarkdownComponentData(int id, String html) implements ComponentDat
         var searchColorHex = ColorUtil.toHex(Colors.SEARCH);
         var currentSearchColorHex = ColorUtil.toHex(Colors.CURRENT_SEARCH);
         
-        ss.addRule(".brokk-search-highlight { background-color: " + searchColorHex + "; color: black; }");
-        ss.addRule(".brokk-search-current { background-color: " + currentSearchColorHex + "; color: black; }");
+        ss.addRule("." + SearchConstants.SEARCH_HIGHLIGHT_CLASS + " { background-color: " + searchColorHex + "; color: black; }");
+        ss.addRule("." + SearchConstants.SEARCH_CURRENT_CLASS + " { background-color: " + currentSearchColorHex + "; color: black; }");
 
         return htmlPane;
     }

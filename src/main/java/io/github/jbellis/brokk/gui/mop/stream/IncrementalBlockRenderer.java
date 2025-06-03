@@ -12,6 +12,7 @@ import io.github.jbellis.brokk.gui.mop.stream.blocks.MarkdownComponentData;
 import io.github.jbellis.brokk.gui.mop.stream.blocks.MarkdownFactory;
 import io.github.jbellis.brokk.gui.mop.stream.flex.BrokkMarkdownExtension;
 import io.github.jbellis.brokk.gui.mop.stream.flex.IdProvider;
+import io.github.jbellis.brokk.gui.search.SearchConstants;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 import org.jsoup.Jsoup;
@@ -22,6 +23,7 @@ import org.jsoup.nodes.Node;
 import javax.swing.*;
 import java.awt.Component;
 import java.util.*;
+import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 
 import static java.util.regex.Pattern.*;
@@ -32,6 +34,9 @@ import static java.util.regex.Pattern.*;
  */
 public final class IncrementalBlockRenderer {
     private static final Logger logger = LogManager.getLogger(IncrementalBlockRenderer.class);
+    
+    // Performance optimization: cached compiled pattern
+    private static final Pattern MARKER_ID_PATTERN = Pattern.compile("data-brokk-id\\s*=\\s*\"(\\d+)\"");
     
     // The root panel that will contain all our content blocks
     private final JPanel root;
@@ -483,7 +488,7 @@ public final class IncrementalBlockRenderer {
         if (c instanceof JComponent jc) {
             var html = extractHtmlFromComponent(jc);
             if (html != null && !html.isEmpty()) {
-                var matcher = compile("data-brokk-id\\s*=\\s*\"(\\d+)\"") .matcher(html);
+                var matcher = MARKER_ID_PATTERN.matcher(html);
                 boolean foundAny = false;
                 while (matcher.find()) {
                     try {
@@ -560,12 +565,13 @@ public final class IncrementalBlockRenderer {
         }
         
         // Find and update the span with the specific marker ID - replace class attribute
-        String pattern = "(<span[^>]*data-brokk-id\\s*=\\s*\"" + markerId + "\"[^>]*)(class\\s*=\\s*\"[^\"]*\")?([^>]*>)";
+        String pattern = "(<span[^>]*?data-brokk-id=\"" + markerId + "\"[^>]*?)(?:\\s+class=\"[^\"]*\")?([^>]*?>)";
+        
         String newClass = isCurrent 
-            ? " class=\"brokk-search-current\""
-            : " class=\"brokk-search-highlight\"";
+            ? " class=\"" + SearchConstants.SEARCH_CURRENT_CLASS + "\""
+            : " class=\"" + SearchConstants.SEARCH_HIGHLIGHT_CLASS + "\"";
             
-        String updatedHtml = html.replaceAll(pattern, "$1" + newClass + "$3");
+        String updatedHtml = html.replaceAll(pattern, "$1" + newClass + "$2");
         
         if (!updatedHtml.equals(html)) {
             // Update the component with the new HTML
