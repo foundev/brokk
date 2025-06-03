@@ -71,7 +71,6 @@ public class MarkdownPanelSearchCallback implements SearchCallback {
         
         // Apply search highlighting to all panels and collect marker IDs
         allMarkerIds.clear();
-        logger.debug("Applying search customizer for term: '{}'", finalSearchTerm);
         
         // Track how many panels need to be processed
         var panelCount = panels.size();
@@ -112,7 +111,6 @@ public class MarkdownPanelSearchCallback implements SearchCallback {
      */
     private void navigateToResult(int direction, String methodName) {
         if (!canNavigate()) {
-            logger.debug("{}: No search results to navigate", methodName);
             return;
         }
         
@@ -121,7 +119,7 @@ public class MarkdownPanelSearchCallback implements SearchCallback {
         currentMarkerIndex = Math.floorMod(currentMarkerIndex + direction, allMarkerIds.size());
         
         int currentMarkerId = allMarkerIds.get(currentMarkerIndex);
-        logger.info("{}: Moving from index {} to {} (marker ID: {})", 
+        logger.debug("{}: Moving from index {} to {} (marker ID: {})", 
                     methodName, previousIndex, currentMarkerIndex, currentMarkerId);
         
         updateCurrentMatchHighlighting();
@@ -135,11 +133,11 @@ public class MarkdownPanelSearchCallback implements SearchCallback {
         }
         
         int currentMarkerId = allMarkerIds.get(currentMarkerIndex);
-        logger.debug("updateCurrentMatchHighlighting: Setting current marker ID to {}", currentMarkerId);
+        logger.trace("updateCurrentMatchHighlighting: Setting current marker ID to {}", currentMarkerId);
         
         // First, clear previous highlighting if it exists
         if (previousHighlightedMarkerId != null) {
-            logger.debug("updateCurrentMatchHighlighting: Clearing previous highlight for marker ID {}", previousHighlightedMarkerId);
+            logger.trace("updateCurrentMatchHighlighting: Clearing previous highlight for marker ID {}", previousHighlightedMarkerId);
             updateMarkerStyleInAllPanels(previousHighlightedMarkerId, false);
         }
         
@@ -176,7 +174,7 @@ public class MarkdownPanelSearchCallback implements SearchCallback {
                 .findFirst();
                 
             if (foundComponent.isPresent()) {
-                logger.debug("Found component for marker ID {}: {}", markerId, foundComponent.get().getClass().getSimpleName());
+                logger.trace("Found component for marker ID {}: {}", markerId, foundComponent.get().getClass().getSimpleName());
                 // Scroll the component into view
                 SwingUtilities.invokeLater(() -> {
                     JComponent comp = foundComponent.get();
@@ -206,7 +204,7 @@ public class MarkdownPanelSearchCallback implements SearchCallback {
                             // Set the viewport position directly for precise control
                             viewport.setViewPosition(new Point(viewRect.x, desiredY));
                             
-                            logger.debug("Scrolled to position: y={} (marker bounds: {}, viewport height: {})", 
+                            logger.trace("Scrolled to position: y={} (marker bounds: {}, viewport height: {})", 
                                        desiredY, bounds, viewRect.height);
                             break;
                         }
@@ -216,13 +214,10 @@ public class MarkdownPanelSearchCallback implements SearchCallback {
                 return; // Found and scrolled to the marker
             }
         }
-        
-        logger.debug("Marker ID {} not found in any renderer", markerId);
     }
     
     @Override
     public void stopSearch() {
-        logger.debug("Stopping search");
         // Clear search highlighting from all panels
         for (MarkdownOutputPanel panel : panels) {
             panel.setHtmlCustomizer(HtmlCustomizer.DEFAULT);
@@ -247,7 +242,6 @@ public class MarkdownPanelSearchCallback implements SearchCallback {
                 while (parent != null) {
                     if (parent instanceof JScrollPane scrollPane) {
                         scrollPane.getViewport().setViewPosition(new Point(0, 0));
-                        logger.debug("Scrolled panel to top after clearing search");
                         break;
                     }
                     parent = parent.getParent();
@@ -275,7 +269,7 @@ public class MarkdownPanelSearchCallback implements SearchCallback {
                 IncrementalBlockRenderer renderer = rendererList.get(rendererIndex);
                 var markerIds = renderer.getIndexedMarkerIds();
                 
-                logger.debug("Panel {} renderer {} has {} marker IDs: {}", 
+                logger.trace("Panel {} renderer {} has {} marker IDs: {}", 
                            panelIndex, rendererIndex, markerIds.size(), markerIds);
                 
                 // Convert marker IDs to contexts for sorting
@@ -304,11 +298,6 @@ public class MarkdownPanelSearchCallback implements SearchCallback {
             allMarkerIds.add(context.markerId);
         }
         
-        logger.debug("Collected {} marker IDs in visual order", allMarkerIds.size());
-        if (logger.isDebugEnabled() && !allMarkerIds.isEmpty()) {
-            logger.debug("First 5 marker IDs: {}", 
-                       allMarkerIds.subList(0, Math.min(5, allMarkerIds.size())));
-        }
     }
     
     public String getCurrentSearchTerm() {
@@ -345,7 +334,6 @@ public class MarkdownPanelSearchCallback implements SearchCallback {
                                    Runnable onComplete, boolean onlyCaseChanged) {
         if (onlyCaseChanged) {
             // For case-only changes, chain the operations to ensure proper sequencing
-            logger.debug("Case sensitivity changed - clearing old highlights first");
             panel.setHtmlCustomizerWithCallback(HtmlCustomizer.DEFAULT, () -> {
                 // After clearing is complete, apply the search customizer
                 panel.setHtmlCustomizerWithCallback(searchCustomizer, onComplete);
@@ -361,11 +349,9 @@ public class MarkdownPanelSearchCallback implements SearchCallback {
      */
     private void handleSearchComplete(String finalSearchTerm) {
         // All panels processed, now collect marker IDs in visual order
-        logger.debug("All panels processed, collecting marker IDs in visual order");
         allMarkerIds.clear();
         collectMarkerIdsInVisualOrder();
         
-        logger.debug("Total marker IDs found: {}", allMarkerIds.size());
         
         // Reset current position
         currentMarkerIndex = allMarkerIds.isEmpty() ? -1 : 0;
@@ -394,7 +380,6 @@ public class MarkdownPanelSearchCallback implements SearchCallback {
      */
     private void handleNoSearchResults(String searchTerm) {
         // No matches found - clear search state and highlighting, then scroll to top
-        logger.debug("No matches found for term '{}', stopping search and clearing highlights", searchTerm);
         
         // Clear search state first
         currentSearchTerm = "";

@@ -194,7 +194,7 @@ public final class IncrementalBlockRenderer {
                 return tnmc.mightMatch(text);
             } catch (Exception e) {
                 // fall through – be conservative
-                logger.debug("wouldAffect: conservative fallback after exception", e);
+                logger.trace("wouldAffect: conservative fallback after exception", e);
             }
         }
         return true; // unknown customizer types => assume yes
@@ -479,9 +479,9 @@ public final class IncrementalBlockRenderer {
     private void rebuildMarkerIndex() {
         assert SwingUtilities.isEventDispatchThread();
         markerIndex.clear();
-        logger.debug("Rebuilding marker index for renderer with {} components", root.getComponentCount());
+        logger.trace("Rebuilding marker index for renderer with {} components", root.getComponentCount());
         walkAndIndex(root);
-        logger.debug("Marker index rebuilt with {} entries", markerIndex.size());
+        logger.trace("Marker index rebuilt with {} entries", markerIndex.size());
     }
 
     private void walkAndIndex(Component c) {
@@ -499,9 +499,6 @@ public final class IncrementalBlockRenderer {
                     } catch (NumberFormatException ignore) {
                         // should never happen – regex enforces digits
                     }
-                }
-                if (foundAny && logger.isDebugEnabled()) {
-                    logger.debug("Component {} contains marker(s)", jc.getClass().getSimpleName());
                 }
             }
         }
@@ -553,14 +550,12 @@ public final class IncrementalBlockRenderer {
         Optional<JComponent> component = findByMarkerId(markerId);
         
         if (component.isEmpty()) {
-            logger.debug("updateMarkerStyle: Marker ID {} not found", markerId);
             return;
         }
         
         JComponent comp = component.get();
         String html = extractHtmlFromComponent(comp);
         if (html == null || html.isEmpty()) {
-            logger.debug("updateMarkerStyle: No HTML content found in component for marker ID {}", markerId);
             return;
         }
         
@@ -577,15 +572,12 @@ public final class IncrementalBlockRenderer {
             // Update the component with the new HTML
             if (comp instanceof JEditorPane editorPane) {
                 editorPane.setText(updatedHtml);
-                logger.debug("updateMarkerStyle: Updated marker ID {} class, isCurrent={}", markerId, isCurrent);
             } else if (comp instanceof JLabel label) {
                 label.setText(updatedHtml);
-                logger.debug("updateMarkerStyle: Updated marker ID {} class in label, isCurrent={}", markerId, isCurrent);
             }
             comp.revalidate();
             comp.repaint();
         } else {
-            logger.debug("updateMarkerStyle: No class change needed for marker ID {}", markerId);
         }
     }
 }
