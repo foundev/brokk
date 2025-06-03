@@ -158,33 +158,40 @@ public class SearchBarPanel extends JPanel {
     }
     
     public SearchCommand getCommand() {
+        assert SwingUtilities.isEventDispatchThread();
         boolean caseSensitive = caseSensitiveCheckBox != null && caseSensitiveCheckBox.isSelected();
         return new SearchCommand(searchField.getText(), caseSensitive);
     }
     
     public String getSearchText() {
+        assert SwingUtilities.isEventDispatchThread();
         return searchField.getText();
     }
     
     public void setSearchText(String text) {
+        assert SwingUtilities.isEventDispatchThread();
         searchField.setText(text);
     }
     
     public void focusSearchField() {
+        assert SwingUtilities.isEventDispatchThread();
         searchField.requestFocusInWindow();
     }
     
     public void findNext() {
+        assert SwingUtilities.isEventDispatchThread();
         searchCallback.goToNextResult();
         updateNavigationResults();
     }
     
     public void findPrevious() {
+        assert SwingUtilities.isEventDispatchThread();
         searchCallback.goToPreviousResult();
         updateNavigationResults();
     }
     
     public void clearSearch() {
+        assert SwingUtilities.isEventDispatchThread();
         searchField.setText("");
         if (validSearchActive) {
             searchCallback.stopSearch();
@@ -195,6 +202,7 @@ public class SearchBarPanel extends JPanel {
     }
     
     public void performSearch() {
+        assert SwingUtilities.isEventDispatchThread();
         String searchText = searchField.getText();
         
         // Only perform search if the text meets minimum length requirement
@@ -225,6 +233,7 @@ public class SearchBarPanel extends JPanel {
     }
     
     public void updateSearchResults(SearchResults results) {
+        assert SwingUtilities.isEventDispatchThread();
         boolean notFound = results == null || results.isEmpty();
         String searchText = searchField.getText();
         
@@ -284,6 +293,7 @@ public class SearchBarPanel extends JPanel {
      * Registers Ctrl/Cmd+F shortcut to focus the search field.
      */
     public void registerSearchFocusShortcut(JComponent targetComponent) {
+        assert SwingUtilities.isEventDispatchThread();
         KeyStroke focusSearchKey = KeyStroke.getKeyStroke(KeyEvent.VK_F, 
             java.awt.Toolkit.getDefaultToolkit().getMenuShortcutKeyMaskEx());
         

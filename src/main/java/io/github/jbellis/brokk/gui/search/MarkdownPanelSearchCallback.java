@@ -38,11 +38,13 @@ public class MarkdownPanelSearchCallback implements SearchCallback {
     }
     
     public void setSearchBarPanel(SearchBarPanel panel) {
+        assert SwingUtilities.isEventDispatchThread();
         this.searchBarPanel = panel;
     }
     
     @Override
     public SearchResults performSearch(SearchCommand command) {
+        assert SwingUtilities.isEventDispatchThread();
         String searchTerm = command.searchText();
         boolean caseSensitive = command.isCaseSensitive();
         
@@ -95,11 +97,13 @@ public class MarkdownPanelSearchCallback implements SearchCallback {
     
     @Override
     public void goToPreviousResult() {
+        assert SwingUtilities.isEventDispatchThread();
         navigateToResult(-1, "goToPreviousResult");
     }
     
     @Override
     public void goToNextResult() {
+        assert SwingUtilities.isEventDispatchThread();
         navigateToResult(1, "goToNextResult");
     }
     
@@ -119,7 +123,7 @@ public class MarkdownPanelSearchCallback implements SearchCallback {
         currentMarkerIndex = Math.floorMod(currentMarkerIndex + direction, allMarkerIds.size());
         
         int currentMarkerId = allMarkerIds.get(currentMarkerIndex);
-        logger.debug("{}: Moving from index {} to {} (marker ID: {})", 
+        logger.trace("{}: Moving from index {} to {} (marker ID: {})", 
                     methodName, previousIndex, currentMarkerIndex, currentMarkerId);
         
         updateCurrentMatchHighlighting();
@@ -168,7 +172,7 @@ public class MarkdownPanelSearchCallback implements SearchCallback {
         }
         
         int markerId = allMarkerIds.get(currentMarkerIndex);
-        logger.debug("Scrolling to marker ID {} (index {} of {})", markerId, currentMarkerIndex + 1, allMarkerIds.size());
+        logger.trace("Scrolling to marker ID {} (index {} of {})", markerId, currentMarkerIndex + 1, allMarkerIds.size());
         
         // Find which renderer contains this marker and scroll to it
         for (MarkdownOutputPanel panel : panels) {
@@ -224,6 +228,7 @@ public class MarkdownPanelSearchCallback implements SearchCallback {
     
     @Override
     public void stopSearch() {
+        assert SwingUtilities.isEventDispatchThread();
         // Clear search highlighting from all panels
         for (MarkdownOutputPanel panel : panels) {
             panel.setHtmlCustomizer(HtmlCustomizer.DEFAULT);
@@ -328,8 +333,7 @@ public class MarkdownPanelSearchCallback implements SearchCallback {
                 IncrementalBlockRenderer renderer = rendererList.get(rendererIndex);
                 var markerIds = renderer.getIndexedMarkerIds();
                 
-                logger.trace("Panel {} renderer {} has {} marker IDs: {}", 
-                           panelIndex, rendererIndex, markerIds.size(), markerIds);
+                // Marker IDs logged only when needed for debugging
                 
                 // Convert marker IDs to contexts for sorting, but only include markers that contain the current search term
                 for (int markerId : markerIds) {
@@ -365,10 +369,12 @@ public class MarkdownPanelSearchCallback implements SearchCallback {
     }
     
     public String getCurrentSearchTerm() {
+        assert SwingUtilities.isEventDispatchThread();
         return currentSearchTerm;
     }
     
     public SearchResults getCurrentResults() {
+        assert SwingUtilities.isEventDispatchThread();
         if (allMarkerIds.isEmpty()) {
             return SearchResults.noMatches();
         }

@@ -480,7 +480,7 @@ public final class IncrementalBlockRenderer {
     private void rebuildMarkerIndex() {
         assert SwingUtilities.isEventDispatchThread();
         markerIndex.clear();
-        logger.trace("Rebuilding marker index for renderer with {} components", root.getComponentCount());
+        // Rebuild marker index
         walkAndIndex(root);
         logger.trace("Marker index rebuilt with {} entries", markerIndex.size());
     }
@@ -496,7 +496,7 @@ public final class IncrementalBlockRenderer {
                         int id = Integer.parseInt(matcher.group(1));
                         markerIndex.put(id, jc);
                         foundAny = true;
-                        logger.trace("Found marker id {} in component {}", id, jc.getClass().getSimpleName());
+                        // Found marker in component
                     } catch (NumberFormatException ignore) {
                         // should never happen – regex enforces digits
                     }
