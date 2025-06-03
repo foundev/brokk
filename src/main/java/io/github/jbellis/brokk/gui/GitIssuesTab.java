@@ -553,23 +553,24 @@ public class GitIssuesTab extends JPanel {
         GHIssue issue = displayedIssues.get(selectedRow); // Effectively final for lambda
 
         // Use a local final variable for authorLogin to ensure it's effectively final for the lambda
-        String finalAuthorLogin;
+        String authorLoginValue;
         try {
-            finalAuthorLogin = (issue.getUser() != null) ? issue.getUser().getLogin() : "N/A";
+            authorLoginValue = (issue.getUser() != null) ? issue.getUser().getLogin() : "N/A";
         } catch (java.io.IOException e) {
             logger.warn("Could not retrieve author for issue #{}", issue.getNumber(), e);
-            finalAuthorLogin = "N/A"; // Fallback
+            authorLoginValue = "N/A"; // Fallback
         }
+        final String capturedAuthorLogin = authorLoginValue;
 
-        String finalLabelsStr = issue.getLabels().stream()
+        String collectedLabels = issue.getLabels().stream()
                                    .map(GHLabel::getName)
                                    .collect(Collectors.joining(", "));
-        if (finalLabelsStr.isEmpty()) finalLabelsStr = "None";
+        final String actualFinalLabelsStr = collectedLabels.isEmpty() ? "None" : collectedLabels;
 
-        String finalAssigneesStr = issue.getAssignees().stream()
+        String collectedAssignees = issue.getAssignees().stream()
                                       .map(GHUser::getLogin)
                                       .collect(Collectors.joining(", "));
-        if (finalAssigneesStr.isEmpty()) finalAssigneesStr = "None";
+        final String actualFinalAssigneesStr = collectedAssignees.isEmpty() ? "None" : collectedAssignees;
 
         String originalMarkdownBody = issue.getBody() == null || issue.getBody().isBlank() ? "*No description provided.*" : issue.getBody();
 
@@ -591,9 +592,9 @@ public class GitIssuesTab extends JPanel {
                             if (imageDescription.length() > 150) { // Truncate if too long
                                 imageDescription = imageDescription.substring(0, 147) + "...";
                             }
-                            contextManager.addPastedImageFragment(image); // Add it to the context
+                            // Add it to the context, providing the description, and get the fragment back
+                            ContextFragment.PasteImageFragment imageFragment = contextManager.addPastedImageFragment(image, imageDescription);
 
-                            // Now we have imageFragment.description() and imageFragment.id()
                             imageReferenceTexts.add(String.format("- %s (Fragment ID: %d)", imageFragment.description(), imageFragment.id()));
                             chrome.systemOutput("Attached image '" + imageFragment.description() + "' to context.");
                         } else {
@@ -602,8 +603,6 @@ public class GitIssuesTab extends JPanel {
                     }
                 } catch (URISyntaxException e) {
                     logger.warn("Invalid image URI syntax in issue body: {}", imageUrl, e);
-                } catch (IOException e) {
-                    logger.warn("IOException while downloading image {}: {}", imageUrl, e.getMessage());
                 } catch (Exception e) {
                     logger.error("Unexpected error processing image {}: {}", imageUrl, e.getMessage(), e);
                 }
@@ -625,11 +624,11 @@ public class GitIssuesTab extends JPanel {
                 """.stripIndent(),
                 issue.getNumber(),
                 issue.getTitle(),
-                finalAuthorLogin,
+                capturedAuthorLogin,
                 issue.getState().toString(),
                 issue.getHtmlUrl().toString(),
-                finalLabelsStr,
-                finalAssigneesStr,
+                actualFinalLabelsStr,
+                actualFinalAssigneesStr,
                 originalMarkdownBody
             ));
 
