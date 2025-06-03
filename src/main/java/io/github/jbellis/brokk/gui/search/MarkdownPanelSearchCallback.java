@@ -147,12 +147,18 @@ public class MarkdownPanelSearchCallback implements SearchCallback {
     }
     
     private void updateMarkerStyleInAllPanels(int markerId, boolean isCurrent) {
+        // Collect all marker update operations to batch them into a single EDT call
+        List<Runnable> updateOperations = new ArrayList<>();
+        
+        for (MarkdownOutputPanel panel : panels) {
+            panel.renderers().forEach(renderer -> {
+                updateOperations.add(() -> renderer.updateMarkerStyle(markerId, isCurrent));
+            });
+        }
+        
+        // Execute all updates in a single EDT operation for better performance
         SwingUtilities.invokeLater(() -> {
-            for (MarkdownOutputPanel panel : panels) {
-                panel.renderers().forEach(renderer -> {
-                    renderer.updateMarkerStyle(markerId, isCurrent);
-                });
-            }
+            updateOperations.forEach(Runnable::run);
         });
     }
     
@@ -251,6 +257,59 @@ public class MarkdownPanelSearchCallback implements SearchCallback {
     }
     
     /**
+     * Checks if a marker with the given ID contains text that matches the current search term.
+     * This is used to filter out stale markers from previous searches.
+     */
+    private boolean markerContainsCurrentSearchTerm(IncrementalBlockRenderer renderer, int markerId) {
+        if (currentSearchTerm.isEmpty()) {
+            return false;
+        }
+        
+        // Find the component containing this marker
+        Optional<JComponent> componentOpt = renderer.findByMarkerId(markerId);
+        if (componentOpt.isEmpty()) {
+            return false;
+        }
+        
+        // Extract text content from the component
+        String componentText = extractTextFromComponent(componentOpt.get());
+        if (componentText == null || componentText.isEmpty()) {
+            return false;
+        }
+        
+        // Check if the component text contains the current search term (respecting case sensitivity)
+        if (currentCaseSensitive) {
+            return componentText.contains(currentSearchTerm);
+        } else {
+            return componentText.toLowerCase().contains(currentSearchTerm.toLowerCase());
+        }
+    }
+    
+    /**
+     * Extracts plain text content from a JComponent (JEditorPane or JLabel).
+     */
+    private String extractTextFromComponent(JComponent component) {
+        if (component instanceof JEditorPane editorPane) {
+            // For JEditorPane, get the plain text content
+            try {
+                return editorPane.getDocument().getText(0, editorPane.getDocument().getLength());
+            } catch (Exception e) {
+                logger.trace("Failed to extract text from JEditorPane: {}", e.getMessage());
+                return "";
+            }
+        } else if (component instanceof JLabel label) {
+            // For JLabel, extract text from HTML
+            String html = label.getText();
+            if (html != null && html.startsWith("<html>")) {
+                // Simple HTML to text conversion - remove all HTML tags
+                return html.replaceAll("<[^>]+>", "");
+            }
+            return html;
+        }
+        return "";
+    }
+    
+    /**
      * Collects marker IDs from all panels and renderers in visual order (top to bottom).
      * This ensures that search navigation follows the natural reading order of the document.
      */
@@ -272,9 +331,14 @@ public class MarkdownPanelSearchCallback implements SearchCallback {
                 logger.trace("Panel {} renderer {} has {} marker IDs: {}", 
                            panelIndex, rendererIndex, markerIds.size(), markerIds);
                 
-                // Convert marker IDs to contexts for sorting
+                // Convert marker IDs to contexts for sorting, but only include markers that contain the current search term
                 for (int markerId : markerIds) {
-                    markerContexts.add(new MarkerContext(markerId, panelIndex, rendererIndex));
+                    if (markerContainsCurrentSearchTerm(renderer, markerId)) {
+                        markerContexts.add(new MarkerContext(markerId, panelIndex, rendererIndex));
+                    } else {
+                        logger.trace("Filtering out stale marker ID {} that doesn't match current search term '{}'", 
+                                   markerId, currentSearchTerm);
+                    }
                 }
             }
         }
