@@ -1,7 +1,12 @@
 package io.github.jbellis.brokk.gui;
 
+import dev.langchain4j.data.message.ChatMessage;
+import dev.langchain4j.data.message.CustomMessage;
 import io.github.jbellis.brokk.ContextManager;
 import io.github.jbellis.brokk.GitHubAuth;
+import io.github.jbellis.brokk.context.ContextFragment;
+import io.github.jbellis.brokk.util.ImageUtil;
+import okhttp3.OkHttpClient;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 import org.kohsuke.github.GHIssue;
@@ -14,6 +19,8 @@ import javax.swing.table.DefaultTableModel;
 import java.awt.*;
 import java.awt.datatransfer.StringSelection;
 import java.io.IOException;
+import java.net.URI;
+import java.net.URISyntaxException;
 import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.Collections;
@@ -22,11 +29,15 @@ import java.util.Date;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.TimeUnit;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 
 
 public class GitIssuesTab extends JPanel {
     private static final Logger logger = LogManager.getLogger(GitIssuesTab.class);
+    private static final Pattern IMAGE_MARKDOWN_PATTERN = Pattern.compile("!\\[(?:[^\\]]*)\\]\\(([^\\)]+)\\)");
 
     // Issue Table Column Indices
     private static final int ISSUE_COL_NUMBER    = 0;
@@ -46,6 +57,7 @@ public class GitIssuesTab extends JPanel {
     private JTextPane issueBodyTextPane;
     private JButton copyIssueDescriptionButton;
     private JButton openInBrowserButton;
+    private JButton captureButton;
 
     private FilterBox statusFilter;
     private FilterBox authorFilter;
@@ -64,15 +76,21 @@ public class GitIssuesTab extends JPanel {
     private List<String> assigneeChoices = new ArrayList<>();
 
     private final GfmRenderer gfmRenderer;
+    private final OkHttpClient httpClient;
 
 
-    public GitIssuesTab(Chrome chrome, ContextManager contextManager, GitPanel gitPanel)
-    {
+    public GitIssuesTab(Chrome chrome, ContextManager contextManager, GitPanel gitPanel) {
         super(new BorderLayout());
         this.chrome = chrome;
         this.contextManager = contextManager;
         this.gitPanel = gitPanel;
         this.gfmRenderer = new GfmRenderer();
+        this.httpClient = new OkHttpClient.Builder()
+                                .connectTimeout(5, TimeUnit.SECONDS)
+                                .readTimeout(10, TimeUnit.SECONDS)
+                                .writeTimeout(5, TimeUnit.SECONDS)
+                                .followRedirects(true)
+                                .build();
 
         // Split panel with Issues on left (larger) and issue description on right (smaller)
         JSplitPane splitPane = new JSplitPane(JSplitPane.HORIZONTAL_SPLIT);
@@ -172,6 +190,14 @@ public class GitIssuesTab extends JPanel {
         openInBrowserButton.setEnabled(false);
         openInBrowserButton.addActionListener(e -> openSelectedIssueInBrowser());
         issueButtonPanel.add(openInBrowserButton);
+        issueButtonPanel.add(Box.createHorizontalStrut(new Constants().H_GAP));
+
+        captureButton = new JButton("Capture");
+        captureButton.setToolTipText("Capture details of the selected issue");
+        captureButton.setEnabled(false);
+        captureButton.addActionListener(e -> captureSelectedIssue());
+        issueButtonPanel.add(captureButton);
+        // issueButtonPanel.add(Box.createHorizontalStrut(new Constants().H_GAP)); // Optional spacer
 
         issueButtonPanel.add(Box.createHorizontalGlue()); // Pushes refresh button to the right
 
@@ -218,6 +244,7 @@ public class GitIssuesTab extends JPanel {
                     loadAndRenderIssueBody(selectedIssue);
                     copyIssueDescriptionButton.setEnabled(true);
                     openInBrowserButton.setEnabled(true);
+                    captureButton.setEnabled(true);
                 } else { // No selection or invalid row
                     disableIssueActionsAndClearDetails();
                 }
@@ -232,6 +259,7 @@ public class GitIssuesTab extends JPanel {
     private void disableIssueActionsAndClearDetails() {
         copyIssueDescriptionButton.setEnabled(false);
         openInBrowserButton.setEnabled(false);
+        captureButton.setEnabled(false);
         issueBodyTextPane.setContentType("text/html");
         issueBodyTextPane.setText("");
     }
@@ -513,6 +541,122 @@ public class GitIssuesTab extends JPanel {
     private void disableIssueActions() {
         copyIssueDescriptionButton.setEnabled(false);
         openInBrowserButton.setEnabled(false);
+        captureButton.setEnabled(false);
+    }
+
+    private void captureSelectedIssue() {
+        int selectedRow = issueTable.getSelectedRow();
+        if (selectedRow == -1 || selectedRow >= displayedIssues.size()) {
+            return;
+        }
+        GHIssue issue = displayedIssues.get(selectedRow); // Effectively final for lambda
+
+        // Use a local final variable for authorLogin to ensure it's effectively final for the lambda
+        String finalAuthorLogin;
+        try {
+            finalAuthorLogin = (issue.getUser() != null) ? issue.getUser().getLogin() : "N/A";
+        } catch (java.io.IOException e) {
+            logger.warn("Could not retrieve author for issue #{}", issue.getNumber(), e);
+            finalAuthorLogin = "N/A"; // Fallback
+        }
+
+        String finalLabelsStr = issue.getLabels().stream()
+                                   .map(GHLabel::getName)
+                                   .collect(Collectors.joining(", "));
+        if (finalLabelsStr.isEmpty()) finalLabelsStr = "None";
+
+        String finalAssigneesStr = issue.getAssignees().stream()
+                                      .map(GHUser::getLogin)
+                                      .collect(Collectors.joining(", "));
+        if (finalAssigneesStr.isEmpty()) finalAssigneesStr = "None";
+
+        String originalMarkdownBody = issue.getBody() == null || issue.getBody().isBlank() ? "*No description provided.*" : issue.getBody();
+
+        contextManager.submitContextTask("Capturing Issue #" + issue.getNumber(), () -> {
+            List<String> imageReferenceTexts = new ArrayList<>();
+            Matcher matcher = IMAGE_MARKDOWN_PATTERN.matcher(originalMarkdownBody);
+
+            while (matcher.find()) {
+                String imageUrl = matcher.group(1);
+                try {
+                    URI imageUri = new URI(imageUrl);
+                    if (ImageUtil.isImageUri(imageUri, this.httpClient)) {
+                        chrome.systemOutput("Downloading image: " + imageUrl);
+                        Image image = ImageUtil.downloadImage(imageUri, this.httpClient);
+                        if (image != null) {
+                            // Manually create and add the ImageFragment
+                            String imageDescription = "Image from issue " + issue.getNumber() + ": " + imageUrl;
+                            // Ensure the description is not overly long for typical display, but provides uniqueness
+                            if (imageDescription.length() > 150) { // Truncate if too long
+                                imageDescription = imageDescription.substring(0, 147) + "...";
+                            }
+                            // Use the fully qualified nested class name, assuming ImageFragment is a static nested class of ContextFragment
+                            ContextFragment.ImageFragment imageFragment = new ContextFragment.ImageFragment(contextManager, image, imageDescription);
+                            contextManager.addVirtualFragment(imageFragment); // Add it to the context
+
+                            // Now we have imageFragment.description() and imageFragment.id()
+                            imageReferenceTexts.add(String.format("- %s (Fragment ID: %d)", imageFragment.description(), imageFragment.id()));
+                            chrome.systemOutput("Attached image '" + imageFragment.description() + "' to context.");
+                        } else {
+                            logger.warn("Failed to download image identified by ImageUtil: {}", imageUrl);
+                        }
+                    }
+                } catch (URISyntaxException e) {
+                    logger.warn("Invalid image URI syntax in issue body: {}", imageUrl, e);
+                } catch (IOException e) {
+                    logger.warn("IOException while downloading image {}: {}", imageUrl, e.getMessage());
+                } catch (Exception e) {
+                    logger.error("Unexpected error processing image {}: {}", imageUrl, e.getMessage(), e);
+                }
+            }
+
+            StringBuilder markdownContentBuilder = new StringBuilder();
+            markdownContentBuilder.append(String.format("""
+                # Issue #%d: %s
+
+                **Author:** %s
+                **Status:** %s
+                **URL:** %s
+                **Labels:** %s
+                **Assignees:** %s
+
+                ---
+
+                %s
+                """.stripIndent(),
+                issue.getNumber(),
+                issue.getTitle(),
+                finalAuthorLogin,
+                issue.getState().toString(),
+                issue.getHtmlUrl().toString(),
+                finalLabelsStr,
+                finalAssigneesStr,
+                originalMarkdownBody
+            ));
+
+            if (!imageReferenceTexts.isEmpty()) {
+                markdownContentBuilder.append("\n\n---\n**Attached Images:**\n");
+                for (String ref : imageReferenceTexts) {
+                    markdownContentBuilder.append(ref).append("\n");
+                }
+            }
+
+            List<ChatMessage> messages = List.of(
+                    new CustomMessage(Map.of("text", markdownContentBuilder.toString()))
+            );
+            String fragmentDescription = String.format("GitHub Issue #%d: %s", issue.getNumber(), issue.getTitle());
+
+            ContextFragment.TaskFragment taskFragment = new ContextFragment.TaskFragment(
+                this.contextManager,
+                messages,
+                fragmentDescription
+            );
+
+            this.contextManager.addVirtualFragment(taskFragment);
+            String imageMessage = imageReferenceTexts.isEmpty() ? "" : " with " + imageReferenceTexts.size() + " image(s) referenced";
+            chrome.systemOutput("Issue #" + issue.getNumber() + " captured to workspace" + imageMessage + ".");
+            return null; // Explicitly return null for Callable<Void>
+        });
     }
 
     private void copySelectedIssueDescription() {
