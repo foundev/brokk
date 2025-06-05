@@ -576,9 +576,9 @@ public class GitIssuesTab extends JPanel {
         String originalMarkdownBody = (issue.getBody() == null || issue.getBody().isBlank()) ? "*No description provided.*" : issue.getBody();
 
         contextManager.submitContextTask("Capturing Issue #" + issue.getNumber(), () -> {
-            List<String> imageReferenceTexts = processImages(issue, originalMarkdownBody);
-            List<ChatMessage> messages = buildMarkdownContent(issue, capturedAuthorLogin, actualFinalLabelsStr, actualFinalAssigneesStr, originalMarkdownBody, imageReferenceTexts);
+            List<ChatMessage> messages = buildMarkdownContent(issue, capturedAuthorLogin, actualFinalLabelsStr, actualFinalAssigneesStr, originalMarkdownBody);
             createAndAddFragment(issue, messages);
+            List<String> imageReferenceTexts = processImages(issue, originalMarkdownBody);
             String imageMessage = imageReferenceTexts.isEmpty() ? "" : " with " + imageReferenceTexts.size() + " image(s) referenced";
             chrome.systemOutput("Issue #" + issue.getNumber() + " captured to workspace" + imageMessage + ".");
         });
@@ -637,42 +637,32 @@ public class GitIssuesTab extends JPanel {
         return imageReferenceTexts;
     }
 
-    private List<ChatMessage> buildMarkdownContent(GHIssue issue, String capturedAuthorLogin, String actualFinalLabelsStr, String actualFinalAssigneesStr, String originalMarkdownBody, List<String> imageReferenceTexts) {
-        var markdownContentBuilder = new StringBuilder();
-        markdownContentBuilder.append(String.format("""
-                                                    # Issue #%d: %s
-                                                    
-                                                    **Author:** %s
-                                                    **Status:** %s
-                                                    **URL:** %s
-                                                    **Labels:** %s
-                                                    **Assignees:** %s
-                                                    
-                                                    ---
-                                                    
-                                                    %s
-                                                    """.stripIndent(),
-                                                    issue.getNumber(),
-                                                    issue.getTitle(),
-                                                    capturedAuthorLogin,
-                                                    issue.getState().toString(),
-                                                    issue.getHtmlUrl().toString(),
-                                                    actualFinalLabelsStr.isEmpty() ? "None" : actualFinalLabelsStr,
-                                                    actualFinalAssigneesStr.isEmpty() ? "None" : actualFinalAssigneesStr,
-                                                    originalMarkdownBody
-        ));
+    private List<ChatMessage> buildMarkdownContent(GHIssue issue, String capturedAuthorLogin, String actualFinalLabelsStr, String actualFinalAssigneesStr, String originalMarkdownBody) {
+        String markdownContentBuilder = String.format("""
+                                                      # Issue #%d: %s
+                                                      
+                                                      **Author:** %s
+                                                      **Status:** %s
+                                                      **URL:** %s
+                                                      **Labels:** %s
+                                                      **Assignees:** %s
+                                                      
+                                                      ---
+                                                      
+                                                      %s
+                                                      """.stripIndent(),
+                                                      issue.getNumber(),
+                                                      issue.getTitle(),
+                                                      capturedAuthorLogin,
+                                                      issue.getState().toString(),
+                                                      issue.getHtmlUrl().toString(),
+                                                      actualFinalLabelsStr.isEmpty() ? "None" : actualFinalLabelsStr,
+                                                      actualFinalAssigneesStr.isEmpty() ? "None" : actualFinalAssigneesStr,
+                                                      originalMarkdownBody
+        );
 
         List<ChatMessage> messages = new ArrayList<>();
-        messages.add(new CustomMessage(Map.of("text", markdownContentBuilder.toString())));
-        
-        if (!imageReferenceTexts.isEmpty()) {
-            markdownContentBuilder = new StringBuilder();
-            markdownContentBuilder.append("## Referenced ImageFragments\n");
-            StringBuilder finalMarkdownContentBuilder = markdownContentBuilder;
-            imageReferenceTexts.forEach(ref -> finalMarkdownContentBuilder.append(ref).append("\n"));
-            messages.add(new CustomMessage(Map.of("text", finalMarkdownContentBuilder.toString())));
-        }
-        
+        messages.add(new CustomMessage(Map.of("text", markdownContentBuilder)));
         return messages;
     }
 
