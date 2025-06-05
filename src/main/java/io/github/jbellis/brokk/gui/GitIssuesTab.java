@@ -2,6 +2,7 @@ package io.github.jbellis.brokk.gui;
 
 import dev.langchain4j.data.message.ChatMessage;
 import dev.langchain4j.data.message.CustomMessage;
+import dev.langchain4j.data.message.UserMessage;
 import io.github.jbellis.brokk.ContextManager;
 import io.github.jbellis.brokk.GitHubAuth;
 import io.github.jbellis.brokk.context.ContextFragment;
@@ -9,10 +10,7 @@ import io.github.jbellis.brokk.util.ImageUtil;
 import okhttp3.OkHttpClient;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
-import org.kohsuke.github.GHIssue;
-import org.kohsuke.github.GHIssueState;
-import org.kohsuke.github.GHLabel;
-import org.kohsuke.github.GHUser;
+import org.kohsuke.github.*;
 
 import javax.swing.*;
 import javax.swing.table.DefaultTableModel;
@@ -22,13 +20,8 @@ import java.io.IOException;
 import java.net.URI;
 import java.net.URISyntaxException;
 import java.time.LocalDate;
-import java.util.ArrayList;
-import java.util.Collections;
-import java.util.Comparator;
-import java.util.Date;
-import java.util.HashMap;
+import java.util.*;
 import java.util.List;
-import java.util.Map;
 import java.util.concurrent.TimeUnit;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
@@ -194,7 +187,6 @@ public class GitIssuesTab extends JPanel {
         captureButton.setEnabled(false);
         captureButton.addActionListener(e -> captureSelectedIssue());
         issueButtonPanel.add(captureButton);
-        // issueButtonPanel.add(Box.createHorizontalStrut(new Constants().H_GAP)); // Optional spacer
 
         issueButtonPanel.add(Box.createHorizontalGlue()); // Pushes refresh button to the right
 
@@ -570,27 +562,53 @@ public class GitIssuesTab extends JPanel {
     }
 
     private void captureIssue(GHIssue issue) {
-        String capturedAuthorLogin = getAuthorLogin(issue);
-        String actualFinalLabelsStr = getCollectedLabels(issue);
-        String actualFinalAssigneesStr = getCollectedAssignees(issue);
-        String originalMarkdownBody = (issue.getBody() == null || issue.getBody().isBlank()) ? "*No description provided.*" : issue.getBody();
-
         contextManager.submitContextTask("Capturing Issue #" + issue.getNumber(), () -> {
-            List<ChatMessage> messages = buildMarkdownContent(issue, capturedAuthorLogin, actualFinalLabelsStr, actualFinalAssigneesStr, originalMarkdownBody);
-            createAndAddFragment(issue, messages);
-            List<String> imageReferenceTexts = processImages(issue, originalMarkdownBody);
-            String imageMessage = imageReferenceTexts.isEmpty() ? "" : " with " + imageReferenceTexts.size() + " image(s) referenced";
-            chrome.systemOutput("Issue #" + issue.getNumber() + " captured to workspace" + imageMessage + ".");
+            try {
+                // 1. Fetch metadata
+                String authorLogin = getAuthorLogin(issue);
+                String labels = getCollectedLabels(issue);
+                String assignees = getCollectedAssignees(issue);
+                String originalMarkdownBody = (issue.getBody() == null || issue.getBody().isBlank()) ? "*No description provided.*" : issue.getBody();
+
+                // 2. Build main issue content and create TaskFragment
+                List<ChatMessage> issueTextMessages = buildIssueTextContent(issue, authorLogin, labels, assignees, originalMarkdownBody);
+                ContextFragment.TaskFragment issueTextFragment = createIssueTextFragment(issue, issueTextMessages);
+                contextManager.addVirtualFragment(issueTextFragment);
+
+                // 3. Fetch and process comments
+                List<ChatMessage> commentChatMessages = getIssueCommentsAsChatMessages(issue);
+                if (!commentChatMessages.isEmpty()) {
+                    contextManager.addVirtualFragment(createCommentsFragment(issue, commentChatMessages));
+                }
+
+                // 4. Prepare image data (downloads images but doesn't create fragments yet)
+                List<ImageCaptureData> imageCaptureDataList = prepareImageDataForCapture(issue, originalMarkdownBody);
+                for (ImageCaptureData data : imageCaptureDataList) {
+                    contextManager.addPastedImageFragment(data.image(), data.description());
+                }
+
+                // 6. Report success
+                String commentMessage = commentChatMessages.isEmpty() ? "" : " with " + commentChatMessages.size() + " comment(s)";
+                String imageMessage = imageCaptureDataList.isEmpty() ? "" : " and " + imageCaptureDataList.size() + " image(s)";
+                chrome.systemOutput("Issue #" + issue.getNumber() + " captured to workspace" + commentMessage + imageMessage + ".");
+
+            } catch (IOException e) {
+                logger.error("Failed to capture all details for issue #{}", issue.getNumber(), e);
+                chrome.toolErrorRaw("Failed to capture all details for issue #" + issue.getNumber() + ": " + e.getMessage());
+            }
         });
     }
 
     private String getAuthorLogin(GHIssue issue) {
         try {
-            return (issue.getUser() != null) ? issue.getUser().getLogin() : "N/A";
-        } catch (java.io.IOException e) {
+            if (issue.getUser() != null) {
+                String login = issue.getUser().getLogin();
+                return (login != null && !login.isBlank()) ? login : "N/A";
+            }
+        } catch (java.io.IOException e) { // Though GHIssue.getUser() itself doesn't declare IOException
             logger.warn("Could not retrieve author for issue #{}", issue.getNumber(), e);
-            return "N/A"; // Fallback
         }
+        return "N/A"; // Fallback
     }
 
     private String getCollectedLabels(GHIssue issue) {
@@ -601,82 +619,123 @@ public class GitIssuesTab extends JPanel {
 
     private String getCollectedAssignees(GHIssue issue) {
         return issue.getAssignees().stream()
-                .map(GHUser::getLogin)
+                .map(GHUser::getLogin) // GHUser.getLogin() does not throw IOException
+                .filter(login -> login != null && !login.isBlank())
                 .collect(Collectors.joining(", "));
     }
 
-    private List<String> processImages(GHIssue issue, String originalMarkdownBody) {
-        List<String> imageReferenceTexts = new ArrayList<>();
-        Matcher matcher = IMAGE_MARKDOWN_PATTERN.matcher(originalMarkdownBody);
+    private List<ChatMessage> buildIssueTextContent(GHIssue issue, String authorLogin, String labels, String assignees, String markdownBody) {
+        String content = String.format("""
+                                       # Issue #%d: %s
+                                       
+                                       **Author:** %s
+                                       **Status:** %s
+                                       **URL:** %s
+                                       **Labels:** %s
+                                       **Assignees:** %s
+                                       
+                                       ---
+                                       
+                                       %s
+                                       """.stripIndent(),
+                                       issue.getNumber(),
+                                       issue.getTitle(),
+                                       authorLogin,
+                                       issue.getState().toString(),
+                                       issue.getHtmlUrl().toString(),
+                                       labels.isEmpty() ? "None" : labels,
+                                       assignees.isEmpty() ? "None" : assignees,
+                                       markdownBody
+        );
+        return List.of(new CustomMessage(Map.of("text", content)));
+    }
 
+    private ContextFragment.TaskFragment createIssueTextFragment(GHIssue issue, List<ChatMessage> messages) {
+        String description = String.format("GitHub Issue #%d: %s", issue.getNumber(), issue.getTitle());
+        return new ContextFragment.TaskFragment(
+                this.contextManager,
+                messages,
+                description
+        );
+    }
+
+    private List<ChatMessage> getIssueCommentsAsChatMessages(GHIssue issue) throws IOException {
+        List<GHIssueComment> ghComments;
+        try {
+            ghComments = issue.getComments();
+        } catch (IOException e) {
+            logger.error("Could not fetch comments for #{}", issue.getNumber(), e);
+            chrome.toolErrorRaw("Failed to download comments for #" + issue.getNumber() + ": " + e.getMessage());
+            return List.of(); // Return empty on failure
+        }
+
+        List<ChatMessage> chatMessages = new ArrayList<>();
+        for (GHIssueComment c : ghComments) {
+            String author = "unknown";
+            try {
+                // GHIssueComment.getUser() and GHUser.getLogin() do not throw IOException
+                if (c.getUser() != null && c.getUser().getLogin() != null && !c.getUser().getLogin().isBlank()) {
+                    author = c.getUser().getLogin();
+                }
+            } catch (Exception e) { // Defensive catch for unexpected issues, though API implies no IOException
+                logger.warn("Author lookup failed for a comment on #{} by user '{}'", issue.getNumber(), (c.getUser() != null ? c.getUser().getLogin() : "null_user"), e);
+            }
+
+            String body = c.getBody(); // Does not throw IOException
+            if (body != null && !body.isBlank()) {
+                chatMessages.add(UserMessage.from(author, body));
+            }
+        }
+        return chatMessages;
+    }
+
+    private ContextFragment.TaskFragment createCommentsFragment(GHIssue issue, List<ChatMessage> commentMessages) {
+        String description = String.format("Comments for GitHub Issue #%d: %s", issue.getNumber(), issue.getTitle());
+        return new ContextFragment.TaskFragment(
+                this.contextManager,
+                commentMessages,
+                description
+        );
+    }
+
+    // Record to hold image data before fragment creation
+    private record ImageCaptureData(java.awt.Image image, String description) {}
+
+    // Prepares image data (downloads images) but does not create/add fragments yet.
+    private List<ImageCaptureData> prepareImageDataForCapture(GHIssue issue, String originalMarkdownBody) {
+        List<ImageCaptureData> imageDataList = new ArrayList<>();
+        if (originalMarkdownBody == null || originalMarkdownBody.isBlank()) {
+            return imageDataList;
+        }
+
+        Matcher matcher = IMAGE_MARKDOWN_PATTERN.matcher(originalMarkdownBody);
         while (matcher.find()) {
             String imageUrl = matcher.group(1);
             try {
                 URI imageUri = new URI(imageUrl);
                 if (ImageUtil.isImageUri(imageUri, this.httpClient)) {
                     chrome.systemOutput("Downloading image: " + imageUrl);
-                    Image image = ImageUtil.downloadImage(imageUri, this.httpClient);
+                    java.awt.Image image = ImageUtil.downloadImage(imageUri, this.httpClient);
                     if (image != null) {
-                        String imageDescription = "Github issue #" + issue.getNumber() + " (" + imageUrl + ")";
-                        if (imageDescription.length() > 150) {
+                        String imageDescription = String.format("Image from GitHub issue #%d (%s)", issue.getNumber(), imageUrl);
+                        if (imageDescription.length() > 150) { // Max length for description in some contexts
                             imageDescription = imageDescription.substring(0, 147) + "...";
                         }
-                        ContextFragment.PasteImageFragment imageFragment = contextManager.addPastedImageFragment(image, imageDescription);
-                        imageReferenceTexts.add(imageFragment.format());
-                        chrome.systemOutput("Attached image '" + imageFragment.description() + "' to context.");
+                        imageDataList.add(new ImageCaptureData(image, imageDescription));
                     } else {
                         logger.warn("Failed to download image identified by ImageUtil: {}", imageUrl);
+                        chrome.toolErrorRaw("Failed to download image: " + imageUrl);
                     }
                 }
             } catch (URISyntaxException e) {
                 logger.warn("Invalid image URI syntax in issue body: {}", imageUrl, e);
-            } catch (Exception e) {
+                chrome.toolErrorRaw("Invalid image URL in issue: " + imageUrl);
+            } catch (Exception e) { // General catch for robustness during image processing
                 logger.error("Unexpected error processing image {}: {}", imageUrl, e.getMessage(), e);
+                chrome.toolErrorRaw("Error processing image " + imageUrl + ": " + e.getMessage());
             }
         }
-        return imageReferenceTexts;
-    }
-
-    private List<ChatMessage> buildMarkdownContent(GHIssue issue, String capturedAuthorLogin, String actualFinalLabelsStr, String actualFinalAssigneesStr, String originalMarkdownBody) {
-        String markdownContentBuilder = String.format("""
-                                                      # Issue #%d: %s
-                                                      
-                                                      **Author:** %s
-                                                      **Status:** %s
-                                                      **URL:** %s
-                                                      **Labels:** %s
-                                                      **Assignees:** %s
-                                                      
-                                                      ---
-                                                      
-                                                      %s
-                                                      """.stripIndent(),
-                                                      issue.getNumber(),
-                                                      issue.getTitle(),
-                                                      capturedAuthorLogin,
-                                                      issue.getState().toString(),
-                                                      issue.getHtmlUrl().toString(),
-                                                      actualFinalLabelsStr.isEmpty() ? "None" : actualFinalLabelsStr,
-                                                      actualFinalAssigneesStr.isEmpty() ? "None" : actualFinalAssigneesStr,
-                                                      originalMarkdownBody
-        );
-
-        List<ChatMessage> messages = new ArrayList<>();
-        messages.add(new CustomMessage(Map.of("text", markdownContentBuilder)));
-        return messages;
-    }
-
-    private void createAndAddFragment(GHIssue issue, List<ChatMessage> messages) {
-
-        var fragmentDescription = String.format("GitHub Issue #%d: %s", issue.getNumber(), issue.getTitle());
-
-        var taskFragment = new ContextFragment.TaskFragment(
-                this.contextManager,
-                messages,
-                fragmentDescription
-        );
-
-        this.contextManager.addVirtualFragment(taskFragment);
+        return imageDataList;
     }
 
     private void copySelectedIssueDescription() {

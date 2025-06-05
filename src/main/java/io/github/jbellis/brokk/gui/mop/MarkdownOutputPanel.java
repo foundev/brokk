@@ -2,6 +2,7 @@ package io.github.jbellis.brokk.gui.mop;
 
 import dev.langchain4j.data.message.ChatMessage;
 import dev.langchain4j.data.message.ChatMessageType;
+import dev.langchain4j.data.message.UserMessage;
 import io.github.jbellis.brokk.context.ContextFragment;
 import io.github.jbellis.brokk.TaskEntry;
 import io.github.jbellis.brokk.gui.GuiTheme;
@@ -267,7 +268,11 @@ public class MarkdownOutputPanel extends JPanel implements Scrollable, ThemeAwar
                 highlightColor = ThemeColors.getColor(isDarkTheme, "message_border_ai");
                 break;
             case USER:
-                title = "You";
+                if (message instanceof UserMessage userMessage && userMessage.name() != null && !userMessage.name().isEmpty()) {
+                    title = userMessage.name();
+                } else {
+                    title = "You";
+                }
                 iconText = "\uD83D\uDCBB"; // Unicode for computer emoji
                 highlightColor = ThemeColors.getColor(isDarkTheme, "message_border_user");
                 break;
