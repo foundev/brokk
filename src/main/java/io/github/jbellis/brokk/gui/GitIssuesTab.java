@@ -759,7 +759,7 @@ public class GitIssuesTab extends JPanel {
     }
 
     private ContextFragment.TaskFragment createCommentsFragment(GHIssue issue, List<ChatMessage> commentMessages) {
-        String description = String.format("Comments for GitHub Issue #%d: %s", issue.getNumber(), issue.getTitle());
+        String description = String.format("GitHub Issue #%d: Comments", issue.getNumber());
         return new ContextFragment.TaskFragment(
                 this.contextManager,
                 commentMessages,
@@ -820,7 +820,7 @@ public class GitIssuesTab extends JPanel {
                             description = String.format("GitHub issue #%s: Image from Issue", issue.getNumber());
                         } else {
                             String commentAuthor = commentAuthors.getOrDefault(imageUrl, "unknown author");
-                            description = String.format("GitHub issue #%s: Image from comment by %s", commentAuthor, issue.getNumber());
+                            description = String.format("GitHub issue #%s: Image from comment by %s", issue.getNumber(), commentAuthor);
                         }
                         contextManager.addPastedImageFragment(image, description);
                         capturedImageCount++;
