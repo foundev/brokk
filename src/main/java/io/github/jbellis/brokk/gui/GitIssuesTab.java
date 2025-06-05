@@ -817,10 +817,10 @@ public class GitIssuesTab extends JPanel {
                         // Determine if the image URL was primarily from the issue body or a comment for description
                         boolean inIssueBody = issueBodyMarkdown != null && !issueBodyMarkdown.isBlank() && MarkdownImageParser.extractImageUrls(issueBodyMarkdown).contains(imageUrl);
                         if (inIssueBody) {
-                            description = String.format("Image from GitHub issue #%s body", issue.getNumber());
+                            description = String.format("GitHub issue #%s: Image from Issue", issue.getNumber());
                         } else {
                             String commentAuthor = commentAuthors.getOrDefault(imageUrl, "unknown author");
-                            description = String.format("Image from comment by %s on GitHub issue #%s", commentAuthor, issue.getNumber());
+                            description = String.format("GitHub issue #%s: Image from comment by %s", commentAuthor, issue.getNumber());
                         }
                         contextManager.addPastedImageFragment(image, description);
                         capturedImageCount++;
