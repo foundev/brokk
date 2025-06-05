@@ -10,6 +10,7 @@ import io.github.jbellis.brokk.util.ImageUtil;
 import okhttp3.OkHttpClient;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
+import org.jetbrains.annotations.NotNull;
 import org.kohsuke.github.*;
 
 import javax.swing.*;
@@ -31,6 +32,7 @@ import java.util.stream.Collectors;
 public class GitIssuesTab extends JPanel {
     private static final Logger logger = LogManager.getLogger(GitIssuesTab.class);
     private static final Pattern IMAGE_MARKDOWN_PATTERN = Pattern.compile("!\\[(?:[^\\]]*)\\]\\(([^\\)]+)\\)");
+    private static final Pattern HTML_IMG_TAG_PATTERN = Pattern.compile("<img\\s+[^>]*?src\\s*=\\s*[\"']([^\"']+)[\"'][^>]*?/?>", Pattern.CASE_INSENSITIVE);
 
     // Issue Table Column Indices
     private static final int ISSUE_COL_NUMBER = 0;
@@ -655,7 +657,8 @@ public class GitIssuesTab extends JPanel {
         return new ContextFragment.TaskFragment(
                 this.contextManager,
                 messages,
-                description
+                description,
+                false // some issues contain HTML
         );
     }
 
@@ -694,7 +697,8 @@ public class GitIssuesTab extends JPanel {
         return new ContextFragment.TaskFragment(
                 this.contextManager,
                 commentMessages,
-                description
+                description,
+                false // some comments contain HTML
         );
     }
 
@@ -708,9 +712,9 @@ public class GitIssuesTab extends JPanel {
             return imageDataList;
         }
 
-        Matcher matcher = IMAGE_MARKDOWN_PATTERN.matcher(originalMarkdownBody);
-        while (matcher.find()) {
-            String imageUrl = matcher.group(1);
+        Set<String> uniqueImageUrls = retrieveImageUrlsFromContent(originalMarkdownBody);
+
+        for (String imageUrl : uniqueImageUrls) {
             try {
                 URI imageUri = new URI(imageUrl);
                 if (ImageUtil.isImageUri(imageUri, this.httpClient)) {
@@ -718,7 +722,7 @@ public class GitIssuesTab extends JPanel {
                     java.awt.Image image = ImageUtil.downloadImage(imageUri, this.httpClient);
                     if (image != null) {
                         String imageDescription = String.format("Image from GitHub issue #%d (%s)", issue.getNumber(), imageUrl);
-                        if (imageDescription.length() > 150) { // Max length for description in some contexts
+                        if (imageDescription.length() > 150) { // Max length for description
                             imageDescription = imageDescription.substring(0, 147) + "...";
                         }
                         imageDataList.add(new ImageCaptureData(image, imageDescription));
@@ -736,6 +740,23 @@ public class GitIssuesTab extends JPanel {
             }
         }
         return imageDataList;
+    }
+
+    private static @NotNull Set<String> retrieveImageUrlsFromContent(String originalMarkdownBody) {
+        Set<String> uniqueImageUrls = new LinkedHashSet<>();
+
+        // Find and add URLs from Markdown image links
+        Matcher markdownMatcher = IMAGE_MARKDOWN_PATTERN.matcher(originalMarkdownBody);
+        while (markdownMatcher.find()) {
+            uniqueImageUrls.add(markdownMatcher.group(1));
+        }
+
+        // Find and add URLs from HTML <img> tags
+        Matcher htmlMatcher = HTML_IMG_TAG_PATTERN.matcher(originalMarkdownBody);
+        while (htmlMatcher.find()) {
+            uniqueImageUrls.add(htmlMatcher.group(1));
+        }
+        return uniqueImageUrls;
     }
 
     private void copySelectedIssueDescription() {
