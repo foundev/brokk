@@ -173,7 +173,7 @@ public class ContextSerializationTest {
 
         // Verify image content from the image fragment in loadedCtx2
         var loadedImageFragmentOpt = loadedCtx2.virtualFragments()
-            .filter(f -> !f.isText() && "Paste of Pasted Red Image".equals(f.description()))
+            .filter(f -> !f.isText() && "Pasted Red Image".equals(f.description()))
             .findFirst();
         assertTrue(loadedImageFragmentOpt.isPresent(), "Pasted Red Image fragment not found in loaded context 2");
         var loadedImageFragment = loadedImageFragmentOpt.get();
@@ -333,12 +333,12 @@ public class ContextSerializationTest {
         
         // Find the image fragments in each context
         var fragment1 = loadedCtx1.virtualFragments()
-            .filter(f -> !f.isText() && "Paste of Shared Blue Image".equals(f.description()))
+            .filter(f -> !f.isText() && "Shared Blue Image".equals(f.description()))
             .findFirst()
             .orElseThrow(() -> new AssertionError("Image fragment not found in loaded context 1"));
             
         var fragment2 = loadedCtx2.virtualFragments()
-            .filter(f -> !f.isText() && "Paste of Shared Blue Image".equals(f.description()))
+            .filter(f -> !f.isText() && "Shared Blue Image".equals(f.description()))
             .findFirst()
             .orElseThrow(() -> new AssertionError("Image fragment not found in loaded context 2"));
         
@@ -376,8 +376,8 @@ public class ContextSerializationTest {
         assertEquals(8, reconstructedImage2.getHeight());
         
         // Verify descriptions
-        assertEquals("Paste of " + sharedDescription, fragment1.description());
-        assertEquals("Paste of " + sharedDescription, fragment2.description());
+        assertEquals(sharedDescription, fragment1.description());
+        assertEquals(sharedDescription, fragment2.description());
     }
 
     @Test
