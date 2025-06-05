@@ -17,6 +17,9 @@ import javax.swing.*;
 import javax.swing.table.DefaultTableModel;
 import java.awt.*;
 import java.awt.datatransfer.StringSelection;
+import java.awt.event.ActionEvent;
+import java.awt.event.MouseAdapter;
+import java.awt.event.MouseEvent;
 import java.io.IOException;
 import java.net.URI;
 import java.net.URISyntaxException;
@@ -55,16 +58,19 @@ public class GitIssuesTab extends JPanel {
     private FilterBox labelFilter;
     private FilterBox assigneeFilter;
 
+    // Context Menu for Issue Table
+    private JPopupMenu issueContextMenu;
+
+    // Shared actions for buttons and menu items
+    private Action copyDescriptionAction;
+    private Action openInBrowserAction;
+    private Action captureAction;
+
     private List<GHIssue> allIssuesFromApi = new ArrayList<>();
     private List<GHIssue> displayedIssues = new ArrayList<>();
 
     // Store default options for static filters to easily reset them
     private static final List<String> STATUS_FILTER_OPTIONS = List.of("Open", "Closed"); // "All" is null selection
-
-    // Lists to hold choices for dynamic filters
-    private List<String> authorChoices = new ArrayList<>();
-    private List<String> labelChoices = new ArrayList<>();
-    private List<String> assigneeChoices = new ArrayList<>();
 
     private final GfmRenderer gfmRenderer;
     private final OkHttpClient httpClient;
@@ -105,19 +111,19 @@ public class GitIssuesTab extends JPanel {
         });
         verticalFilterPanel.add(statusFilter);
 
-        authorFilter = new FilterBox(this.chrome, "Author", this::getAuthorFilterOptions);
+        authorFilter = new FilterBox(this.chrome, "Author", () -> generateFilterOptionsFromIssues(allIssuesFromApi, "author"));
         authorFilter.setToolTipText("Filter by author");
         authorFilter.setAlignmentX(Component.LEFT_ALIGNMENT);
         authorFilter.addPropertyChangeListener("value", e -> filterAndDisplayIssues());
         verticalFilterPanel.add(authorFilter);
 
-        labelFilter = new FilterBox(this.chrome, "Label", this::getLabelFilterOptions);
+        labelFilter = new FilterBox(this.chrome, "Label", () -> generateFilterOptionsFromIssues(allIssuesFromApi, "label"));
         labelFilter.setToolTipText("Filter by label");
         labelFilter.setAlignmentX(Component.LEFT_ALIGNMENT);
         labelFilter.addPropertyChangeListener("value", e -> filterAndDisplayIssues());
         verticalFilterPanel.add(labelFilter);
 
-        assigneeFilter = new FilterBox(this.chrome, "Assignee", this::getAssigneeFilterOptions);
+        assigneeFilter = new FilterBox(this.chrome, "Assignee", () -> generateFilterOptionsFromIssues(allIssuesFromApi, "assignee"));
         assigneeFilter.setToolTipText("Filter by assignee");
         assigneeFilter.setAlignmentX(Component.LEFT_ALIGNMENT);
         assigneeFilter.addPropertyChangeListener("value", e -> filterAndDisplayIssues());
@@ -160,30 +166,48 @@ public class GitIssuesTab extends JPanel {
 
         issueTableAndButtonsPanel.add(new JScrollPane(issueTable), BorderLayout.CENTER);
 
+        // Create shared actions
+        copyDescriptionAction = new AbstractAction("Copy Description") {
+            @Override
+            public void actionPerformed(ActionEvent e) {
+                copySelectedIssueDescription();
+            }
+        };
+        copyDescriptionAction.putValue(Action.SHORT_DESCRIPTION, "Copy the selected issue's description to the clipboard");
+        copyDescriptionAction.setEnabled(false);
+
+        openInBrowserAction = new AbstractAction("Open in Browser") {
+            @Override
+            public void actionPerformed(ActionEvent e) {
+                openSelectedIssueInBrowser();
+            }
+        };
+        openInBrowserAction.putValue(Action.SHORT_DESCRIPTION, "Open the selected issue in your web browser");
+        openInBrowserAction.setEnabled(false);
+
+        captureAction = new AbstractAction("Capture") {
+            @Override
+            public void actionPerformed(ActionEvent e) {
+                captureSelectedIssue();
+            }
+        };
+        captureAction.putValue(Action.SHORT_DESCRIPTION, "Capture details of the selected issue");
+        captureAction.setEnabled(false);
+
         // Button panel for Issues
         JPanel issueButtonPanel = new JPanel();
         issueButtonPanel.setBorder(BorderFactory.createEmptyBorder(new Constants().V_GLUE, 0, 0, 0));
         issueButtonPanel.setLayout(new BoxLayout(issueButtonPanel, BoxLayout.X_AXIS));
 
-        copyIssueDescriptionButton = new JButton("Copy Description");
-        copyIssueDescriptionButton.setToolTipText("Copy the selected issue's description to the clipboard");
-        copyIssueDescriptionButton.setEnabled(false);
-        copyIssueDescriptionButton.addActionListener(e -> copySelectedIssueDescription());
+        copyIssueDescriptionButton = new JButton(copyDescriptionAction);
         issueButtonPanel.add(copyIssueDescriptionButton);
         issueButtonPanel.add(Box.createHorizontalStrut(new Constants().H_GAP));
 
-        openInBrowserButton = new JButton("Open in Browser");
-        openInBrowserButton.setToolTipText("Open the selected issue in your web browser");
-        openInBrowserButton.setEnabled(false);
-        openInBrowserButton.addActionListener(e -> openSelectedIssueInBrowser());
-        openInBrowserButton.addActionListener(e -> openSelectedIssueInBrowser());
+        openInBrowserButton = new JButton(openInBrowserAction);
         issueButtonPanel.add(openInBrowserButton);
         issueButtonPanel.add(Box.createHorizontalStrut(new Constants().H_GAP));
 
-        captureButton = new JButton("Capture");
-        captureButton.setToolTipText("Capture details of the selected issue");
-        captureButton.setEnabled(false);
-        captureButton.addActionListener(e -> captureSelectedIssue());
+        captureButton = new JButton(captureAction);
         issueButtonPanel.add(captureButton);
 
         issueButtonPanel.add(Box.createHorizontalGlue()); // Pushes refresh button to the right
@@ -216,6 +240,48 @@ public class GitIssuesTab extends JPanel {
 
         add(splitPane, BorderLayout.CENTER);
 
+        // Initialize context menu and items
+        issueContextMenu = new JPopupMenu();
+        if (chrome.themeManager != null) {
+            chrome.themeManager.registerPopupMenu(issueContextMenu);
+        } else {
+            SwingUtilities.invokeLater(() -> {
+                if (chrome.themeManager != null) {
+                    chrome.themeManager.registerPopupMenu(issueContextMenu);
+                }
+            });
+        }
+
+        issueContextMenu.add(new JMenuItem(copyDescriptionAction));
+        issueContextMenu.add(new JMenuItem(openInBrowserAction));
+        issueContextMenu.add(new JMenuItem(captureAction));
+
+        // Add mouse listener for context menu on issue table
+        issueTable.addMouseListener(new MouseAdapter() {
+            private void showPopup(MouseEvent e) {
+                if (e.isPopupTrigger()) {
+                    int row = issueTable.rowAtPoint(e.getPoint());
+                    if (row >= 0 && row < issueTable.getRowCount()) {
+                        // Select the row under the mouse pointer before showing the context menu.
+                        // This ensures that getSelectedRow() in action listeners returns the correct row,
+                        // and triggers the ListSelectionListener to update enable/disable states.
+                        issueTable.setRowSelectionInterval(row, row);
+                        issueContextMenu.show(e.getComponent(), e.getX(), e.getY());
+                    }
+                }
+            }
+
+            @Override
+            public void mousePressed(MouseEvent e) {
+                showPopup(e);
+            }
+
+            @Override
+            public void mouseReleased(MouseEvent e) {
+                showPopup(e);
+            }
+        });
+
         // Listen for Issue selection changes
         issueTable.getSelectionModel().addListSelectionListener(e -> {
             if (!e.getValueIsAdjusting() && issueTable.getSelectedRow() != -1) {
@@ -229,9 +295,9 @@ public class GitIssuesTab extends JPanel {
                     }
                     GHIssue selectedIssue = displayedIssues.get(modelRow);
                     loadAndRenderIssueBody(selectedIssue);
-                    copyIssueDescriptionButton.setEnabled(true);
-                    openInBrowserButton.setEnabled(true);
-                    captureButton.setEnabled(true);
+                    copyDescriptionAction.setEnabled(true);
+                    openInBrowserAction.setEnabled(true);
+                    captureAction.setEnabled(true);
                 } else { // No selection or invalid row
                     disableIssueActionsAndClearDetails();
                 }
@@ -262,9 +328,11 @@ public class GitIssuesTab extends JPanel {
     }
 
     private void disableIssueActionsAndClearDetails() {
-        copyIssueDescriptionButton.setEnabled(false);
-        openInBrowserButton.setEnabled(false);
-        captureButton.setEnabled(false);
+        if (copyDescriptionAction != null) {
+            copyDescriptionAction.setEnabled(false);
+            openInBrowserAction.setEnabled(false);
+            captureAction.setEnabled(false);
+        }
         issueBodyTextPane.setContentType("text/html");
         issueBodyTextPane.setText("");
     }
@@ -347,9 +415,6 @@ public class GitIssuesTab extends JPanel {
                             "", "Error fetching issues: " + ex.getMessage(), "", "", "", "", ""
                     });
                     disableIssueActionsAndClearDetails();
-                    authorChoices.clear();
-                    labelChoices.clear();
-                    assigneeChoices.clear();
                 });
                 return null;
             }
@@ -358,65 +423,57 @@ public class GitIssuesTab extends JPanel {
             List<GHIssue> finalFetchedIssues = fetchedIssues;
             SwingUtilities.invokeLater(() -> {
                 allIssuesFromApi = new ArrayList<>(finalFetchedIssues);
-                populateDynamicFilterChoices(allIssuesFromApi);
                 filterAndDisplayIssues(); // Apply current filters
             });
             return null;
         });
     }
 
-    private List<String> getAuthorFilterOptions() {
-        return authorChoices;
-    }
+    private List<String> generateFilterOptionsFromIssues(List<GHIssue> issues, String filterType) {
+        if (issues.isEmpty()) {
+            return List.of();
+        }
 
-    private List<String> getLabelFilterOptions() {
-        return labelChoices;
-    }
-
-    private List<String> getAssigneeFilterOptions() {
-        return assigneeChoices;
-    }
-
-    private void populateDynamicFilterChoices(List<GHIssue> issues) {
-        // Author Filter
-        Map<String, Integer> authorCounts = new HashMap<>();
-        for (var issue : issues) {
-            try {
-                GHUser user = issue.getUser();
-                if (user != null) {
-                    String login = user.getLogin();
-                    if (login != null && !login.isBlank()) {
-                        authorCounts.merge(login, 1, Integer::sum);
+        Map<String, Integer> counts = new HashMap<>();
+        
+        switch (filterType) {
+            case "author" -> {
+                for (var issue : issues) {
+                    try {
+                        GHUser user = issue.getUser();
+                        if (user != null) {
+                            String login = user.getLogin();
+                            if (login != null && !login.isBlank()) {
+                                counts.merge(login, 1, Integer::sum);
+                            }
+                        }
+                    } catch (IOException e) {
+                        logger.warn("Could not get user or login for issue #{}", issue.getNumber(), e);
                     }
                 }
-            } catch (IOException e) {
-                logger.warn("Could not get user or login for issue #{}", issue.getNumber(), e);
             }
-        }
-        authorChoices = generateFilterOptionsList(authorCounts);
-
-        // Label Filter
-        Map<String, Integer> labelCounts = new HashMap<>();
-        for (var issue : issues) {
-            for (GHLabel label : issue.getLabels()) {
-                if (!label.getName().isBlank()) {
-                    labelCounts.merge(label.getName(), 1, Integer::sum);
+            case "label" -> {
+                for (var issue : issues) {
+                    for (GHLabel label : issue.getLabels()) {
+                        if (!label.getName().isBlank()) {
+                            counts.merge(label.getName(), 1, Integer::sum);
+                        }
+                    }
+                }
+            }
+            case "assignee" -> {
+                for (var issue : issues) {
+                    for (GHUser assignee : issue.getAssignees()) {
+                        String login = assignee.getLogin(); // Does not throw IOException
+                        if (login != null && !login.isBlank()) {
+                            counts.merge(login, 1, Integer::sum);
+                        }
+                    }
                 }
             }
         }
-        labelChoices = generateFilterOptionsList(labelCounts);
-
-        // Assignee Filter
-        Map<String, Integer> assigneeCounts = new HashMap<>();
-        for (var issue : issues) {
-            for (GHUser assignee : issue.getAssignees()) {
-                String login = assignee.getLogin(); // Does not throw IOException
-                if (login != null && !login.isBlank()) {
-                    assigneeCounts.merge(login, 1, Integer::sum);
-                }
-            }
-        }
-        assigneeChoices = generateFilterOptionsList(assigneeCounts);
+        
+        return generateFilterOptionsList(counts);
     }
 
     private List<String> generateFilterOptionsList(Map<String, Integer> counts) {
@@ -545,9 +602,11 @@ public class GitIssuesTab extends JPanel {
     }
 
     private void disableIssueActions() {
-        copyIssueDescriptionButton.setEnabled(false);
-        openInBrowserButton.setEnabled(false);
-        captureButton.setEnabled(false);
+        if (copyDescriptionAction != null) {
+            copyDescriptionAction.setEnabled(false);
+            openInBrowserAction.setEnabled(false);
+            captureAction.setEnabled(false);
+        }
     }
 
     private void captureSelectedIssue() {
