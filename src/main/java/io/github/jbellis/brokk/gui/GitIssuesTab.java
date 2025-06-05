@@ -7,10 +7,10 @@ import io.github.jbellis.brokk.ContextManager;
 import io.github.jbellis.brokk.GitHubAuth;
 import io.github.jbellis.brokk.context.ContextFragment;
 import io.github.jbellis.brokk.util.ImageUtil;
+import io.github.jbellis.brokk.util.MarkdownImageParser;
 import okhttp3.OkHttpClient;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
-import org.jetbrains.annotations.NotNull;
 import org.kohsuke.github.*;
 
 import javax.swing.*;
@@ -24,15 +24,11 @@ import java.time.LocalDate;
 import java.util.*;
 import java.util.List;
 import java.util.concurrent.TimeUnit;
-import java.util.regex.Matcher;
-import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 
 
 public class GitIssuesTab extends JPanel {
     private static final Logger logger = LogManager.getLogger(GitIssuesTab.class);
-    private static final Pattern IMAGE_MARKDOWN_PATTERN = Pattern.compile("!\\[(?:[^\\]]*)\\]\\(([^\\)]+)\\)");
-    private static final Pattern HTML_IMG_TAG_PATTERN = Pattern.compile("<img\\s+[^>]*?src\\s*=\\s*[\"']([^\"']+)[\"'][^>]*?/?>", Pattern.CASE_INSENSITIVE);
 
     // Issue Table Column Indices
     private static final int ISSUE_COL_NUMBER = 0;
@@ -577,24 +573,31 @@ public class GitIssuesTab extends JPanel {
                 ContextFragment.TaskFragment issueTextFragment = createIssueTextFragment(issue, issueTextMessages);
                 contextManager.addVirtualFragment(issueTextFragment);
 
-                // 3. Fetch and process comments
-                List<ChatMessage> commentChatMessages = getIssueCommentsAsChatMessages(issue);
+                // 3. Fetch comments
+                List<GHIssueComment> ghCommentsList;
+                try {
+                    ghCommentsList = issue.getComments();
+                } catch (IOException e) {
+                    logger.error("Could not fetch comments for issue #{}", issue.getNumber(), e);
+                    chrome.toolErrorRaw("Failed to download comments for #" + issue.getNumber() + ": " + e.getMessage());
+                    ghCommentsList = List.of(); // Use an empty list if fetching fails
+                }
+
+                // Process comments into ChatMessages
+                List<ChatMessage> commentChatMessages = buildChatMessagesFromGhComments(ghCommentsList, issue);
                 if (!commentChatMessages.isEmpty()) {
                     contextManager.addVirtualFragment(createCommentsFragment(issue, commentChatMessages));
                 }
 
-                // 4. Prepare image data (downloads images but doesn't create fragments yet)
-                List<ImageCaptureData> imageCaptureDataList = prepareImageDataForCapture(issue, originalMarkdownBody);
-                for (ImageCaptureData data : imageCaptureDataList) {
-                    contextManager.addPastedImageFragment(data.image(), data.description());
-                }
+                // 4. Process and capture images from issue body and comments
+                int capturedImageCount = processAndCaptureImages(issue, originalMarkdownBody, ghCommentsList);
 
-                // 6. Report success
-                String commentMessage = commentChatMessages.isEmpty() ? "" : " with " + commentChatMessages.size() + " comment(s)";
-                String imageMessage = imageCaptureDataList.isEmpty() ? "" : " and " + imageCaptureDataList.size() + " image(s)";
+                // 5. Report success
+                String commentMessage = ghCommentsList.isEmpty() ? "" : " with " + ghCommentsList.size() + " comment(s)";
+                String imageMessage = capturedImageCount == 0 ? "" : " and " + capturedImageCount + " image(s)";
                 chrome.systemOutput("Issue #" + issue.getNumber() + " captured to workspace" + commentMessage + imageMessage + ".");
 
-            } catch (IOException e) {
+            } catch (Exception e) { // Catches any unexpected exceptions from GHIssue API
                 logger.error("Failed to capture all details for issue #{}", issue.getNumber(), e);
                 chrome.toolErrorRaw("Failed to capture all details for issue #" + issue.getNumber() + ": " + e.getMessage());
             }
@@ -662,31 +665,35 @@ public class GitIssuesTab extends JPanel {
         );
     }
 
-    private List<ChatMessage> getIssueCommentsAsChatMessages(GHIssue issue) throws IOException {
-        List<GHIssueComment> ghComments;
-        try {
-            ghComments = issue.getComments();
-        } catch (IOException e) {
-            logger.error("Could not fetch comments for #{}", issue.getNumber(), e);
-            chrome.toolErrorRaw("Failed to download comments for #" + issue.getNumber() + ": " + e.getMessage());
-            return List.of(); // Return empty on failure
-        }
-
+    private List<ChatMessage> buildChatMessagesFromGhComments(List<GHIssueComment> ghCommentsList, GHIssue issue) {
         List<ChatMessage> chatMessages = new ArrayList<>();
-        for (GHIssueComment c : ghComments) {
+        for (GHIssueComment c : ghCommentsList) {
             String author = "unknown";
+            String commentBody = c.getBody(); // Does not throw IOException
+            String commentIdStr = String.valueOf(c.getId()); // Does not throw
+
             try {
-                // GHIssueComment.getUser() and GHUser.getLogin() do not throw IOException
-                if (c.getUser() != null && c.getUser().getLogin() != null && !c.getUser().getLogin().isBlank()) {
-                    author = c.getUser().getLogin();
+                GHUser user = c.getUser(); // Can throw IOException
+                if (user != null) {
+                    String login = user.getLogin(); // Does not throw IOException
+                    if (login != null && !login.isBlank()) {
+                        author = login;
+                    }
                 }
-            } catch (Exception e) { // Defensive catch for unexpected issues, though API implies no IOException
-                logger.warn("Author lookup failed for a comment on #{} by user '{}'", issue.getNumber(), (c.getUser() != null ? c.getUser().getLogin() : "null_user"), e);
+            } catch (IOException e_user) {
+                // issue.getNumber() does not throw IOException
+                String issueNumStr = String.valueOf(issue.getNumber());
+                logger.warn("IOException getting user for comment_id:{} on issue #{}: {}", commentIdStr, issueNumStr, e_user.getMessage());
+                // author remains "unknown"
+            } catch (Exception e_other_user) { // Catch any other unexpected exception from getUser/getLogin logic
+                // issue.getNumber() does not throw IOException
+                String issueNumStr = String.valueOf(issue.getNumber());
+                logger.error("Unexpected error getting user for comment_id:{} on issue #{}: {}", commentIdStr, issueNumStr, e_other_user.getMessage(), e_other_user);
+                // author remains "unknown"
             }
 
-            String body = c.getBody(); // Does not throw IOException
-            if (body != null && !body.isBlank()) {
-                chatMessages.add(UserMessage.from(author, body));
+            if (commentBody != null && !commentBody.isBlank()) {
+                chatMessages.add(UserMessage.from(author, commentBody));
             }
         }
         return chatMessages;
@@ -703,60 +710,84 @@ public class GitIssuesTab extends JPanel {
     }
 
     // Record to hold image data before fragment creation
-    private record ImageCaptureData(java.awt.Image image, String description) {}
+    private int processAndCaptureImages(GHIssue issue, String issueBodyMarkdown, List<GHIssueComment> comments) {
+        Set<String> allImageUrls = new LinkedHashSet<>();
 
-    // Prepares image data (downloads images) but does not create/add fragments yet.
-    private List<ImageCaptureData> prepareImageDataForCapture(GHIssue issue, String originalMarkdownBody) {
-        List<ImageCaptureData> imageDataList = new ArrayList<>();
-        if (originalMarkdownBody == null || originalMarkdownBody.isBlank()) {
-            return imageDataList;
+        // 1. Extract from issue body
+        if (issueBodyMarkdown != null && !issueBodyMarkdown.isBlank()) {
+            allImageUrls.addAll(MarkdownImageParser.extractImageUrls(issueBodyMarkdown));
         }
 
-        Set<String> uniqueImageUrls = retrieveImageUrlsFromContent(originalMarkdownBody);
+        // 2. Extract from comments
+        Map<String, String> commentAuthors = new HashMap<>(); // To store author for description
+        for (GHIssueComment comment : comments) {
+            String commentBody = comment.getBody();
+            if (commentBody != null && !commentBody.isBlank()) {
+                Set<String> commentImageUrls = MarkdownImageParser.extractImageUrls(commentBody);
+                allImageUrls.addAll(commentImageUrls);
+                // Store author for URLs found in this comment
+                String author = "unknown";
+                try {
+                    GHUser user = comment.getUser(); // This can throw IOException
+                    if (user != null) {
+                        String login = user.getLogin(); // This does not throw IOException
+                        if (login != null && !login.isBlank()) {
+                            author = login;
+                        }
+                    }
+                } catch (IOException e) {
+                    // issue.getNumber() does not throw IOException
+                    String issueNumberForLog = String.valueOf(issue.getNumber());
+                    logger.warn("Could not get author for comment id {} on issue #{}", comment.getId(), issueNumberForLog, e);
+                }
+                for (String url : commentImageUrls) {
+                    // Associate the URL with this comment's author, potentially overwriting if URL is in multiple comments (rare)
+                    // or if already seen in issue body (issue body takes precedence later).
+                    commentAuthors.putIfAbsent(url, author);
+                }
+            }
+        }
 
-        for (String imageUrl : uniqueImageUrls) {
+        int capturedImageCount = 0;
+        for (String imageUrl : allImageUrls) {
             try {
                 URI imageUri = new URI(imageUrl);
                 if (ImageUtil.isImageUri(imageUri, this.httpClient)) {
                     chrome.systemOutput("Downloading image: " + imageUrl);
                     java.awt.Image image = ImageUtil.downloadImage(imageUri, this.httpClient);
                     if (image != null) {
-                        String imageDescription = String.format("Image from GitHub issue #%d (%s)", issue.getNumber(), imageUrl);
-                        if (imageDescription.length() > 150) { // Max length for description
-                            imageDescription = imageDescription.substring(0, 147) + "...";
+                        String description;
+                        // issue.getNumber() does not throw IOException
+                        String issueNumberForDesc = String.valueOf(issue.getNumber());
+
+                        // Determine if the image URL was primarily from the issue body or a comment for description
+                        boolean inIssueBody = issueBodyMarkdown != null && !issueBodyMarkdown.isBlank() && MarkdownImageParser.extractImageUrls(issueBodyMarkdown).contains(imageUrl);
+                        if (inIssueBody) {
+                            description = String.format("Image from GitHub issue #%s body (%s)", issueNumberForDesc, imageUrl);
+                        } else {
+                            String commentAuthor = commentAuthors.getOrDefault(imageUrl, "unknown author");
+                            description = String.format("Image from comment by %s on GitHub issue #%s (%s)", commentAuthor, issueNumberForDesc, imageUrl);
                         }
-                        imageDataList.add(new ImageCaptureData(image, imageDescription));
+
+                        if (description.length() > 150) { // Max length for description
+                            description = description.substring(0, 147) + "...";
+                        }
+                        contextManager.addPastedImageFragment(image, description);
+                        capturedImageCount++;
                     } else {
                         logger.warn("Failed to download image identified by ImageUtil: {}", imageUrl);
                         chrome.toolErrorRaw("Failed to download image: " + imageUrl);
                     }
                 }
             } catch (URISyntaxException e) {
-                logger.warn("Invalid image URI syntax in issue body: {}", imageUrl, e);
-                chrome.toolErrorRaw("Invalid image URL in issue: " + imageUrl);
+                logger.warn("Invalid image URI syntax: {}", imageUrl, e);
+                chrome.toolErrorRaw("Invalid image URL: " + imageUrl);
             } catch (Exception e) { // General catch for robustness during image processing
                 logger.error("Unexpected error processing image {}: {}", imageUrl, e.getMessage(), e);
                 chrome.toolErrorRaw("Error processing image " + imageUrl + ": " + e.getMessage());
             }
         }
-        return imageDataList;
-    }
-
-    private static @NotNull Set<String> retrieveImageUrlsFromContent(String originalMarkdownBody) {
-        Set<String> uniqueImageUrls = new LinkedHashSet<>();
-
-        // Find and add URLs from Markdown image links
-        Matcher markdownMatcher = IMAGE_MARKDOWN_PATTERN.matcher(originalMarkdownBody);
-        while (markdownMatcher.find()) {
-            uniqueImageUrls.add(markdownMatcher.group(1));
-        }
-
-        // Find and add URLs from HTML <img> tags
-        Matcher htmlMatcher = HTML_IMG_TAG_PATTERN.matcher(originalMarkdownBody);
-        while (htmlMatcher.find()) {
-            uniqueImageUrls.add(htmlMatcher.group(1));
-        }
-        return uniqueImageUrls;
+        return capturedImageCount;
     }
 
     private void copySelectedIssueDescription() {
