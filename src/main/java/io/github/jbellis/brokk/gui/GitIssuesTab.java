@@ -736,9 +736,7 @@ public class GitIssuesTab extends JPanel {
                         }
                     }
                 } catch (IOException e) {
-                    // issue.getNumber() does not throw IOException
-                    String issueNumberForLog = String.valueOf(issue.getNumber());
-                    logger.warn("Could not get author for comment id {} on issue #{}", comment.getId(), issueNumberForLog, e);
+                    logger.warn("Could not get author for comment id {} on issue #{}", comment.getId(), String.valueOf(issue.getNumber()), e);
                 }
                 for (String url : commentImageUrls) {
                     // Associate the URL with this comment's author, potentially overwriting if URL is in multiple comments (rare)
@@ -757,20 +755,13 @@ public class GitIssuesTab extends JPanel {
                     java.awt.Image image = ImageUtil.downloadImage(imageUri, this.httpClient);
                     if (image != null) {
                         String description;
-                        // issue.getNumber() does not throw IOException
-                        String issueNumberForDesc = String.valueOf(issue.getNumber());
-
                         // Determine if the image URL was primarily from the issue body or a comment for description
                         boolean inIssueBody = issueBodyMarkdown != null && !issueBodyMarkdown.isBlank() && MarkdownImageParser.extractImageUrls(issueBodyMarkdown).contains(imageUrl);
                         if (inIssueBody) {
-                            description = String.format("Image from GitHub issue #%s body (%s)", issueNumberForDesc, imageUrl);
+                            description = String.format("Image from GitHub issue #%s body", issue.getNumber());
                         } else {
                             String commentAuthor = commentAuthors.getOrDefault(imageUrl, "unknown author");
-                            description = String.format("Image from comment by %s on GitHub issue #%s (%s)", commentAuthor, issueNumberForDesc, imageUrl);
-                        }
-
-                        if (description.length() > 150) { // Max length for description
-                            description = description.substring(0, 147) + "...";
+                            description = String.format("Image from comment by %s on GitHub issue #%s", commentAuthor, issue.getNumber());
                         }
                         contextManager.addPastedImageFragment(image, description);
                         capturedImageCount++;
