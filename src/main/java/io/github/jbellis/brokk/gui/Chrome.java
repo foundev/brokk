@@ -889,7 +889,7 @@ public class Chrome implements AutoCloseable, IConsoleIO, IContextManager.Contex
             // 3. Image fragments (clipboard image or image file)
             if (!workingFragment.isText()) {
                 if (workingFragment.getType() == ContextFragment.FragmentType.PASTE_IMAGE) {
-                    var pif = (ContextFragment.PasteImageFragment) workingFragment;
+                    var pif = (ContextFragment.AnonymousImageFragment) workingFragment;
                     var imagePanel = new PreviewImagePanel(contextManager, null, themeManager);
                     imagePanel.setImage(pif.image());
                     showPreviewFrame(contextManager, title, imagePanel);

@@ -798,17 +798,17 @@ public interface ContextFragment {
         }
     }
 
-    class PasteImageFragment extends PasteFragment {
+    class AnonymousImageFragment extends PasteFragment {
         private final Image image;
 
-        public PasteImageFragment(IContextManager contextManager, Image image, Future<String> descriptionFuture) {
+        public AnonymousImageFragment(IContextManager contextManager, Image image, Future<String> descriptionFuture) {
             super(contextManager, descriptionFuture);
             assert image != null;
             assert descriptionFuture != null;
             this.image = image;
         }
 
-        public PasteImageFragment(int existingId, IContextManager contextManager, Image image, Future<String> descriptionFuture) {
+        public AnonymousImageFragment(int existingId, IContextManager contextManager, Image image, Future<String> descriptionFuture) {
             super(existingId, contextManager, descriptionFuture);
             assert image != null;
             assert descriptionFuture != null;
@@ -853,6 +853,18 @@ public interface ContextFragment {
         @Override
         public Set<ProjectFile> files() {
             return Set.of();
+        }
+
+        @Override
+        public String description() {
+            if (descriptionFuture.isDone()) {
+                try {
+                    return descriptionFuture.get();
+                } catch (Exception e) {
+                    return "(Error summarizing paste)";
+                }
+            }
+            return "(Summarizing. This does not block LLM requests)";
         }
     }
 

@@ -812,7 +812,7 @@ public class ContextManager implements IContextManager, AutoCloseable {
      *
      * @param image The java.awt.Image pasted from the clipboard.
      */
-    public ContextFragment.PasteImageFragment addPastedImageFragment(java.awt.Image image, String descriptionOverride) {
+    public ContextFragment.AnonymousImageFragment addPastedImageFragment(java.awt.Image image, String descriptionOverride) {
         Future<String> descriptionFuture;
         if (descriptionOverride != null && !descriptionOverride.isBlank()) {
             descriptionFuture = CompletableFuture.completedFuture(descriptionOverride);
@@ -821,7 +821,7 @@ public class ContextManager implements IContextManager, AutoCloseable {
         }
 
         // Must be final for lambda capture in pushContext
-        final var fragment = new ContextFragment.PasteImageFragment(this, image, descriptionFuture);
+        final var fragment = new ContextFragment.AnonymousImageFragment(this, image, descriptionFuture);
         pushContext(currentLiveCtx -> currentLiveCtx.addVirtualFragment(fragment));
         return fragment;
     }
