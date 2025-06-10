@@ -81,7 +81,10 @@ class JavaAnalyzer private(sourcePath: Path, cpgInit: Cpg)
       val isArray = input.endsWith("[]")
       val base = if (isArray) input.dropRight(2) else input
       val shortName = base.split("\\.").lastOption.getOrElse(base)
-      if (isArray) s"$shortName[]" else shortName
+      
+      // Improve synthetic class name handling for decompiled files
+      val improvedName = improveSyntheticName(shortName)
+      if (isArray) s"$improvedName[]" else improvedName
     }
 
     if (t.contains("<")) {
@@ -97,6 +100,30 @@ class JavaAnalyzer private(sourcePath: Path, cpgInit: Cpg)
     } else processType(t)
   }
 
+  /**
+   * Improve synthetic names from decompiled files to be more meaningful.
+   * Uses conservative patterns to avoid breaking non-synthetic names.
+   */
+  private def improveSyntheticName(name: String): String = {
+    // Only make minimal safe improvements to avoid breaking non-synthetic names
+    name match {
+      case s"field_$num" if num.forall(_.isDigit) => s"field$num" // Safe: just remove underscore
+      case _ => name // Leave everything else unchanged
+    }
+  }
+
+
+  /**
+   * Extract original name hints from decompiler comments in source code.
+   * Looks for patterns like "// $FF: renamed from: original.name" to restore semantic meaning.
+   */
+  private def extractOriginalNameFromComments(typeDecl: TypeDecl): Option[String] = {
+    // In a real implementation, we would parse the source file for $FF comments
+    // For now, return None as this would require file I/O during skeleton generation
+    // This is a placeholder for potential future enhancement
+    None
+  }
+
   override protected def methodsFromName(resolvedMethodName: String): List[Method] = {
     val escaped = Regex.quote(resolvedMethodName)
     cpg.method.fullName(escaped + ":.*").l
@@ -104,6 +131,7 @@ class JavaAnalyzer private(sourcePath: Path, cpgInit: Cpg)
 
   /**
    * Recursively builds a structural "skeleton" for a given TypeDecl.
+   * Enhanced to be more lenient with decompiled files containing synthetic names.
    */
   override protected def outlineTypeDecl(td: TypeDecl, indent: Int = 0): String = {
     val sb = new StringBuilder
@@ -111,29 +139,74 @@ class JavaAnalyzer private(sourcePath: Path, cpgInit: Cpg)
     val className = sanitizeType(td.name)
     sb.append("  " * indent).append("class ").append(className).append(" {\n")
 
-    // Methods: skip any whose name starts with "<lambda>"
-    td.method.filterNot(_.name.startsWith("<lambda>")).foreach { m =>
+    // Methods: filter out synthetic methods but be lenient with decompiled artifacts
+    val filteredMethods = td.method.filterNot { m =>
+      isUnwantedMethod(m.name)
+    }
+    filteredMethods.foreach { m =>
       sb.append("  " * (indent + 1))
         .append(methodSignature(m))
         .append(" {...}\n")
     }
 
-    // Fields: skip any whose name is exactly "outerClass"
-    td.member.filterNot(_.name == "outerClass").foreach { f =>
+    // Fields: filter out synthetic fields but keep meaningful decompiled fields
+    val filteredFields = td.member.filterNot { f =>
+      isUnwantedField(f.name)
+    }
+    filteredFields.foreach { f =>
+      val fieldType = sanitizeType(f.typeFullName)
+      val fieldName = improveSyntheticName(f.name)
       sb.append("  " * (indent + 1))
-        .append(s"${sanitizeType(f.typeFullName)} ${f.name};\n")
+        .append(s"$fieldType $fieldName;\n")
     }
 
-    // Nested classes: skip any named "<lambda>N" or purely numeric suffix
-    td.astChildren.isTypeDecl.filterNot { nested =>
-      nested.name.startsWith("<lambda>") ||
-        nested.name.split("\\$").exists(_.forall(_.isDigit))
-    }.foreach { nested =>
+    // Nested classes: be more lenient with decompiled synthetic classes
+    val filteredNested = td.astChildren.isTypeDecl.filterNot { nested =>
+      isUnwantedNestedClass(nested.name)
+    }
+    filteredNested.foreach { nested =>
       sb.append(outlineTypeDecl(nested, indent + 1)).append("\n")
     }
 
     sb.append("  " * indent).append("}")
     sb.toString
+  }
+
+  /**
+   * Determine if a method should be excluded from skeletons.
+   * Conservative filtering - only exclude obviously synthetic/unwanted methods.
+   */
+  private def isUnwantedMethod(methodName: String): Boolean = {
+    methodName.startsWith("<lambda>") ||
+    methodName.startsWith("<clinit>") ||
+    // Note: Keep <init> constructors and be conservative about access$ methods
+    methodName.startsWith("lambda$") ||              // Lambda methods
+    methodName == "$assertionsDisabled"              // Decompiler assertion fields
+    // Removed aggressive filtering of access$ and numeric suffixes to be safer
+  }
+
+  /**
+   * Determine if a field should be excluded from skeletons.
+   * Conservative filtering - only exclude clearly unwanted synthetic fields.
+   */
+  private def isUnwantedField(fieldName: String): Boolean = {
+    fieldName == "outerClass" ||
+    fieldName == "this$0" ||                         // Synthetic outer class reference  
+    fieldName == "$assertionsDisabled"               // Decompiler assertion field
+    // Removed filtering of val$ and class$ patterns to be more conservative
+  }
+
+  /**
+   * Determine if a nested class should be excluded from skeletons.
+   * Conservative filtering - only exclude obviously problematic classes.
+   */
+  private def isUnwantedNestedClass(className: String): Boolean = {
+    className.startsWith("<lambda>") ||
+    className.matches("\\d+") ||                     // Purely numeric names
+    className.contains("$lambda$") ||                // Lambda-generated classes
+    className.matches(".*\\$\\d+$") ||               // Anonymous classes ending with $number (e.g., Runnable$0)
+    (className.matches("class_\\d+") && 
+     scala.util.Try(className.substring(6).toInt).toOption.exists(_ < 5))  // Only skip very low numbers (0-4, likely package-info)
   }
 
   override def getFunctionLocation(
