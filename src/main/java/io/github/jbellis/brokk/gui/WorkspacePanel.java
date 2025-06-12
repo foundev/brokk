@@ -556,6 +556,7 @@ public class WorkspacePanel extends JPanel {
     private JPopupMenu tablePopupMenu;
 
     private static final String READ_ONLY_TIP = "Select latest activity to enable";
+    private static final String COPY_ALL_ACTION_CMD = "workspace.copyAll";
 
     /**
      * Primary constructor allowing menu-mode selection
@@ -868,6 +869,7 @@ public class WorkspacePanel extends JPanel {
         tablePopupMenu.add(dropAllMenuItem);
 
         JMenuItem copyAllMenuItem = new JMenuItem("Copy All");
+        copyAllMenuItem.setActionCommand(COPY_ALL_ACTION_CMD);
         copyAllMenuItem.addActionListener(e -> {
             performContextActionAsync(ContextAction.COPY, List.of());
         });
@@ -1872,7 +1874,7 @@ public class WorkspacePanel extends JPanel {
             if (component instanceof JMenuItem mi) {
                 // "Copy All" is always enabled.
                 // Other JMenuItems (including JMenu "Add") are enabled based on workspace editability.
-                boolean copyAll = "Copy All".equals(mi.getText());
+                boolean copyAll = COPY_ALL_ACTION_CMD.equals(mi.getActionCommand());
                 mi.setEnabled(editable || copyAll);
                 if (copyAll || editable) {
                     mi.setToolTipText(null);
