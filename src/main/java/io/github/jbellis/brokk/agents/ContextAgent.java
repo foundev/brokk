@@ -484,8 +484,13 @@ public class ContextAgent {
     }
 
     private boolean isFileInWorkspace(ProjectFile file) {
-        return contextManager.getEditableFiles().contains(file) ||
-                contextManager.getReadonlyFiles().contains(file);
+        var targetPath = file.absPath().normalize();
+        return contextManager.getEditableFiles().stream()
+                             .map(f -> f.absPath().normalize())
+                             .anyMatch(targetPath::equals) ||
+               contextManager.getReadonlyFiles().stream()
+                             .map(f -> f.absPath().normalize())
+                             .anyMatch(targetPath::equals);
     }
 
     private boolean isClassInWorkspace(CodeUnit cls) {
