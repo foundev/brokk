@@ -19,6 +19,7 @@ public final class ScrollingUtils {
     /**
      * Finds the parent JScrollPane of a component.
      */
+    @org.jetbrains.annotations.Nullable
     public static JScrollPane findParentScrollPane(Component component) {
         Container parent = component.getParent();
         while (parent != null) {
@@ -36,6 +37,7 @@ public final class ScrollingUtils {
     /**
      * Finds the parent JViewport of a component.
      */
+    @org.jetbrains.annotations.Nullable
     public static JViewport findParentViewport(Component component) {
         JScrollPane scrollPane = findParentScrollPane(component);
         return scrollPane != null ? scrollPane.getViewport() : null;

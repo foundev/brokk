@@ -8,6 +8,8 @@ import javax.swing.*;
 import javax.swing.border.Border;
 import java.awt.*;
 import io.github.jbellis.brokk.gui.mop.util.ComponentUtils;
+import org.jetbrains.annotations.Nullable;
+import org.jetbrains.annotations.Nullable;
 import java.util.List;
 
 /**
@@ -216,7 +218,7 @@ public record EditBlockComponentData(int id, int adds, int dels, int changed, St
     /**
      * Finds the first component of a specific type and name within a container.
      */
-    private <T extends Component> T findComponentByName(Container container, Class<T> type, String name) {
+    private <T extends Component> @Nullable T findComponentByName(Container container, Class<T> type, String name) {
         for (Component comp : container.getComponents()) {
             if (type.isInstance(comp) && name.equals(comp.getName())) {
                 return type.cast(comp);

@@ -3,7 +3,6 @@ package io.github.jbellis.brokk;
 import dev.langchain4j.data.message.ChatMessage;
 import io.github.jbellis.brokk.context.ContextFragment;
 import io.github.jbellis.brokk.util.Messages;
-import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
 import java.util.List;
@@ -58,14 +57,16 @@ public record TaskEntry(int sequence, @Nullable ContextFragment.TaskFragment log
     @Override
     public String toString() {
         if (isCompressed()) {
+            String currentSummary = summary == null ? "" : summary;
             return """
               <task sequence=%s summarized=true>
               %s
               </task>
-              """.stripIndent().formatted(sequence, summary.indent(2).stripTrailing());
+              """.stripIndent().formatted(sequence, currentSummary.indent(2).stripTrailing());
         }
 
-        var logText = formatMessages(log.messages());
+        var logMessages = (log == null || log.messages() == null) ? List.<ChatMessage>of() : log.messages();
+        var logText = formatMessages(logMessages);
         return """
           <task sequence=%s>
           %s
@@ -73,7 +74,7 @@ public record TaskEntry(int sequence, @Nullable ContextFragment.TaskFragment log
           """.stripIndent().formatted(sequence, logText.indent(2).stripTrailing());
     }
 
-    public static @NotNull String formatMessages(List<ChatMessage> messages) {
+    public static String formatMessages(List<ChatMessage> messages) {
         return messages.stream()
                   .map(message -> {
                       var text = Messages.getRepr(message);

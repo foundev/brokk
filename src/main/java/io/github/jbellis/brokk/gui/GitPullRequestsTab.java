@@ -13,6 +13,7 @@ import org.eclipse.jgit.api.errors.GitAPIException;
 import org.eclipse.jgit.transport.RefSpec;
 import io.github.jbellis.brokk.util.SyntaxDetector;
 import org.fife.ui.rsyntaxtextarea.SyntaxConstants;
+import org.jetbrains.annotations.Nullable;
 import org.kohsuke.github.GHIssueState;
 import org.kohsuke.github.GHLabel;
 import org.kohsuke.github.GHPullRequest;
@@ -76,7 +77,9 @@ public class GitPullRequestsTab extends JPanel implements SettingsChangeListener
     private final Map<Integer, List<ICommitInfo>> prCommitsCache = new ConcurrentHashMap<>();
     private List<ICommitInfo> currentPrCommitDetailsList = new ArrayList<>();
 
+    @Nullable
     private SwingWorker<Map<Integer, String>, Void> activeCiFetcher;
+    @Nullable
     private SwingWorker<Map<Integer, List<String>>, Void> activePrFilesFetcher;
 
     /**
@@ -867,7 +870,7 @@ public class GitPullRequestsTab extends JPanel implements SettingsChangeListener
             } catch (CancellationException e) {
                  logger.debug("CI status fetch worker task was cancelled.");
             } catch (ExecutionException e) {
-                 reportBackgroundError("Error executing CI status fetch worker task", (Exception) e.getCause());
+                 reportBackgroundError("Error executing CI status fetch worker task", e.getCause() instanceof Exception ? (Exception) e.getCause() : e);
             } catch (Exception e) {
                 reportBackgroundError("Error processing CI status fetch results", e);
             }
@@ -997,7 +1000,7 @@ public class GitPullRequestsTab extends JPanel implements SettingsChangeListener
             } catch (CancellationException e) {
                  logger.debug("PR files fetcher worker task was cancelled.");
             } catch (ExecutionException e) {
-                 reportBackgroundError("Error executing PR files fetcher worker task", (Exception) e.getCause());
+                 reportBackgroundError("Error executing PR files fetcher worker task", e.getCause() instanceof Exception ? (Exception) e.getCause() : e);
             } catch (Exception e) {
                 reportBackgroundError("Error processing PR files fetcher results", e);
             }
@@ -1026,7 +1029,8 @@ public class GitPullRequestsTab extends JPanel implements SettingsChangeListener
     }
 
 
-    private String getBaseFilterValue(String displayOptionWithCount) {
+    @Nullable
+    private String getBaseFilterValue(@Nullable String displayOptionWithCount) {
         if (displayOptionWithCount == null) {
             return null; // This is the "All" case (FilterBox name shown)
         }
@@ -1285,8 +1289,8 @@ public class GitPullRequestsTab extends JPanel implements SettingsChangeListener
         logger.info("Starting checkout of PR #{} as a new local branch", prNumber);
         contextManager.submitUserTask("Checking out PR #" + prNumber, () -> {
             try {
-                var remoteUrl = getRepo().getRemoteUrl();
-                GitUiUtil.OwnerRepo ownerRepo = GitUiUtil.parseOwnerRepoFromUrl(remoteUrl);
+                var remoteUrl = getRepo().getRemoteUrl(); // Can be null
+                GitUiUtil.OwnerRepo ownerRepo = GitUiUtil.parseOwnerRepoFromUrl(Objects.requireNonNullElse(remoteUrl, ""));
                 if (ownerRepo == null) {
                     throw new IOException("Could not parse 'owner/repo' from remote: " + remoteUrl);
                 }

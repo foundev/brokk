@@ -1,14 +1,18 @@
 package io.github.jbellis.brokk.difftool.search;
 
+import org.jetbrains.annotations.Nullable;
+
 import java.util.ArrayList;
 import java.util.List;
 
 public class SearchHits {
     private final List<SearchHit> searchHits;
+    @Nullable
     private SearchHit current;
 
     public SearchHits() {
         searchHits = new ArrayList<SearchHit>();
+        current = null;
     }
 
     public void add(SearchHit sh) {
@@ -23,9 +27,11 @@ public class SearchHits {
     }
 
     public boolean isCurrent(SearchHit sh) {
-        return sh.equals(getCurrent());
+        var currentHit = getCurrent();
+        return currentHit != null && currentHit.equals(sh);
     }
 
+    @Nullable
     public SearchHit getCurrent() {
         return current;
     }

@@ -3,6 +3,7 @@ package io.github.jbellis.brokk.gui;
 import dev.langchain4j.data.message.ChatMessage;
 import dev.langchain4j.data.message.ChatMessageType;
 import io.github.jbellis.brokk.*;
+import io.github.jbellis.brokk.analyzer.BrokkFile;
 import io.github.jbellis.brokk.analyzer.ExternalFile;
 import io.github.jbellis.brokk.analyzer.ProjectFile;
 import io.github.jbellis.brokk.context.FrozenFragment;
@@ -73,7 +74,7 @@ public class Chrome implements AutoCloseable, IConsoleIO, IContextManager.Contex
     private final GlobalCopyAction globalCopyAction;
     private final GlobalPasteAction globalPasteAction;
     // necessary for undo/redo because clicking on menubar takes focus from whatever had it
-    private Component lastRelevantFocusOwner = null;
+    @Nullable private Component lastRelevantFocusOwner = null;
 
     // Swing components:
     final JFrame frame;
@@ -84,7 +85,7 @@ public class Chrome implements AutoCloseable, IConsoleIO, IContextManager.Contex
 
     private JSplitPane mainHorizontalSplitPane;
     private JSplitPane leftVerticalSplitPane;
-    private JSplitPane rightVerticalSplitPane;
+    @Nullable private JSplitPane rightVerticalSplitPane; // Can be null if no git
     private HistoryOutputPanel historyOutputPanel;
 
     // Panels:
@@ -99,9 +100,18 @@ public class Chrome implements AutoCloseable, IConsoleIO, IContextManager.Contex
     /**
      * Default constructor sets up the UI.
      */
+    @SuppressWarnings("NullAway.Init") // For complex Swing initialization patterns
     public Chrome(ContextManager contextManager) {
         assert contextManager != null;
         this.contextManager = contextManager;
+        this.activeContext = Context.EMPTY; // Initialize activeContext
+
+        // Initialize fields that are part of buildMainPanel or buildStatusLabels
+        this.instructionsPanel = new InstructionsPanel(this);
+        this.historyOutputPanel = new HistoryOutputPanel(this, contextManager, instructionsPanel);
+        this.bottomPanel = new JPanel(new BorderLayout());
+        this.systemMessageLabel = new JLabel(SYSMSG_EMPTY);
+        this.backgroundStatusLabel = new JLabel(BGTASK_EMPTY);
 
         // 2) Build main window
         frame = newFrame("Brokk: Code Intelligence for AI");
@@ -222,7 +232,13 @@ public class Chrome implements AutoCloseable, IConsoleIO, IContextManager.Contex
                                 JOptionPane.QUESTION_MESSAGE
                         );
                         if (result == JOptionPane.YES_OPTION) {
-                            setupGitIgnore();
+                            // Ensure gitPanel is not null before calling setupGitIgnore which uses it.
+                            // setupGitIgnore has an internal assert, but this check is for external safety.
+                            if (this.gitPanel != null) {
+                                setupGitIgnore();
+                            } else {
+                                logger.warn("Attempted to setup .gitignore but GitPanel is null (no Git repo).");
+                            }
                         }
                     });
                 }
@@ -252,12 +268,20 @@ public class Chrome implements AutoCloseable, IConsoleIO, IContextManager.Contex
      * Sets up .gitignore entries and adds .brokk project files to git
      */
     private void setupGitIgnore() {
-        assert gitPanel != null;
+        if (gitPanel == null) {
+            logger.warn("setupGitIgnore called when gitPanel is null. Skipping.");
+            return;
+        }
         contextManager.submitBackgroundTask("Updating .gitignore", () -> {
             try {
                 var project = getProject();
                 var gitRepo = (GitRepo) project.getRepo(); // This is the repo for the current project (worktree or main)
                 var gitTopLevel = project.getMasterRootPathForConfig(); // Shared .gitignore lives at the true top level
+                if (gitTopLevel == null) {
+                    logger.error("Cannot setup .gitignore: gitTopLevel is null for project {}", project.getRoot());
+                    toolError("Cannot determine Git top-level directory to setup .gitignore.", "Git Error");
+                    return;
+                }
 
                 // Update .gitignore (located at gitTopLevel)
                 var gitignorePath = gitTopLevel.resolve(".gitignore");
@@ -337,6 +361,7 @@ public class Chrome implements AutoCloseable, IConsoleIO, IContextManager.Contex
         // JMHighlightPainter.initializePainters(); // Removed: Painters are now created dynamically with theme colors
         // Initialize theme manager now that all components are created
         // and contextManager should be properly set
+        // historyOutputPanel.getLlmScrollPane() is now @NotNull
         themeManager = new GuiTheme(frame, historyOutputPanel.getLlmScrollPane(), this);
 
         // Apply current theme based on project settings
@@ -430,7 +455,7 @@ public class Chrome implements AutoCloseable, IConsoleIO, IContextManager.Contex
 
     @Override
     public String getLlmOutputText() {
-        return SwingUtil.runOnEdt(() -> historyOutputPanel.getLlmOutputText(), null);
+        return SwingUtil.runOnEdt(() -> historyOutputPanel.getLlmOutputText(), "");
     }
 
     @Override
@@ -613,7 +638,7 @@ public class Chrome implements AutoCloseable, IConsoleIO, IContextManager.Contex
     }
 
     @Override
-    public void backgroundOutput(String message, String tooltip) {
+    public void backgroundOutput(String message, @Nullable String tooltip) {
         SwingUtilities.invokeLater(() -> {
             if (message == null || message.isEmpty()) {
                 backgroundStatusLabel.setText(BGTASK_EMPTY);
@@ -1110,7 +1135,8 @@ public class Chrome implements AutoCloseable, IConsoleIO, IContextManager.Contex
                 }
 
                 rightVerticalSplitPane.addPropertyChangeListener(JSplitPane.DIVIDER_LOCATION_PROPERTY, e -> {
-                    if (rightVerticalSplitPane.isShowing()) {
+                    // Add null check before dereferencing
+                    if (rightVerticalSplitPane != null && rightVerticalSplitPane.isShowing()) {
                         var newPos = rightVerticalSplitPane.getDividerLocation();
                         if (newPos > 0) {
                             project.saveRightVerticalSplitPosition(newPos);
@@ -1123,12 +1149,12 @@ public class Chrome implements AutoCloseable, IConsoleIO, IContextManager.Contex
 
     @Override
     public void updateContextHistoryTable() {
-        Context selectedContext = contextManager.selectedContext();
+        Context selectedContext = contextManager.selectedContext(); // Can be null
         updateContextHistoryTable(selectedContext);
     }
 
     @Override
-    public void updateContextHistoryTable(Context contextToSelect) {
+    public void updateContextHistoryTable(@org.jetbrains.annotations.Nullable Context contextToSelect) { // contextToSelect can be null
             historyOutputPanel.updateHistoryTable(contextToSelect);
     }
 
@@ -1183,12 +1209,27 @@ public class Chrome implements AutoCloseable, IConsoleIO, IContextManager.Contex
         }
 
         // For collapsing/expanding the Git panel
-        int lastGitPanelDividerLocation = rightVerticalSplitPane.getDividerLocation();
-        var totalHeight = rightVerticalSplitPane.getHeight();
-        var dividerSize = rightVerticalSplitPane.getDividerSize();
-        rightVerticalSplitPane.setDividerLocation(totalHeight - dividerSize - 1);
+        // Check if the panel is showing before trying to get its height or divider location
+        if (rightVerticalSplitPane.isShowing()) {
+            int lastGitPanelDividerLocation = rightVerticalSplitPane.getDividerLocation();
+            var totalHeight = rightVerticalSplitPane.getHeight();
+            var dividerSize = rightVerticalSplitPane.getDividerSize();
 
-        logger.debug("Git panel collapsed; stored divider location={}", lastGitPanelDividerLocation);
+            // Check if totalHeight and dividerSize are valid (e.g., positive)
+            if (totalHeight > dividerSize) {
+                rightVerticalSplitPane.setDividerLocation(totalHeight - dividerSize - 1);
+                logger.debug("Git panel collapsed; stored divider location={}", lastGitPanelDividerLocation);
+            } else {
+                // Fallback or log error if dimensions are not as expected
+                logger.warn("Cannot collapse Git panel, totalHeight ({}) not greater than dividerSize ({}).", totalHeight, dividerSize);
+                rightVerticalSplitPane.setDividerLocation(0.5); // Default to 50% if cannot calculate collapse
+            }
+        } else {
+             // If not showing, perhaps set to a default proportion for when it does show
+            rightVerticalSplitPane.setDividerLocation(0.5);
+            logger.debug("Git panel not showing, set divider to default 0.5 for next display.");
+        }
+
 
         rightVerticalSplitPane.revalidate();
         rightVerticalSplitPane.repaint();
@@ -1207,7 +1248,8 @@ public class Chrome implements AutoCloseable, IConsoleIO, IContextManager.Contex
         return workspacePanel.getSelectedFragments();
     }
 
-    GitPanel getGitPanel() {
+    @Nullable
+    public GitPanel getGitPanel() { // Made public for WorkspacePanel access
         return gitPanel;
     }
 
@@ -1246,12 +1288,23 @@ public class Chrome implements AutoCloseable, IConsoleIO, IContextManager.Contex
         return globalPasteAction;
     }
 
-    private boolean isFocusInContextArea(Component focusOwner) {
+    // This version of isFocusInContextArea was causing a duplicate definition.
+    // The version below (with @org.jetbrains.annotations.Nullable) is retained.
+    // private boolean isFocusInContextArea(Component focusOwner) {
+    //     if (focusOwner == null) return false;
+    //     // Check if focus is within ContextPanel or HistoryOutputPanel's historyTable
+    //     boolean inContextPanel = SwingUtilities.isDescendingFrom(focusOwner, workspacePanel);
+    //     boolean inHistoryTable = historyOutputPanel.getHistoryTable() != null &&
+    //             SwingUtilities.isDescendingFrom(focusOwner, historyOutputPanel.getHistoryTable());
+    //     return inContextPanel || inHistoryTable;
+    // }
+
+    private boolean isFocusInContextArea(@org.jetbrains.annotations.Nullable Component focusOwner) {
         if (focusOwner == null) return false;
         // Check if focus is within ContextPanel or HistoryOutputPanel's historyTable
         boolean inContextPanel = SwingUtilities.isDescendingFrom(focusOwner, workspacePanel);
         boolean inHistoryTable = historyOutputPanel.getHistoryTable() != null &&
-                SwingUtilities.isDescendingFrom(focusOwner, historyOutputPanel.getHistoryTable());
+                                 SwingUtilities.isDescendingFrom(focusOwner, historyOutputPanel.getHistoryTable());
         return inContextPanel || inHistoryTable;
     }
 
@@ -1328,6 +1381,7 @@ public class Chrome implements AutoCloseable, IConsoleIO, IContextManager.Contex
             if (lastRelevantFocusOwner == instructionsPanel.getInstructionsArea()) {
                 instructionsPanel.getInstructionsArea().copy();
             } else if (SwingUtilities.isDescendingFrom(lastRelevantFocusOwner, historyOutputPanel.getLlmStreamArea())) {
+                // historyOutputPanel.getLlmStreamArea() is now @NotNull
                 historyOutputPanel.getLlmStreamArea().copy(); // Assumes MarkdownOutputPanel has copy()
             } else if (SwingUtilities.isDescendingFrom(lastRelevantFocusOwner, workspacePanel) ||
                     SwingUtilities.isDescendingFrom(lastRelevantFocusOwner, historyOutputPanel.getHistoryTable())) {
@@ -1352,6 +1406,7 @@ public class Chrome implements AutoCloseable, IConsoleIO, IContextManager.Contex
                 var field = instructionsPanel.getInstructionsArea();
                 canCopyNow = (field.getSelectedText() != null && !field.getSelectedText().isEmpty()) || !field.getText().isEmpty();
             } else if (SwingUtilities.isDescendingFrom(lastRelevantFocusOwner, historyOutputPanel.getLlmStreamArea())) {
+                // historyOutputPanel.getLlmStreamArea() is now @NotNull
                 var llmArea = historyOutputPanel.getLlmStreamArea();
                 String selectedText = llmArea.getSelectedText();
                 canCopyNow = (selectedText != null && !selectedText.isEmpty()) || !llmArea.getDisplayedText().isEmpty();
@@ -1480,6 +1535,7 @@ public class Chrome implements AutoCloseable, IConsoleIO, IContextManager.Contex
     /**
      * Helper method to find JScrollPane component within a container
      */
+    @Nullable
     private static Component findScrollPaneIn(Container container) {
         for (Component comp : container.getComponents()) {
             if (comp instanceof JScrollPane) {

@@ -27,7 +27,7 @@ public class ContextHistory {
     private final Deque<Context> redo   = new ArrayDeque<>();
 
     /** UI-selection; never {@code null} once an initial context is set. */
-    private @Nullable Context selected;
+    private @Nullable Context selected = null; // Initialize to null, will be set by setInitialContext
 
     /* ───────────────────────── public API ─────────────────────────── */
 
@@ -44,9 +44,10 @@ public class ContextHistory {
     public synchronized boolean hasUndoStates() { return history.size() > 1; }
     public synchronized boolean hasRedoStates() { return !redo.isEmpty();  }
 
+    @Nullable
     public synchronized Context getSelectedContext() {
         if (selected == null || !history.contains(selected)) {
-            selected = topContext();
+            selected = topContext(); // topContext() can return null
         }
         return selected;
     }

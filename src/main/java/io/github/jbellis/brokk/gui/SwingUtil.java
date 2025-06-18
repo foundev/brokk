@@ -126,6 +126,7 @@ public class SwingUtil {
     /**
      * Replacement for the deprecated {@code JTextComponent.modelToView(int)}.
      */
+    @org.jetbrains.annotations.Nullable
     public static Rectangle modelToView(JTextComponent comp, int pos) throws BadLocationException {
         var r2d = comp.modelToView2D(pos);
         return r2d == null

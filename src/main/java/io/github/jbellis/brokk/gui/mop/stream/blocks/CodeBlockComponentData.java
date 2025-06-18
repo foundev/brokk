@@ -11,12 +11,14 @@ import org.apache.logging.log4j.Logger;
 import org.fife.ui.rsyntaxtextarea.RSyntaxTextArea;
 import org.fife.ui.rsyntaxtextarea.SyntaxConstants;
 import org.fife.ui.rsyntaxtextarea.Theme;
+import org.jetbrains.annotations.Nullable;
 
 import javax.swing.*;
 import javax.swing.text.BadLocationException;
 import javax.swing.text.DefaultCaret;
 import java.io.IOException;
 import java.util.Locale; // Added import
+import java.util.Objects;
 import java.util.Optional;
 
 /**
@@ -143,12 +145,14 @@ public record CodeBlockComponentData(int id, String body, String lang) implement
                        fenceInfo.substring(0, 1).toUpperCase(Locale.ROOT) + fenceInfo.substring(1);
 
         // Use code icon
-        var icon = SwingUtil.uiIcon("FileChooser.listViewIcon");
+        var iconNullable = SwingUtil.uiIcon("FileChooser.listViewIcon"); 
+        var icon = Objects.requireNonNullElse(iconNullable, new ImageIcon());
+
 
         // Create the panel using BaseChatMessagePanel
         return new MessageBubble(
                 title,
-                icon,
+                icon, 
                 textArea,
                 isDarkTheme,
                 ThemeColors.getColor(isDarkTheme, "codeHighlight"),

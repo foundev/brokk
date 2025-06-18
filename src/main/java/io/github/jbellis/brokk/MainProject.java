@@ -3,6 +3,7 @@ package io.github.jbellis.brokk;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import io.github.jbellis.brokk.Service.ModelConfig;
 import io.github.jbellis.brokk.agents.BuildAgent;
+import org.jetbrains.annotations.Nullable;
 import io.github.jbellis.brokk.analyzer.Language;
 import io.github.jbellis.brokk.analyzer.ProjectFile;
 import io.github.jbellis.brokk.context.Context;
@@ -13,7 +14,6 @@ import io.github.jbellis.brokk.util.AtomicWrites;
 import io.github.jbellis.brokk.util.HistoryIo;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
-import org.jetbrains.annotations.NotNull;
 
 import java.io.IOException;
 import java.io.UncheckedIOException;
@@ -76,8 +76,8 @@ public final class MainProject extends AbstractProject {
                                                                The commit message should be structured as follows: <type>: <description>
                                                                Use these for <type>: debug, fix, feat, chore, config, docs, style, refactor, perf, test, enh
                                                                """.stripIndent();
-    private static volatile Boolean isDataShareAllowedCache = null;
-    private static Properties globalPropertiesCache = null; // protected by synchronized
+    @Nullable private static volatile Boolean isDataShareAllowedCache = null;
+    @Nullable private static Properties globalPropertiesCache = null; // protected by synchronized
 
     private static final Path BROKK_CONFIG_DIR = Path.of(System.getProperty("user.home"), ".config", "brokk");
     private static final Path PROJECTS_PROPERTIES_PATH = BROKK_CONFIG_DIR.resolve("projects.properties");
@@ -284,7 +284,10 @@ public final class MainProject extends AbstractProject {
     private ModelConfig getModelConfigInternal(String modelTypeKey) {
         var props = loadGlobalProperties();
         var typeInfo = MODEL_TYPE_INFOS.get(modelTypeKey);
-        assert typeInfo != null : "Unknown modelTypeKey: " + modelTypeKey;
+        // typeInfo can be null if modelTypeKey is not in MODEL_TYPE_INFOS,
+        // though current callers always use keys from MODEL_TYPE_INFOS.
+        // Asserting for safety, but a direct get() is fine given current usage.
+        Objects.requireNonNull(typeInfo, "typeInfo should not be null for modelTypeKey: " + modelTypeKey);
 
         String jsonString = props.getProperty(typeInfo.configKey());
         if (jsonString != null && !jsonString.isBlank()) {
@@ -302,7 +305,9 @@ public final class MainProject extends AbstractProject {
         assert config != null;
         var props = loadGlobalProperties();
         var typeInfo = MODEL_TYPE_INFOS.get(modelTypeKey);
-        assert typeInfo != null : "Unknown modelTypeKey: " + modelTypeKey;
+        // typeInfo can be null if modelTypeKey is not in MODEL_TYPE_INFOS,
+        // though current callers always use keys from MODEL_TYPE_INFOS.
+        Objects.requireNonNull(typeInfo, "typeInfo should not be null for modelTypeKey: " + modelTypeKey);
 
         try {
             String jsonString = objectMapper.writeValueAsString(config);
@@ -455,7 +460,7 @@ public final class MainProject extends AbstractProject {
         saveProjectProperties();
     }
 
-    private volatile io.github.jbellis.brokk.IssueProvider issuesProviderCache = null;
+    @Nullable private volatile io.github.jbellis.brokk.IssueProvider issuesProviderCache = null;
 
     @Override
     public io.github.jbellis.brokk.IssueProvider getIssuesProvider() {
@@ -840,7 +845,6 @@ public final class MainProject extends AbstractProject {
         saveGlobalProperties(props);
     }
     
-    @NotNull
     public static String getBrokkKey() {
         var props = loadGlobalProperties();
         return props.getProperty("brokkApiKey", "");

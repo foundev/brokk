@@ -442,15 +442,15 @@ public class SearchTools {
     ) {
         assert getAnalyzer().isCpg() : "Cannot get call graph: CPG analyzer is not available.";
         // Sanitize methodName: remove potential `(params)` suffix from LLM.
-        methodName = stripParams(methodName);
-        if (methodName.isBlank()) {
+        String sanitizedMethodName = stripParams(methodName);
+        if (sanitizedMethodName == null || sanitizedMethodName.isBlank()) {
             throw new IllegalArgumentException("Cannot get call graph: method name is empty");
         }
 
-        var graph = getAnalyzer().getCallgraphTo(methodName, 5);
-        String result = AnalyzerUtil.formatCallGraph(graph, methodName, false);
+        var graph = getAnalyzer().getCallgraphTo(sanitizedMethodName, 5);
+        String result = AnalyzerUtil.formatCallGraph(graph, sanitizedMethodName, false);
         if (result.isEmpty()) {
-            return "No callers found of method: " + methodName;
+            return "No callers found of method: " + sanitizedMethodName;
         }
         return result;
     }
@@ -465,15 +465,15 @@ public class SearchTools {
     ) {
         assert getAnalyzer().isCpg() : "Cannot get call graph: CPG analyzer is not available.";
         // Sanitize methodName: remove potential `(params)` suffix from LLM.
-        methodName = stripParams(methodName);
-        if (methodName.isBlank()) {
+        String sanitizedMethodName = stripParams(methodName);
+        if (sanitizedMethodName == null || sanitizedMethodName.isBlank()) {
             throw new IllegalArgumentException("Cannot get call graph: method name is empty");
         }
 
-        var graph = getAnalyzer().getCallgraphFrom(methodName, 5); // Use correct analyzer method
-        String result = AnalyzerUtil.formatCallGraph(graph, methodName, true);
+        var graph = getAnalyzer().getCallgraphFrom(sanitizedMethodName, 5); // Use correct analyzer method
+        String result = AnalyzerUtil.formatCallGraph(graph, sanitizedMethodName, true);
         if (result.isEmpty()) {
-            return "No calls out made by method: " + methodName;
+            return "No calls out made by method: " + sanitizedMethodName;
         }
         return result;
     }

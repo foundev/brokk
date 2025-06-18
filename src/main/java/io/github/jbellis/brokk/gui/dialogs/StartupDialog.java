@@ -15,6 +15,7 @@ import java.awt.event.WindowEvent;
 import java.io.File;
 import java.io.IOException;
 import java.nio.file.Path;
+import java.util.Objects;
 
 public class StartupDialog extends JDialog {
     private static final Logger logger = LogManager.getLogger(StartupDialog.class);
@@ -224,7 +225,11 @@ public class StartupDialog extends JDialog {
         }
 
         assert finalKeyToUse != null : "finalKeyToUse should have been set if no errors occurred.";
-        MainProject.setBrokkKey(finalKeyToUse);
+        // It's okay for finalKeyToUse to be null here if we're just setting it to something previously validated,
+        // but setBrokkKey should handle null if it's possible (e.g. user clears field).
+        // However, current logic ensures finalKeyToUse is non-null or an error is shown.
+        MainProject.setBrokkKey(Objects.requireNonNull(finalKeyToUse));
+
 
         // --- Determine the Project Path ---
         Path finalProjectPathToUse;

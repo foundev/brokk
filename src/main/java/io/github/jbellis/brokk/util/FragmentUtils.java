@@ -4,6 +4,7 @@ import io.github.jbellis.brokk.analyzer.ProjectFile;
 import io.github.jbellis.brokk.context.ContextFragment;
 
 import java.nio.charset.StandardCharsets;
+import org.jetbrains.annotations.Nullable;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.util.Arrays;
@@ -19,13 +20,13 @@ public final class FragmentUtils {
         // Private constructor to prevent instantiation
     }
 
-    private static void updateDigest(MessageDigest md, String data) {
+    private static void updateDigest(MessageDigest md, @Nullable String data) {
         if (data != null) {
             md.update(data.getBytes(StandardCharsets.UTF_8));
         }
     }
 
-    private static void updateDigest(MessageDigest md, byte[] data) {
+    private static void updateDigest(MessageDigest md, @Nullable byte[] data) {
         if (data != null) {
             md.update(data);
         }
@@ -37,15 +38,14 @@ public final class FragmentUtils {
 
     private static String calculateHashInternal(ContextFragment.FragmentType type,
                                                 String description,
-                                                String shortDescription, // Can be null
-                                                String textContent,      // Can be null
-                                                byte[] imageBytesContent,// Can be null
+                                                @Nullable String shortDescription,
+                                                @Nullable String textContent,
+                                                @Nullable byte[] imageBytesContent,
                                                 boolean isTextFragment,
                                                 String syntaxStyle,
-                                                Set<ProjectFile> files,  // Can be null or empty
+                                                @Nullable Set<ProjectFile> files,
                                                 String originalClassName,
-                                                Map<String, String> meta // Can be null or empty
-                                                )
+                                                @Nullable Map<String, String> meta)
     {
         try {
             MessageDigest md = MessageDigest.getInstance("SHA-256");
@@ -55,8 +55,8 @@ public final class FragmentUtils {
             if (shortDescription != null) { // Only include if provided
                 updateDigest(md, shortDescription);
             }
-            updateDigest(md, textContent);
-            updateDigest(md, imageBytesContent);
+            updateDigest(md, textContent); // updateDigest handles null
+            updateDigest(md, imageBytesContent); // updateDigest handles null
             updateDigest(md, isTextFragment);
             updateDigest(md, syntaxStyle);
 
@@ -102,14 +102,15 @@ public final class FragmentUtils {
      * Used by AnonymousImageFragment.
      */
     public static String calculateContentHash(ContextFragment.FragmentType type,
-                                                String description,
-                                                String textContent, // null for images
-                                                byte[] imageBytesContent,
-                                                boolean isTextFragment,
-                                                String syntaxStyle,
-                                                Set<ProjectFile> files,
-                                                String originalClassName,
-                                                Map<String, String> meta) {
+                                              String description,
+                                              @Nullable String textContent, // null for images
+                                              @Nullable byte[] imageBytesContent,
+                                              boolean isTextFragment,
+                                              String syntaxStyle,
+                                              Set<ProjectFile> files,
+                                              String originalClassName,
+                                              Map<String, String> meta)
+    {
         return calculateHashInternal(type, description, null, textContent, imageBytesContent, isTextFragment, syntaxStyle, files, originalClassName, meta);
     }
 
@@ -118,15 +119,15 @@ public final class FragmentUtils {
      * Includes a distinct shortDescription.
      */
     public static String calculateContentHash(ContextFragment.FragmentType type,
-                                                String description,
-                                                String shortDescription,
-                                                String textContent,
-                                                byte[] imageBytesContent,
-                                                boolean isTextFragment,
-                                                String syntaxStyle,
-                                                Set<ProjectFile> files,
-                                                String originalClassName,
-                                                Map<String, String> meta) {
+                                              String description,
+                                              String shortDescription,
+                                              @Nullable String textContent,
+                                              @Nullable byte[] imageBytesContent,
+                                              boolean isTextFragment,
+                                              String syntaxStyle,
+                                              Set<ProjectFile> files,
+                                              String originalClassName,
+                                              Map<String, String> meta) {
         return calculateHashInternal(type, description, shortDescription, textContent, imageBytesContent, isTextFragment, syntaxStyle, files, originalClassName, meta);
     }
 }

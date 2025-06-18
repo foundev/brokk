@@ -57,7 +57,8 @@ public class GitIssuesTab extends JPanel implements SettingsChangeListener {
     private JButton captureButton;
 
     private FilterBox statusFilter;
-    private FilterBox resolutionFilter;
+    @org.jetbrains.annotations.Nullable
+    private FilterBox resolutionFilter; // Initialized conditionally
     private FilterBox authorFilter;
     private FilterBox labelFilter;
     private FilterBox assigneeFilter;
@@ -819,7 +820,8 @@ public class GitIssuesTab extends JPanel implements SettingsChangeListener {
         return options;
     }
 
-    private String getBaseFilterValue(String displayOptionWithCount) {
+    @org.jetbrains.annotations.Nullable
+    private String getBaseFilterValue(@org.jetbrains.annotations.Nullable String displayOptionWithCount) {
         if (displayOptionWithCount == null) {
             return null; // This is the "All" case (FilterBox name shown)
         }

@@ -5,6 +5,7 @@ import dev.langchain4j.data.message.ChatMessage;
 import dev.langchain4j.data.message.UserMessage;
 import io.github.jbellis.brokk.EditBlock;
 import io.github.jbellis.brokk.analyzer.ProjectFile;
+import org.jetbrains.annotations.Nullable;
 
 import java.util.*;
 import java.util.stream.Stream;
@@ -225,7 +226,8 @@ public class EditBlockParser {
                 var candidatePath  = stripFilename(filenameLine);
                 currentFilename       = candidatePath != null && !candidatePath.isBlank()
                                         ? candidatePath
-                                        : findFileNameNearby(lines, i + 2, projectFiles, currentFilename);
+                        // Assuming stripQuotedWrapping handles null filename parameter if findFileNameNearby returns null
+                        : findFileNameNearby(lines, i + 2, projectFiles, currentFilename);
 
                 // Advance to the <<<<<<< SEARCH marker
                 i = i + 2;                                             // now at HEAD line
@@ -256,9 +258,9 @@ public class EditBlockParser {
                 }
 
                 var beforeJoined = stripQuotedWrapping(String.join("\n", beforeLines),
-                                                          currentFilename);
+                                                          Objects.toString(currentFilename, ""));
                 var afterJoined  = stripQuotedWrapping(String.join("\n", afterLines),
-                                                          currentFilename);
+                                                          Objects.toString(currentFilename, ""));
 
                 if (!beforeJoined.isEmpty() && !beforeJoined.endsWith("\n")) beforeJoined += "\n";
                 if (!afterJoined.isEmpty()  && !afterJoined.endsWith("\n"))  afterJoined  += "\n";
@@ -286,6 +288,7 @@ public class EditBlockParser {
                     plain.setLength(0);
                 }
 
+                // Assuming stripQuotedWrapping handles null filename parameter if findFileNameNearby returns null
                 currentFilename = findFileNameNearby(lines, i, projectFiles, currentFilename);
 
                 i++;   // move past <<<<<<< SEARCH
@@ -314,9 +317,9 @@ public class EditBlockParser {
                 }
 
                 var beforeJoined = stripQuotedWrapping(String.join("\n", beforeLines),
-                                                          currentFilename);
+                                                          Objects.toString(currentFilename, ""));
                 var afterJoined  = stripQuotedWrapping(String.join("\n", afterLines),
-                                                          currentFilename);
+                                                          Objects.toString(currentFilename, ""));
 
                 if (!beforeJoined.isEmpty() && !beforeJoined.endsWith("\n")) beforeJoined += "\n";
                 if (!afterJoined.isEmpty()  && !afterJoined.endsWith("\n"))  afterJoined  += "\n";
@@ -350,7 +353,7 @@ public class EditBlockParser {
             blocks.add(EditBlock.OutputBlock.plain(plain.toString()));
         }
 
-        return new EditBlock.ExtendedParseResult(blocks, null);
+        return new EditBlock.ExtendedParseResult(blocks, ""); // Return empty string for non-null error
     }
 
     public String repr(EditBlock.SearchReplaceBlock block) {

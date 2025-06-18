@@ -11,10 +11,10 @@ import io.github.jbellis.brokk.analyzer.IAnalyzer;
 import io.github.jbellis.brokk.analyzer.JoernAnalyzer;
 import io.github.jbellis.brokk.context.ContextFragment.HistoryFragment;
 import io.github.jbellis.brokk.context.ContextFragment.SkeletonFragment;
+import io.github.jbellis.brokk.prompts.EditBlockParser;
 import io.github.jbellis.brokk.util.Messages;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
-import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
 import java.io.IOException;
@@ -29,6 +29,8 @@ import java.util.stream.Stream;
  */
 public class Context {
     private static final Logger logger = LogManager.getLogger(Context.class);
+
+    public static final Context EMPTY = new Context(new IContextManager() {}, "");
 
     public static final int MAX_AUTO_CONTEXT_FILES = 100;
     private static final String WELCOME_ACTION = "Welcome to Brokk";
@@ -52,7 +54,7 @@ public class Context {
     /**
      * Constructor for initial empty context
      */
-    public Context(@NotNull IContextManager contextManager, String initialOutputText) {
+    public Context(IContextManager contextManager, String initialOutputText) {
         this(Objects.requireNonNull(contextManager, "contextManager cannot be null"),
              List.of(),
              List.of(),
@@ -62,12 +64,12 @@ public class Context {
              CompletableFuture.completedFuture(WELCOME_ACTION));
     }
 
-    private static @NotNull ContextFragment.TaskFragment getWelcomeOutput(IContextManager contextManager, String initialOutputText) {
+    private static ContextFragment.TaskFragment getWelcomeOutput(IContextManager contextManager, String initialOutputText) {
         var messages = List.<ChatMessage>of(Messages.customSystem(initialOutputText));
         return new ContextFragment.TaskFragment(contextManager, messages, "Welcome");
     }
 
-    public Context(@NotNull IContextManager contextManager,
+    public Context(IContextManager contextManager,
             List<ContextFragment> editableFiles,
             List<ContextFragment> readonlyFiles,
             List<ContextFragment.VirtualFragment> virtualFragments,
@@ -241,7 +243,6 @@ public class Context {
         return getWithFragments(editableFiles, readonlyFiles, newFragments, action);
     }
 
-    @NotNull
     private Context getWithFragments(List<ContextFragment> newEditableFiles,
                                      List<ContextFragment> newReadonlyFiles,
                                      List<ContextFragment.VirtualFragment> newVirtualFragments,

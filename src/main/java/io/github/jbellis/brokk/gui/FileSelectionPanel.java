@@ -1,6 +1,10 @@
 package io.github.jbellis.brokk.gui;
 
+import org.jetbrains.annotations.Nullable;
+
 import com.google.common.base.Splitter;
+import org.jetbrains.annotations.Nullable;
+import org.jetbrains.annotations.Nullable;
 import io.github.jbellis.brokk.Completions;
 import io.github.jbellis.brokk.IProject;
 import io.github.jbellis.brokk.analyzer.BrokkFile;
@@ -37,33 +41,33 @@ import org.jetbrains.annotations.Nullable;
 public class FileSelectionPanel extends JPanel {
     private static final Logger logger = LogManager.getLogger(FileSelectionPanel.class);
 
-    public record Config(io.github.jbellis.brokk.IProject project,
+    public record Config(@Nullable io.github.jbellis.brokk.IProject project,
                          boolean allowExternalFiles,
                          Predicate<File> fileFilter,
                          Future<List<Path>> autocompleteCandidates, // Generalize to List<Path>
                          boolean multiSelect,
                          Consumer<BrokkFile> onSingleFileConfirmed,// Optional: action for single file confirmation (e.g., double-click)
                          boolean includeProjectFilesInAutocomplete,
-                         String customHintText
+                         @Nullable String customHintText
                          ) {
         public Config {
-            Objects.requireNonNull(project);
+            // Objects.requireNonNull(project); // project can now be null
             Objects.requireNonNull(fileFilter, "fileFilter cannot be null");
             Objects.requireNonNull(autocompleteCandidates, "autocompleteCandidates cannot be null");
         }
     }
 
     private final Config config;
-    private final IProject project; // Initialized from config, which requires it
+    private final @Nullable IProject project; // Initialized from config, which requires it
     private final @Nullable Path rootPath;  // May be null if project.getRoot() returns null
-    private final FileSelectionTree tree;
+    private final @Nullable FileSelectionTree tree; // Made nullable
     private final JTextComponent fileInputComponent; // JTextField or JTextArea
 
     public FileSelectionPanel(Config config) {
         super(new BorderLayout(8, 8));
         this.config = config;
         this.project = config.project();
-        this.rootPath = this.project.getRoot();
+        this.rootPath = (this.project != null) ? this.project.getRoot() : null;
 
         setBorder(BorderFactory.createEmptyBorder(4, 4, 4, 4));
 
@@ -90,11 +94,16 @@ public class FileSelectionPanel extends JPanel {
         autoCompletion.install(fileInputComponent);
         AutoCompleteUtil.bindCtrlEnter(autoCompletion, fileInputComponent); // Ctrl+Enter on input might imply confirmation
 
-        // 3. FileTree
-        tree = new FileSelectionTree(this.project, config.allowExternalFiles(), config.fileFilter());
+        // 3. FileTree - conditionally initialized
+    if (this.project != null) {
+        this.tree = new FileSelectionTree(this.project, config.allowExternalFiles(), config.fileFilter());
+    } else {
+        this.tree = null;
+        logger.warn("FileSelectionPanel initialized with a null project. File tree view will be disabled.");
+    }
 
-        // Layout: Input at North, Tree at Center
-        JPanel inputPanel = new JPanel(new BorderLayout());
+    // Layout: Input at North, Tree at Center
+    JPanel inputPanel = new JPanel(new BorderLayout());
         inputPanel.setBorder(BorderFactory.createEmptyBorder(0, 0, 4, 0)); // Space below input
         if (config.multiSelect()) {
             inputPanel.add(new JScrollPane(fileInputComponent), BorderLayout.CENTER);
@@ -122,14 +131,23 @@ public class FileSelectionPanel extends JPanel {
     }
     add(inputPanel, BorderLayout.NORTH);
 
-    JScrollPane treeScrollPane = new JScrollPane(tree);
+    if (tree != null) { // Check if tree was initialized
+        JScrollPane treeScrollPane = new JScrollPane(tree);
         treeScrollPane.setPreferredSize(new Dimension(450, 300)); // Default size, can be overridden
         add(treeScrollPane, BorderLayout.CENTER);
-
-        setupListeners();
+        setupListeners(); // Only call if tree exists
+    } else {
+        // Add a placeholder for the tree area if tree is null
+        JLabel noTreeLabel = new JLabel("File tree view is not available (no project context).");
+        noTreeLabel.setHorizontalAlignment(SwingConstants.CENTER);
+        add(noTreeLabel, BorderLayout.CENTER);
     }
+}
 
     private void setupListeners() {
+        if (tree == null) {
+            return;
+        }
         // Tree selection listener
         tree.addTreeSelectionListener(e -> {
             // Only proceed if the current AWT event represents a user action
@@ -273,7 +291,13 @@ public class FileSelectionPanel extends JPanel {
                     logger.warn("Absolute path provided is not a regular file or does not exist: {}", filenameToken);
                 }
             } else { // Relative path, assume project relative or glob
-                var expanded = Completions.expandPath(project, filenameToken);
+                List<BrokkFile> expanded;
+                if (project != null) {
+                    expanded = Completions.expandPath(project, filenameToken);
+                } else {
+                    expanded = List.of();
+                    // Optionally log: logger.debug("Project is null, cannot expand relative path/glob: {}", filenameToken);
+                }
                 for (BrokkFile file : expanded) {
                     uniqueFiles.put(file.absPath(), file);
                 }
@@ -283,14 +307,20 @@ public class FileSelectionPanel extends JPanel {
         List<BrokkFile> result = new ArrayList<>(uniqueFiles.values());
 
         // If external files are not allowed, keep only git-tracked project files.
-        if (!config.allowExternalFiles()) {
-            assert true : "project should not be null when external files are disallowed";
+        if (project != null && !config.allowExternalFiles()) {
+            // assert project != null : "project should not be null when external files are disallowed"; // Redundant with check
             var tracked = project.getAllFiles();
             //noinspection SuspiciousMethodCalls
             result = result.stream()
                            .filter(tracked::contains)
                            .toList();
+        } else if (project == null && !config.allowExternalFiles()) {
+            // If project is null and external files are not allowed, the result should be empty
+            // as there's no project context to resolve against.
+            result = List.of();
+            logger.debug("Project is null and external files are not allowed. Resolved to empty list.");
         }
+
 
         logger.debug("Resolved unique files: {}", result);
         return result;
@@ -359,7 +389,7 @@ public class FileSelectionPanel extends JPanel {
         private final boolean multiSelectMode; // To determine how to get_already_entered_text
         private final boolean includeProjectFilesInAutocomplete;
 
-        public FilePanelCompletionProvider(IProject project,
+        public FilePanelCompletionProvider(@Nullable IProject project,
                                            Future<List<Path>> autocompleteCandidatesFuture,
                                            boolean allowExternalFiles,
                                            boolean multiSelectMode,
@@ -395,16 +425,17 @@ public class FileSelectionPanel extends JPanel {
             boolean isAbsolutePattern = false;
             if (!pattern.trim().isEmpty()) { // Only try to parse if pattern is not just whitespace
                 try {
-                    potentialPath = Path.of(pattern);
+                    potentialPath = Path.of(pattern); // Can throw InvalidPathException
                     isAbsolutePattern = potentialPath.isAbsolute();
                 } catch (java.nio.file.InvalidPathException e) {
-                    // Invalid syntax, treat as non-absolute
+                    // Invalid syntax, treat as non-absolute. potentialPath remains null.
+                    isAbsolutePattern = false;
                 }
             }
 
 
             // 1. External file completions if pattern is absolute and external files allowed
-            if (allowExternalFiles && isAbsolutePattern) {
+            if (allowExternalFiles && isAbsolutePattern && potentialPath != null) { // check potentialPath not null
                 return getAbsolutePathCompletions(potentialPath, pattern);
             }
 
@@ -424,7 +455,8 @@ public class FileSelectionPanel extends JPanel {
             // For simplicity, we assume `autocompleteCandidatesFuture` contains all relevant paths (project + external).
             // Or, we can merge if project exists:
             Set<Path> allCandidatePaths = new java.util.HashSet<>(candidates);
-            if (this.includeProjectFilesInAutocomplete && project.getRepo() != null) {
+            // Ensure project is not null before accessing getRepo()
+            if (this.includeProjectFilesInAutocomplete && project != null && project.getRepo() != null) {
                  project.getRepo().getTrackedFiles().stream().map(ProjectFile::absPath).forEach(allCandidatePaths::add);
             }
 
@@ -440,7 +472,8 @@ public class FileSelectionPanel extends JPanel {
                     allCandidatePaths,
                     p -> p.getFileName().toString(),
                     Path::toString,
-                    p -> p.startsWith(project.getRoot()) ? 0 : 1, // Simple tie-breaker
+                    // Ensure project and project.getRoot() are not null before startsWith
+                    p -> (project != null && project.getRoot() != null && p.startsWith(project.getRoot())) ? 0 : 1,
                     this::createPathCompletion);
 
             // Sizing popup - needs AutoCompletion instance. This is tricky if provider is static.
@@ -457,7 +490,8 @@ public class FileSelectionPanel extends JPanel {
             Path absolutePath = path.toAbsolutePath().normalize();
 
             String pathForReplacement;
-            if (!this.allowExternalFiles
+            // Ensure project and project.getRoot() are not null before using them
+            if (!this.allowExternalFiles && this.project != null && this.project.getRoot() != null
                     && absolutePath.startsWith(this.project.getRoot())) {
                 pathForReplacement = this.project.getRoot().relativize(absolutePath).toString();
             } else {
@@ -475,7 +509,9 @@ public class FileSelectionPanel extends JPanel {
         }
 
 
-        private List<Completion> getAbsolutePathCompletions(Path inputPath, String pattern) {
+        private List<Completion> getAbsolutePathCompletions(@Nullable Path inputPath, String pattern) {
+            if (inputPath == null) return List.of(); // Guard against null inputPath
+
             List<Completion> pathCompletions = new ArrayList<>();
             try {
                 Path parentDir;

@@ -3,6 +3,7 @@ package io.github.jbellis.brokk.issues;
 import io.github.jbellis.brokk.GitHubAuth;
 import io.github.jbellis.brokk.IProject;
 import io.github.jbellis.brokk.util.MarkdownImageParser;
+import org.jetbrains.annotations.Nullable;
 import okhttp3.OkHttpClient;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
@@ -161,7 +162,7 @@ public class GitHubIssueService implements IssueService {
         return new IssueDetails(header, markdownBody, comments, attachmentUrls);
     }
 
-    private IssueHeader mapToIssueHeader(GHIssue ghIssue) {
+    private @Nullable IssueHeader mapToIssueHeader(@Nullable GHIssue ghIssue) {
         if (ghIssue == null) return null;
         try {
             String id = "#" + ghIssue.getNumber();
@@ -251,7 +252,7 @@ public class GitHubIssueService implements IssueService {
                 .collect(Collectors.toList());
     }
 
-    private boolean matchesAuthor(GHIssue issue, String authorFilter) {
+    private boolean matchesAuthor(GHIssue issue, @Nullable String authorFilter) {
         if (authorFilter == null || authorFilter.isBlank()) {
             return true;
         }
@@ -263,7 +264,7 @@ public class GitHubIssueService implements IssueService {
         }
     }
 
-    private boolean matchesLabel(GHIssue issue, String labelFilter) {
+    private boolean matchesLabel(GHIssue issue, @Nullable String labelFilter) {
         if (labelFilter == null || labelFilter.isBlank()) {
             return true;
         }
@@ -271,18 +272,16 @@ public class GitHubIssueService implements IssueService {
         return issue.getLabels().stream().anyMatch(label -> labelFilter.equals(label.getName()));
     }
 
-    private boolean matchesAssignee(GHIssue issue, String assigneeFilter) {
+    private boolean matchesAssignee(GHIssue issue, @Nullable String assigneeFilter) {
         if (assigneeFilter == null || assigneeFilter.isBlank()) {
             return true;
         }
         // GHUser.getLogin() for assignees.
         return issue.getAssignees().stream().anyMatch(assignee -> {
-            try {
-                return assigneeFilter.equals(getAuthorLogin(assignee));
-            } catch (Exception e) { // Includes IOException if getAuthorLogin path for assignee throws
-                 logger.warn("Failed to get assignee login for issue #{} during filter, treating as no match for this assignee: {}", issue.getNumber(), e.getMessage());
-                return false;
-            }
+            // No need for try-catch here as getAuthorLogin handles its own exceptions related to fetching login
+            // and returns "N/A" which will simply not match if assigneeFilter is a valid login.
+            // The comparison itself (assigneeFilter.equals(...)) is safe.
+            return assigneeFilter.equals(getAuthorLogin(assignee));
         });
     }
 }

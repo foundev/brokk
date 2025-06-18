@@ -1,5 +1,6 @@
 package io.github.jbellis.brokk.gui.dialogs;
 
+import org.jetbrains.annotations.Nullable;
 import io.github.jbellis.brokk.analyzer.BrokkFile;
 import io.github.jbellis.brokk.analyzer.Language;
 import io.github.jbellis.brokk.gui.Chrome;
@@ -45,21 +46,26 @@ public class ImportDependencyDialog {
 
     private static class DialogHelper {
         private final Chrome chrome;
-        private JDialog dialog;
-        private JRadioButton jarRadioButton;
-        private JRadioButton dirRadioButton;
-        private JPanel fspContainerPanel;
+        private JDialog dialog = new JDialog(); // Initialized
+        @Nullable
+        private JRadioButton jarRadioButton; // Null if not Java project
+        @Nullable
+        private JRadioButton dirRadioButton; // Null if not Java project
+        private JPanel fspContainerPanel = new JPanel(new BorderLayout()); // Initialized
+        @Nullable
         private FileSelectionPanel currentFileSelectionPanel;
-        private JTextArea previewArea;
-        private JButton importButton;
+        private JTextArea previewArea = new JTextArea(); // Initialized
+        private JButton importButton = new JButton("Import"); // Initialized
 
-        private SourceType currentSourceType = SourceType.JAR;
+        private SourceType currentSourceType = SourceType.JAR; // Default
+        @Nullable
         private BrokkFile selectedBrokkFileForImport;
         private final Path dependenciesRoot;
 
         DialogHelper(Chrome chrome) {
             this.chrome = chrome;
             this.dependenciesRoot = chrome.getProject().getRoot().resolve(".brokk").resolve("dependencies");
+            // Initialize other fields that might be null based on conditions later
         }
 
         void buildAndShow() {
@@ -264,6 +270,12 @@ public class ImportDependencyDialog {
 
         private void onFspInputTextChange() {
             SwingUtilities.invokeLater(() -> { // Ensure UI updates are on EDT
+                if (currentFileSelectionPanel == null) {
+                    selectedBrokkFileForImport = null;
+                    previewArea.setText("");
+                    importButton.setEnabled(false);
+                    return;
+                }
                 String text = currentFileSelectionPanel.getInputText();
 
                 if (text.isEmpty()) {
@@ -310,7 +322,9 @@ public class ImportDependencyDialog {
             // This is called on double-click or enter in FSP if configured
             // It implies an explicit selection. Update text field which triggers document listener,
             // or directly update preview. Let's ensure text field is set.
-            currentFileSelectionPanel.setInputText(file.absPath().toString());
+            if (currentFileSelectionPanel != null) {
+                currentFileSelectionPanel.setInputText(file.absPath().toString());
+            }
             // The document listener on setInputText will call updatePreviewAndButtonState.
             // For robustness, also call it directly in case the text was already identical.
             updatePreviewAndButtonState(file);

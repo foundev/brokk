@@ -12,6 +12,8 @@ import io.github.jbellis.brokk.gui.mop.stream.IncrementalBlockRenderer;
 import io.github.jbellis.brokk.gui.mop.stream.TextNodeMarkerCustomizer;
 import io.github.jbellis.brokk.util.Messages;
 import io.github.jbellis.brokk.gui.mop.stream.HtmlCustomizer;
+import org.jetbrains.annotations.Nullable;
+import java.util.Objects;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 
@@ -262,16 +264,16 @@ public class MarkdownOutputPanel extends JPanel implements Scrollable, ThemeAwar
         }
 
         // Determine styling based on message type
-        Icon iconEmoji;
+        @Nullable Icon iconEmojiNullable;
         Color highlightColor;
         String title = switch (message.type()) {
             case AI -> {
-                iconEmoji = SwingUtil.uiIcon("FileView.computerIcon");
+                iconEmojiNullable = SwingUtil.uiIcon("FileView.computerIcon");
                 highlightColor = ThemeColors.getColor(isDarkTheme, "message_border_ai");
                 yield "Brokk";
             }
             case USER -> {
-                iconEmoji = SwingUtil.uiIcon("FileView.computerIcon");
+                iconEmojiNullable = SwingUtil.uiIcon("FileView.computerIcon");
                 highlightColor = ThemeColors.getColor(isDarkTheme, "message_border_user");
                 if (message instanceof UserMessage userMessage && userMessage.name() != null
                     && !userMessage.name().isEmpty() && !userMessage.name().contains("MODE")) {
@@ -281,17 +283,18 @@ public class MarkdownOutputPanel extends JPanel implements Scrollable, ThemeAwar
                 }
             }
             case CUSTOM, SYSTEM -> {
-                iconEmoji = SwingUtil.uiIcon("FileView.computerIcon");
+                iconEmojiNullable = SwingUtil.uiIcon("FileView.computerIcon");
                 highlightColor = ThemeColors.getColor(isDarkTheme, "message_border_custom");
                 yield "System";
             }
             default -> { // Should ideally not be reached if all ChatMessageType cases are handled.
-                iconEmoji = SwingUtil.uiIcon("FileView.computerIcon");
+                iconEmojiNullable = SwingUtil.uiIcon("FileView.computerIcon");
                 highlightColor = ThemeColors.getColor(isDarkTheme, "message_border_custom");
                 yield message.type().toString();
             }
         };
-        
+        Icon iconEmoji = Objects.requireNonNullElse(iconEmojiNullable, new ImageIcon()); // Ensure non-null icon
+
         // Create a new renderer for this message - disable edit blocks for user messages
         boolean enableEditBlocks = message.type() != ChatMessageType.USER;
         var renderer = new IncrementalBlockRenderer(isDarkTheme, enableEditBlocks, escapeHtml);
@@ -319,7 +322,7 @@ public class MarkdownOutputPanel extends JPanel implements Scrollable, ThemeAwar
         worker.appendChunk(Messages.getText(message));
 
         // Re-add spinner if it was visible
-        if (spinnerWasVisible) {
+        if (spinnerWasVisible && spinnerPanel != null) { // Add null check for spinnerPanel
             add(spinnerPanel);
         }
 
@@ -375,10 +378,14 @@ public class MarkdownOutputPanel extends JPanel implements Scrollable, ThemeAwar
             }
 
             if (taskEntry.isCompressed()) {
-                setText(List.of(Messages.customSystem(taskEntry.summary())));
+                setText(List.of(Messages.customSystem(Objects.toString(taskEntry.summary(), "Summary not available"))));
             } else {
-                var taskFragment = taskEntry.log();
-                setText(taskFragment.messages());
+                var taskFragment = taskEntry.log(); // taskFragment can be null
+                if (taskFragment != null) {
+                    setText(taskFragment.messages());
+                } else {
+                    setText(List.of(Messages.customSystem("Task log not available for: " + Objects.toString(taskEntry.summary(), "Unknown Task"))));
+                }
             }
         });
     }
@@ -447,7 +454,7 @@ public class MarkdownOutputPanel extends JPanel implements Scrollable, ThemeAwar
     // --- Spinner Logic ---
 
     // We keep a reference to the spinner panel itself, so we can remove it later
-    private SpinnerIndicatorPanel spinnerPanel = null;
+    @Nullable private SpinnerIndicatorPanel spinnerPanel = null;
 
     /**
      * Shows a small spinner (or message) at the bottom of the panel,
@@ -712,6 +719,7 @@ public class MarkdownOutputPanel extends JPanel implements Scrollable, ThemeAwar
      * @param comp The root component of the hierarchy to search.
      * @return The focused JTextComponent if found, otherwise null.
      */
+    @Nullable
     private javax.swing.text.JTextComponent findFocusedTextComponentIn(Component comp) {
         if (comp instanceof javax.swing.text.JTextComponent tc && tc.isFocusOwner()) {
             return tc;

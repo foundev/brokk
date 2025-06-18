@@ -34,12 +34,15 @@ public class GitPanel extends JPanel
     private final GitLogTab gitLogTab;
 
     // The "Pull Requests" tab - conditionally added
+    @org.jetbrains.annotations.Nullable
     private GitPullRequestsTab pullRequestsTab; // Keep if you still want PRs
 
     // The "Issues" tab - conditionally added
+    @org.jetbrains.annotations.Nullable
     private GitIssuesTab issuesTab;
 
     // Worktrees tab
+    @org.jetbrains.annotations.Nullable
     private GitWorktreeTab gitWorktreeTab;
 
     // Tracks open file-history tabs by file path
