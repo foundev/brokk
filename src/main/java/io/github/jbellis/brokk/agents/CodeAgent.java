@@ -67,9 +67,6 @@ public class CodeAgent {
         // Keep original workspace editable messages at the start of the task
         var originalWorkspaceEditableMessages = CodePrompts.instance.getOriginalWorkspaceEditableMessages(contextManager);
 
-        // Start verification command inference concurrently
-        var verificationCommandFuture = BuildAgent.determineVerificationCommandAsync(contextManager);
-
         // Retry-loop state tracking
         int parseFailures = 0;
         int applyFailures = 0;
@@ -208,11 +205,7 @@ public class CodeAgent {
 
             // Pre-create empty files for any new files (and add to git + workspace)
             // This prevents UI race conditions with file existence checks
-            var createdFiles = preCreateNewFiles(newlyParsedBlocks);
-            if (createdFiles.stream().anyMatch(ContextManager::isTestFile)) {
-                logger.debug("New test files created, re-determining verification command.");
-                verificationCommandFuture = BuildAgent.determineVerificationCommandAsync(contextManager);
-            }
+            preCreateNewFiles(newlyParsedBlocks);
 
             // Apply all accumulated blocks
             EditBlock.EditResult editResult;
@@ -279,21 +272,23 @@ public class CodeAgent {
             }
 
             // Attempt build/verification
+            var verificationCommand = BuildAgent.determineVerificationCommand(contextManager);
+            if (verificationCommand == null) {
+                stopDetails = new TaskResult.StopDetails(TaskResult.StopReason.SUCCESS);
+                break;
+            }
             try {
-                buildError = attemptBuildVerification(verificationCommandFuture, contextManager, io);
+                buildError = checkBuild(verificationCommand, contextManager, io);
                 blocksAppliedWithoutBuild = 0; // reset after each build attempt
             } catch (InterruptedException e) {
                 logger.debug("CodeAgent interrupted during build verification.");
                 stopDetails = new TaskResult.StopDetails(TaskResult.StopReason.INTERRUPTED);
                 break;
             }
-
             if (buildError.isEmpty()) {
                 stopDetails = new TaskResult.StopDetails(TaskResult.StopReason.SUCCESS);
                 break;
-            }
-
-            // If the build failed after applying edits, create the next request for the LLM
+            }            // If the build failed after applying edits, create the next request for the LLM
             // (formatBuildErrorsForLLM includes instructions to stop if not progressing)
             nextRequest = new UserMessage(formatBuildErrorsForLLM(buildError));
         }
