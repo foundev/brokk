@@ -229,8 +229,6 @@ public interface ContextFragment {
 
         @Override
         default String format() {
-            // PathFragments are dynamic, but their text() doesn't need the analyzer here
-            // as it reads directly from the file.
             return """
                    <file path="%s" fragmentid="%s">
                    %s

@@ -3,6 +3,7 @@ package io.github.jbellis.brokk.gui.dialogs;
 import io.github.jbellis.brokk.Llm;
 import dev.langchain4j.model.chat.StreamingChatLanguageModel;
 import io.github.jbellis.brokk.Service;
+import io.github.jbellis.brokk.TaskResult;
 import io.github.jbellis.brokk.agents.CodeAgent;
 import io.github.jbellis.brokk.analyzer.ProjectFile;
 import io.github.jbellis.brokk.gui.Chrome;
@@ -81,10 +82,9 @@ public class UpgradeAgentProgressDialog extends JDialog {
             // executorService is now a field of UpgradeAgentProgressDialog
 
             @Override
-            protected Void doInBackground() throws Exception {
+            protected Void doInBackground() {
                 // Initialize the class field executorService here
                 UpgradeAgentProgressDialog.this.executorService = Executors.newFixedThreadPool(200);
-                var project = chrome.getProject();
                 var contextManager = chrome.getContextManager();
                 var service = contextManager.getService();
 
@@ -97,39 +97,19 @@ public class UpgradeAgentProgressDialog extends JDialog {
                              publish(new ProgressData(file.toString(), "Cancelled by user."));
                             return;
                         }
-                        try {
-                            // First attempt with selected model
-                            StreamingChatLanguageModel llm = service.getModel(selectedFavorite.modelName(), selectedFavorite.reasoning());
-                            Llm llmWrapper = contextManager.getLlm(llm, "Upgrade Agent: " + file.getFileName());
-                            List<ChatMessage> messages = CodePrompts.instance.getSimpleFileReplaceMessages(project, file, instructions);
 
-                            Optional<String> error = CodeAgent.executeReplace(file, llmWrapper, messages);
+                        var model = service.getModel(selectedFavorite.modelName(), selectedFavorite.reasoning());
+                        var agent = new CodeAgent(contextManager, model);
+                        // TODO provide a special-purpose IConsoleIO
+                        var result = agent.runSingleFileEdit(file, instructions, chrome);
 
-                            if (error.isPresent()) {
-                                // Retry with grok-3-mini
-                                if (isCancelled() || Thread.currentThread().isInterrupted()){
-                                     publish(new ProgressData(file.toString(), "Cancelled before retry. Initial error: " + error.get()));
-                                    return;
-                                }
-                                StreamingChatLanguageModel retryModel = service.getModel(Service.GROK_3_MINI, Service.ReasoningLevel.DEFAULT);
-                                Llm retryLlmWrapper = contextManager.getLlm(retryModel, "Upgrade Agent (retry): " + file.getFileName());
-                                error = CodeAgent.executeReplace(file, retryLlmWrapper, messages); // Re-use messages
-
-                                if (error.isPresent()) {
-                                    publish(new ProgressData(file.toString(), error.get()));
-                                } else {
-                                    publish(new ProgressData(file.toString(), null)); // Retry succeeded
-                                }
-                            } else {
-                                publish(new ProgressData(file.toString(), null)); // First attempt succeeded
-                            }
-                        } catch (IOException e) {
-                            publish(new ProgressData(file.toString(), "IO Error: " + e.getMessage()));
-                        } catch (InterruptedException e) {
+                        if (result.stopDetails().reason() == TaskResult.StopReason.INTERRUPTED) {
                             Thread.currentThread().interrupt(); // Preserve interrupt status
                             publish(new ProgressData(file.toString(), "Processing interrupted."));
-                        } catch (Exception e) {
-                            publish(new ProgressData(file.toString(), "Unexpected error: " + e.getMessage()));
+                        }
+
+                        if (result.stopDetails().reason() != TaskResult.StopReason.SUCCESS) {
+                            // TODO handle failure cases
                         }
                     });
                 }
