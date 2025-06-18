@@ -84,15 +84,25 @@ public class Llm {
         // Create task directory name for this specific LLM interaction
         var timestamp = LocalDateTime.now(java.time.ZoneId.systemDefault()).format(DateTimeFormatter.ofPattern("yyyy-MM-dd-HH-mm-ss"));
         var taskDesc = LogDescription.getShortDescription(taskDescription);
-        var taskDirName = String.format("%s %s", timestamp, taskDesc);
-        this.taskHistoryDir = historyBaseDir.resolve(taskDirName);
 
-        // Create the specific directory for this task
-        try {
-            Files.createDirectories(this.taskHistoryDir);
-        } catch (IOException e) {
-            logger.error("Failed to create task history directory {}", this.taskHistoryDir, e);
-            // taskHistoryDir might be null or unusable, logRequest checks for null
+        // Create the specific directory for this task with uniqueness check
+        var baseTaskDirName = String.format("%s %s", timestamp, taskDesc);
+        synchronized (Llm.class) {
+            int suffix = 1;
+            var mutableDirName = historyBaseDir.resolve(baseTaskDirName);
+            while (Files.exists(mutableDirName)) {
+                var newDirName = baseTaskDirName + "-" + suffix;
+                mutableDirName = historyBaseDir.resolve(newDirName);
+                suffix++;
+            }
+
+            this.taskHistoryDir = mutableDirName;
+            try {
+                Files.createDirectories(this.taskHistoryDir);
+            } catch (IOException e) {
+                logger.error("Failed to create task history directory {}", this.taskHistoryDir, e);
+                // taskHistoryDir might be null or unusable, logRequest checks for null
+            }
         }
     }
 
