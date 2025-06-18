@@ -8,11 +8,12 @@ import java.awt.*;
 import java.awt.event.MouseEvent;
 import java.util.function.Supplier;
 
+import org.jetbrains.annotations.Nullable;
 import static io.github.jbellis.brokk.gui.components.SplitButton.SplitButtonUI.ARROW_WIDTH;
 
 public class SplitButton extends JButton {
-    private Supplier<JPopupMenu> menuSupplier;
-    private JPopupMenu popupMenu; // Cache the menu
+    private @Nullable Supplier<JPopupMenu> menuSupplier;
+    private @Nullable JPopupMenu popupMenu; // Cache the menu
 
     public SplitButton(String text) {
         super(text);
@@ -216,7 +217,9 @@ public class SplitButton extends JButton {
         public Dimension getPreferredSize(JComponent c) {
             Dimension d = super.getPreferredSize(c);
             if (d == null) {
-                return null;
+                // FlatButtonUI.getPreferredSize is @NotNull, so d should not be null.
+                // However, to satisfy NullAway if it thinks super can be null, return a default.
+                return new Dimension(0, 0);
             }
             if (c.isPreferredSizeSet()) {
                 return d;
@@ -224,12 +227,12 @@ public class SplitButton extends JButton {
             d.width += ARROW_WIDTH;
             return d;
         }
-    
+
         @Override
         public Dimension getMinimumSize(JComponent c) {
             Dimension d = super.getMinimumSize(c);
             if (d == null) {
-                return null;
+                return new Dimension(0, 0);
             }
             // If minimum size is explicitly set, or if preferred size is set, use the superclass's calculation.
             // Otherwise, add arrow width.
@@ -239,12 +242,12 @@ public class SplitButton extends JButton {
             d.width += ARROW_WIDTH;
             return d;
         }
-    
+
         @Override
         public Dimension getMaximumSize(JComponent c) {
             Dimension d = super.getMaximumSize(c);
             if (d == null) {
-                return null;
+                return new Dimension(0, 0);
             }
             // If maximum size is explicitly set, or if preferred size is set, use the superclass's calculation.
             // Otherwise, add arrow width.

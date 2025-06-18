@@ -3,6 +3,7 @@ package io.github.jbellis.brokk.context;
 import dev.langchain4j.data.message.ChatMessage;
 import io.github.jbellis.brokk.AnalyzerUtil;
 import io.github.jbellis.brokk.IContextManager;
+import org.jetbrains.annotations.Nullable;
 import io.github.jbellis.brokk.IProject;
 import io.github.jbellis.brokk.TaskEntry;
 import io.github.jbellis.brokk.analyzer.*;
@@ -24,6 +25,9 @@ import java.util.concurrent.Future;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
+
+import static java.util.Objects.requireNonNull;
+import static org.checkerframework.checker.nullness.util.NullnessUtil.castNonNull;
 
 /**
  * ContextFragment methods do not throw checked exceptions, which make it difficult to use in Streams
@@ -175,7 +179,7 @@ public interface ContextFragment {
      *
      * @return The context manager instance, or {@code null} if not applicable or available.
      */
-    IContextManager getContextManager();
+    @Nullable IContextManager getContextManager();
 
     /**
      * Convenience method to get the analyzer in a non-blocking way using the fragment's context manager.
@@ -183,7 +187,8 @@ public interface ContextFragment {
      * @return The IAnalyzer instance if available, or null if it's not ready yet or if the context manager is not available.
      */
     default IAnalyzer getAnalyzer() {
-        return getContextManager().getAnalyzerUninterrupted();
+        var cm = requireNonNull(getContextManager());
+        return cm.getAnalyzerUninterrupted();
     }
 
     static Set<ProjectFile> parseProjectFiles(String text, IProject project) {
@@ -246,16 +251,19 @@ public interface ContextFragment {
         }
     }
 
-    record ProjectPathFragment(ProjectFile file, String id, IContextManager contextManager) implements PathFragment {
+    record ProjectPathFragment(ProjectFile file,
+                               String id,
+                               @Nullable IContextManager contextManager) implements PathFragment
+    {
         // Primary constructor for new dynamic fragments
-        public ProjectPathFragment(ProjectFile file, IContextManager contextManager) {
+        public ProjectPathFragment(ProjectFile file, @Nullable IContextManager contextManager) {
             this(file, String.valueOf(ContextFragment.nextId.getAndIncrement()), contextManager);
         }
 
         // Record canonical constructor - ensures `id` is properly set
         public ProjectPathFragment {
-            Objects.requireNonNull(file);
-            Objects.requireNonNull(id); // id is now always String
+            requireNonNull(file);
+            requireNonNull(id); // id is now always String
             // contextManager can be null for some test/serialization cases if handled by callers
         }
 
@@ -265,12 +273,13 @@ public interface ContextFragment {
         }
 
         @Override
+        @Nullable
         public IContextManager getContextManager() {
             return contextManager;
         }
 
-        public static ProjectPathFragment withId(ProjectFile file, String existingId, IContextManager contextManager) {
-            Objects.requireNonNull(existingId);
+        public static ProjectPathFragment withId(ProjectFile file, String existingId, @Nullable IContextManager contextManager) {
+            requireNonNull(existingId);
             try {
                 int numericId = Integer.parseInt(existingId);
                 setMinimumId(numericId + 1);
@@ -318,8 +327,7 @@ public interface ContextFragment {
 
         @Override
         public Set<CodeUnit> sources() {
-            IAnalyzer analyzer = getAnalyzer();
-            return analyzer.getDeclarationsInFile(file);
+            return getAnalyzer().getDeclarationsInFile(file);
         }
 
         @Override
@@ -361,10 +369,10 @@ public interface ContextFragment {
 
         // Record canonical constructor
         public GitFileFragment {
-            Objects.requireNonNull(file);
-            Objects.requireNonNull(revision);
-            Objects.requireNonNull(content);
-            Objects.requireNonNull(id); // ID is content hash
+            requireNonNull(file);
+            requireNonNull(revision);
+            requireNonNull(content);
+            requireNonNull(id); // ID is content hash
         }
 
         @Override
@@ -373,6 +381,7 @@ public interface ContextFragment {
         }
 
         @Override
+        @Nullable
         public IContextManager getContextManager() {
             return null; // GitFileFragment does not have a context manager
         }
@@ -460,8 +469,8 @@ public interface ContextFragment {
 
         // Record canonical constructor
         public ExternalPathFragment {
-            Objects.requireNonNull(file);
-            Objects.requireNonNull(id);
+            requireNonNull(file);
+            requireNonNull(id);
         }
 
         @Override
@@ -470,12 +479,13 @@ public interface ContextFragment {
         }
 
         @Override
+        @Nullable
         public IContextManager getContextManager() {
             return contextManager;
         }
 
         public static ExternalPathFragment withId(ExternalFile file, String existingId, IContextManager contextManager) {
-            Objects.requireNonNull(existingId);
+            requireNonNull(existingId);
             try {
                 int numericId = Integer.parseInt(existingId);
                 if (numericId >= ContextFragment.nextId.get()) {
@@ -531,8 +541,8 @@ public interface ContextFragment {
 
         // Record canonical constructor
         public ImageFileFragment {
-            Objects.requireNonNull(file);
-            Objects.requireNonNull(id);
+            requireNonNull(file);
+            requireNonNull(id);
             assert !file.isText() : "ImageFileFragment should only be used for non-text files";
         }
 
@@ -542,12 +552,13 @@ public interface ContextFragment {
         }
 
         @Override
+        @Nullable
         public IContextManager getContextManager() {
             return contextManager;
         }
 
         public static ImageFileFragment withId(BrokkFile file, String existingId, IContextManager contextManager) {
-            Objects.requireNonNull(existingId);
+            requireNonNull(existingId);
             assert !file.isText() : "ImageFileFragment should only be used for non-text files";
             try {
                 int numericId = Integer.parseInt(existingId);
@@ -673,7 +684,7 @@ public interface ContextFragment {
 
         // Constructor for VirtualFragments with a pre-determined ID (e.g., hash or from DTO)
         protected VirtualFragment(String existingId, IContextManager contextManager) {
-            Objects.requireNonNull(existingId);
+            requireNonNull(existingId);
             this.id = existingId;
             this.contextManager = contextManager;
             // If the existingId is numeric (from a dynamic fragment that was frozen/unfrozen or loaded),
@@ -711,7 +722,11 @@ public interface ContextFragment {
 
         @Override
         public Set<ProjectFile> files() {
-            return parseProjectFiles(text(), contextManager.getProject());
+            @Nullable var cm = getContextManager();
+            if (cm == null) {
+                return Set.of();
+            }
+            return parseProjectFiles(text(), cm.getProject());
         }
 
         @Override
@@ -812,14 +827,12 @@ public interface ContextFragment {
         public SearchFragment(IContextManager contextManager, String sessionName, List<ChatMessage> messages, Set<CodeUnit> sources) {
             // The ID (hash) is calculated by the TaskFragment constructor based on sessionName and messages.
             super(contextManager, messages, sessionName);
-            assert sources != null;
             this.sources = sources;
         }
 
         // Constructor for DTOs/unfreezing where ID is a pre-calculated hash
         public SearchFragment(String existingHashId, IContextManager contextManager, String sessionName, List<ChatMessage> messages, Set<CodeUnit> sources) {
             super(existingHashId, contextManager, EditBlockParser.instance, messages, sessionName); // existingHashId is expected to be a content hash
-            assert sources != null;
             this.sources = sources;
         }
 
@@ -854,14 +867,6 @@ public interface ContextFragment {
             super(id, contextManager);
             this.descriptionFuture = descriptionFuture;
         }
-
-        // This constructor is for subclasses to call after they've computed their ID (hash)
-        // The nextId based constructor from VirtualFragment is not suitable here.
-        // public PasteFragment(IContextManager contextManager, Future<String> descriptionFuture) {
-        //    super(contextManager); // This would assign a dynamic ID, which is not desired.
-        //    this.descriptionFuture = descriptionFuture;
-        // }
-
 
         @Override
         public boolean isDynamic() {
@@ -899,16 +904,12 @@ public interface ContextFragment {
                           SyntaxConstants.SYNTAX_STYLE_MARKDOWN, // Default syntax style for hashing
                           PasteTextFragment.class.getName()),
                   contextManager, descriptionFuture);
-            assert text != null;
-            assert descriptionFuture != null;
             this.text = text;
         }
 
         // Constructor for DTOs/unfreezing where ID is a pre-calculated hash
         public PasteTextFragment(String existingHashId, IContextManager contextManager, String text, Future<String> descriptionFuture) {
             super(existingHashId, contextManager, descriptionFuture); // existingHashId is expected to be a content hash
-            assert text != null;
-            assert descriptionFuture != null;
             this.text = text;
         }
 
@@ -954,8 +955,6 @@ public interface ContextFragment {
                           AnonymousImageFragment.class.getName(),
                           Map.of()), // No specific meta for hashing
                   contextManager, descriptionFuture);
-            assert image != null;
-            assert descriptionFuture != null;
             this.image = image;
         }
 
@@ -1034,10 +1033,6 @@ public interface ContextFragment {
                           sources.isEmpty() ? SyntaxConstants.SYNTAX_STYLE_NONE : sources.iterator().next().source().getSyntaxStyle(),
                           StacktraceFragment.class.getName()),
                   contextManager);
-            assert sources != null;
-            assert original != null;
-            assert exception != null;
-            assert code != null;
             this.sources = sources;
             this.original = original;
             this.exception = exception;
@@ -1047,10 +1042,6 @@ public interface ContextFragment {
         // Constructor for DTOs/unfreezing where ID is a pre-calculated hash
         public StacktraceFragment(String existingHashId, IContextManager contextManager, Set<CodeUnit> sources, String original, String exception, String code) {
             super(existingHashId, contextManager); // existingHashId is expected to be a content hash
-            assert sources != null;
-            assert original != null;
-            assert exception != null;
-            assert code != null;
             this.sources = sources;
             this.original = original;
             this.exception = exception;
@@ -1128,14 +1119,13 @@ public interface ContextFragment {
 
         public UsageFragment(IContextManager contextManager, String targetIdentifier) {
             super(contextManager); // Assigns dynamic numeric String ID
-            assert targetIdentifier != null && !targetIdentifier.isBlank();
             this.targetIdentifier = targetIdentifier;
         }
 
         // Constructor for DTOs/unfreezing where ID might be a numeric string or hash (if frozen)
         public UsageFragment(String existingId, IContextManager contextManager, String targetIdentifier) {
             super(existingId, contextManager); // Handles numeric ID parsing for nextId
-            assert targetIdentifier != null && !targetIdentifier.isBlank();
+            assert !targetIdentifier.isBlank();
             this.targetIdentifier = targetIdentifier;
         }
 
@@ -1146,9 +1136,9 @@ public interface ContextFragment {
 
         @Override
         public String text() {
-            IAnalyzer analyzer = getAnalyzer();
+            var analyzer = getAnalyzer();
             if (!analyzer.isCpg()) {
-                return "Code intelligence is not ready. Cannot find usages for " + targetIdentifier + ".";
+                return "Code Intelligence for this language does not support Usages";
             }
             List<CodeUnit> uses = analyzer.getUses(targetIdentifier);
             var result = AnalyzerUtil.processUsages(analyzer, uses);
@@ -1222,9 +1212,9 @@ public interface ContextFragment {
 
         @Override
         public String text() {
-            IAnalyzer analyzer = getAnalyzer();
+            var analyzer = getAnalyzer();
             if (!analyzer.isCpg()) {
-                return "Code intelligence is not ready. Cannot generate call graph for " + methodName + ".";
+                return "Code Intelligence for this language does not support call graphs";
             }
             Map<String, List<CallSite>> graphData;
             if (isCalleeGraph) {
@@ -1293,8 +1283,7 @@ public interface ContextFragment {
 
         public SkeletonFragment(IContextManager contextManager, List<String> targetIdentifiers, SummaryType summaryType) {
             super(contextManager); // Assigns dynamic numeric String ID
-            assert targetIdentifiers != null;
-            assert summaryType != null;
+            assert !targetIdentifiers.isEmpty();
             this.targetIdentifiers = List.copyOf(targetIdentifiers);
             this.summaryType = summaryType;
         }
@@ -1302,8 +1291,7 @@ public interface ContextFragment {
         // Constructor for DTOs/unfreezing where ID might be a numeric string or hash (if frozen)
         public SkeletonFragment(String existingId, IContextManager contextManager, List<String> targetIdentifiers, SummaryType summaryType) {
             super(existingId, contextManager); // Handles numeric ID parsing for nextId
-            assert targetIdentifiers != null && !targetIdentifiers.isEmpty();
-            assert summaryType != null;
+            assert !targetIdentifiers.isEmpty();
             this.targetIdentifiers = List.copyOf(targetIdentifiers);
             this.summaryType = summaryType;
         }
@@ -1378,8 +1366,12 @@ public interface ContextFragment {
         public Set<ProjectFile> files() {
             return switch (summaryType) {
                 case CLASS_SKELETON -> sources().stream().map(CodeUnit::source).collect(Collectors.toSet());
-                case FILE_SKELETONS ->
-                        targetIdentifiers.stream().map(contextManager::toFile).collect(Collectors.toSet());
+                case FILE_SKELETONS -> {
+                    if (getContextManager() == null) {
+                        yield Set.of();
+                    }
+                    yield targetIdentifiers.stream().map(getContextManager()::toFile).collect(Collectors.toSet());
+                }
             };
         }
 
@@ -1460,12 +1452,11 @@ public interface ContextFragment {
                           FragmentType.HISTORY,
                           "Task History (" + history.size() + " task" + (history.size() > 1 ? "s" : "") + ")",
                           TaskEntry.formatMessages(history.stream().flatMap(e -> e.isCompressed()
-                                                                                 ? Stream.of(Messages.customSystem(e.summary()))
-                                                                                 : e.log().messages().stream()).toList()),
+                                                                                 ? Stream.of(Messages.customSystem(castNonNull(e.summary())))
+                                                                                 : castNonNull(e.log()).messages().stream()).toList()),
                           SyntaxConstants.SYNTAX_STYLE_MARKDOWN,
                           HistoryFragment.class.getName()),
                   contextManager);
-            assert history != null;
             this.history = List.copyOf(history);
         }
 
@@ -1500,9 +1491,14 @@ public interface ContextFragment {
         public String text() {
             // FIXME the right thing to do here is probably to throw UnsupportedOperationException,
             // but lots of stuff breaks without text(), so I am putting that off for another refactor
-            return TaskEntry.formatMessages(history.stream().flatMap(e -> e.isCompressed()
-                                                                          ? Stream.of(Messages.customSystem(e.summary()))
-                                                                          : e.log().messages().stream()).toList());
+            return TaskEntry.formatMessages(history.stream().flatMap(e -> {
+                if (e.isCompressed()) {
+                    return Stream.of(Messages.customSystem(Objects.requireNonNullElse(e.summary(), "")));
+                } else {
+                    var log = e.log();
+                    return (log == null || log.messages() == null) ? Stream.empty() : log.messages().stream();
+                }
+            }).toList());
         }
 
         @Override

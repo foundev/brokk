@@ -48,12 +48,12 @@ public class FileSelectionDialog extends JDialog {
         // Configure the FileSelectionPanel
         var panelConfig = new FileSelectionPanel.Config(project,
                                                         allowExternalFiles,
-                                                        fileFilter,
+                                                        fileFilter != null ? fileFilter : f -> true,
                                                         autocompleteCandidates,
                                                         false, // multiSelect = false
                                                         this::handlePanelSingleFileConfirmed,
-                                                        true, // includeProjectFilesInAutocomplete
-                                                        null);
+                                                        project != null, // includeProjectFilesInAutocomplete only if project is not null
+                                                        ""); // Provide empty string for help text instead of null
         fileSelectionPanel = new FileSelectionPanel(panelConfig);
 
         JPanel mainPanel = new JPanel(new BorderLayout(8, 8));

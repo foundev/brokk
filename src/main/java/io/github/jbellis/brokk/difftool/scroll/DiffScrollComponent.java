@@ -6,6 +6,9 @@ import io.github.jbellis.brokk.difftool.doc.BufferDocumentIF;
 import io.github.jbellis.brokk.difftool.ui.BufferDiffPanel;
 import io.github.jbellis.brokk.difftool.ui.FilePanel;
 import io.github.jbellis.brokk.difftool.utils.Colors;
+import org.apache.logging.log4j.LogManager;
+import org.apache.logging.log4j.Logger;
+import org.jetbrains.annotations.Nullable;
 
 import javax.swing.*;
 import io.github.jbellis.brokk.gui.SwingUtil;
@@ -30,15 +33,16 @@ import java.util.Objects;
  */
 public class DiffScrollComponent extends JComponent implements ChangeListener
 {
+    private static final Logger logger = LogManager.getLogger(DiffScrollComponent.class);
     private final BufferDiffPanel diffPanel;
     private final int fromPanelIndex;
     private final int toPanelIndex;
 
     // Holds clickable shapes on the screen, each mapped to a \"command\"
-    private List<Command> commands;
+    private List<Command> commands = new ArrayList<>();
 
     // We keep track of antialias settings for painting
-    private Object antiAlias;
+    @Nullable private Object antiAlias = RenderingHints.VALUE_ANTIALIAS_DEFAULT;
 
     // For controlling how the curves are drawn
     private int curveType;
@@ -49,7 +53,7 @@ public class DiffScrollComponent extends JComponent implements ChangeListener
     boolean shift; // TODO: Consider making this private and controlled via methods
 
     // Tracks which delta the mouse is currently over
-    private AbstractDelta<?> currentlyHoveredDelta = null;
+    @Nullable private AbstractDelta<?> currentlyHoveredDelta = null;
 
     /**
      * Constructs the DiffScrollComponent that draws connections between
@@ -62,8 +66,13 @@ public class DiffScrollComponent extends JComponent implements ChangeListener
         this.toPanelIndex = toPanelIndex;
 
         // Listen to viewport changes so we can repaint if user scrolls
-        getFromPanel().getScrollPane().getViewport().addChangeListener(this);
-        getToPanel().getScrollPane().getViewport().addChangeListener(this);
+        // getFromPanel() and getToPanel() can return null if panels are not yet set up by BufferDiffPanel.
+        // However, they are called here after diffPanel is constructed, which constructs its FilePanels.
+        // Asserting non-null for safety, as addChangeListener will NPE if scrollPane is null.
+        FilePanel fromP = Objects.requireNonNull(getFromPanel(), "FromPanel must be available in DiffScrollComponent constructor");
+        FilePanel toP = Objects.requireNonNull(getToPanel(), "ToPanel must be available in DiffScrollComponent constructor");
+        fromP.getScrollPane().getViewport().addChangeListener(this);
+        toP.getScrollPane().getViewport().addChangeListener(this);
 
         // Mouse interactions
         addMouseListener(getMouseListener());
@@ -187,11 +196,18 @@ public class DiffScrollComponent extends JComponent implements ChangeListener
 
         // --- Get necessary info for both panels ---
         FilePanel fromPanel = getFromPanel();
+        FilePanel toPanel = getToPanel();
+
+        // If either panel is null (should not happen if constructor assertions hold), abort painting.
+        if (fromPanel == null || toPanel == null) {
+            logger.warn("paintDiffs called but FilePanel(s) are null. FromPanel: {}, ToPanel: {}", fromPanel, toPanel);
+            return;
+        }
+        
         var viewportFrom = fromPanel.getScrollPane().getViewport();
         var editorFrom = fromPanel.getEditor();
         var bdFrom = fromPanel.getBufferDocument();
 
-        FilePanel toPanel = getToPanel();
         var viewportTo = toPanel.getScrollPane().getViewport();
         var editorTo = toPanel.getEditor();
         var bdTo = toPanel.getBufferDocument();
@@ -683,11 +699,14 @@ public class DiffScrollComponent extends JComponent implements ChangeListener
 
     // --- Panel Accessors ---
 
+    @Nullable
     private FilePanel getFromPanel()
     {
+        // diffPanel.getFilePanel can return null if index is bad or panels not fully set up
         return diffPanel.getFilePanel(fromPanelIndex);
     }
 
+    @Nullable
     private FilePanel getToPanel()
     {
         return diffPanel.getFilePanel(toPanelIndex);

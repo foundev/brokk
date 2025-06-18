@@ -24,6 +24,7 @@ import io.github.jbellis.brokk.util.LogDescription;
 import io.github.jbellis.brokk.util.Messages;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
+import org.jetbrains.annotations.Nullable;
 import scala.Tuple2;
 
 import java.io.IOException;
@@ -70,6 +71,7 @@ public class SearchAgent {
     private final List<Tuple2<String, String>> knowledge = new ArrayList<>();
     private final Set<String> toolCallSignatures = new HashSet<>();
     private final Set<String> trackedClassNames = new HashSet<>();
+    @Nullable
     private CompletableFuture<String> initialContextSummary = null;
 
     private TokenUsage totalUsage = new TokenUsage(0, 0);
@@ -118,7 +120,8 @@ public class SearchAgent {
                 step.learnings = step.summarizeFuture.get(); // Directly access fields of ToolHistoryEntry
                 logger.debug("Summarization complete for step: {}", step.request.name());
             } catch (ExecutionException e) {
-                logger.error("Error waiting for summary for tool {}: {}", step.request.name(), e.getCause().getMessage(), e.getCause());
+                Throwable cause = e.getCause();
+                logger.error("Error waiting for summary for tool {}: {}", step.request.name(), cause == null ? "Unknown cause" : cause.getMessage(), cause);
                 // Store raw result as learnings on error
                 step.learnings = step.execResult.resultText(); // Use text from execResult
             } catch (InterruptedException e) {
@@ -143,35 +146,35 @@ public class SearchAgent {
             // Build short system prompt or messages
             ArrayList<ChatMessage> messages = new ArrayList<>();
             messages.add(new SystemMessage("""
-                                                   You are a code expert that extracts ALL information from the input that is relevant to the given query.
-                                                   Your partner has included his reasoning about what he is looking for; your work will be the only knowledge
-                                                   about this tool call that he will have to work with, he will not see the full result, so make it comprehensive!
-                                                   Be particularly sure to include ALL relevant source code chunks so he can reference them in his final answer,
-                                                   but DO NOT speculate or guess: your answer must ONLY include information in this result!
-                                                   Here are examples of good and bad extractions:
-                                                     - Bad: Found several classes and methods related to the query
-                                                     - Good: Found classes org.foo.bar.X and org.foo.baz.Y, and methods org.foo.qux.Z.method1 and org.foo.fizz.W.method2
-                                                     - Bad: The Foo class implements the Bar algorithm
-                                                     - Good: The Foo class implements the Bar algorithm.  Here are all the relevant lines of code:
-                                                       ```
-                                                       public class Foo {
-                                                       ...
-                                                       }
-                                                       ```
-                                                   """.stripIndent()));
+                                           You are a code expert that extracts ALL information from the input that is relevant to the given query.
+                                           Your partner has included his reasoning about what he is looking for; your work will be the only knowledge
+                                           about this tool call that he will have to work with, he will not see the full result, so make it comprehensive!
+                                           Be particularly sure to include ALL relevant source code chunks so he can reference them in his final answer,
+                                           but DO NOT speculate or guess: your answer must ONLY include information in this result!
+                                           Here are examples of good and bad extractions:
+                                             - Bad: Found several classes and methods related to the query
+                                             - Good: Found classes org.foo.bar.X and org.foo.baz.Y, and methods org.foo.qux.Z.method1 and org.foo.fizz.W.method2
+                                             - Bad: The Foo class implements the Bar algorithm
+                                             - Good: The Foo class implements the Bar algorithm.  Here are all the relevant lines of code:
+                                               ```
+                                               public class Foo {
+                                               ...
+                                               }
+                                               ```
+                                           """.stripIndent()));
             var arguments = step.argumentsMap();
             var reasoning = arguments.getOrDefault("reasoning", "");
             messages.add(new UserMessage("""
-                                                 <query>
-                                                 %s
-                                                 </query>
-                                                 <reasoning>
-                                                 %s
-                                                 </reasoning>
-                                                 <tool name="%s" %s>
-                                                 %s
-                                                 </tool>
-                                                 """.stripIndent().formatted(
+                                         <query>
+                                         %s
+                                         </query>
+                                         <reasoning>
+                                         %s
+                                         </reasoning>
+                                         <tool name="%s" %s>
+                                         %s
+                                         </tool>
+                                         """.stripIndent().formatted(
                     query,
                     reasoning,
                     step.request.name(),
@@ -183,13 +186,20 @@ public class SearchAgent {
             try {
                 result = llm.sendRequest(messages);
             } catch (InterruptedException e) {
-                throw new RuntimeException(e);
+                Thread.currentThread().interrupt(); // Preserve interrupt status
+                logger.warn("Summarization interrupted for tool {}", step.request.name(), e);
+                return step.execResult.resultText(); // Return raw result if interrupted
             }
             if (result.error() != null) {
-                logger.warn("Summarization failed or was cancelled.");
+                logger.warn("Summarization failed or was cancelled. Error: {}", result.error().getMessage());
                 return step.execResult.resultText(); // Return raw result on failure
             }
-            return result.chatResponse().aiMessage().text();
+            ChatResponse chatResponse = result.chatResponse();
+            if (chatResponse == null || chatResponse.aiMessage() == null) {
+                logger.warn("Summarization returned null response or AI message.");
+                return step.execResult.resultText(); // Return raw result if response is incomplete
+            }
+            return chatResponse.aiMessage().text();
         });
     }
 
@@ -206,32 +216,33 @@ public class SearchAgent {
             String text;
             text = f.text();
             return """
-                    <fragment description="%s" sources="%s">
-                    %s
-                    </fragment>
-                    """.stripIndent().formatted(f.description(),
-                                                f.sources().stream().map(CodeUnit::fqName).collect(Collectors.joining(", ")), // No analyzer, parentheses removed
-                                                text);
+                   <fragment description="%s" sources="%s">
+                   %s
+                   </fragment>
+                   """.stripIndent().formatted(f.description(),
+                                               f.sources().stream().map(CodeUnit::fqName).collect(Collectors.joining(", ")), // No analyzer, parentheses removed
+                                               text);
         }).collect(Collectors.joining("\n\n"));
         if (!contextWithClasses.isBlank()) {
             llmOutput("\nEvaluating context...");
             var messages = new ArrayList<ChatMessage>();
             messages.add(new SystemMessage("""
-                       You are an expert software architect.
-                       evaluating which code fragments are relevant to a user query.
-                       Review the following list of code fragments and select the ones most relevant to the query.
-                       Make sure to include the fully qualified source (class, method, etc) as well as the code.
-                       """.stripIndent()));
+                                           You are an expert software architect.
+                                           evaluating which code fragments are relevant to a user query.
+                                           Review the following list of code fragments and select the ones most relevant to the query.
+                                           Make sure to include the fully qualified source (class, method, etc) as well as the code.
+                                           """.stripIndent()));
             messages.add(new UserMessage("<query>%s</query>\n\n".formatted(query) + contextWithClasses));
             var result = llm.sendRequest(messages);
             if (result.error() != null) {
-                io.systemOutput("LLM error evaluating context: " + result.error().getMessage() + "; stopping search");
-                // Propagate cancellation or error
-                return null;
+                String errorMsg = "LLM error evaluating context: " + Objects.toString(result.error().getMessage(), "Unknown error") + "; stopping search";
+                io.systemOutput(errorMsg);
+                return errorResult(new TaskResult.StopDetails(TaskResult.StopReason.LLM_ERROR, errorMsg));
             }
             if (result.chatResponse() == null || result.chatResponse().aiMessage() == null) {
-                io.systemOutput("LLM returned empty response evaluating context; stopping search");
-                return null;
+                String errorMsg = "LLM returned empty response evaluating context; stopping search";
+                io.systemOutput(errorMsg);
+                return errorResult(new TaskResult.StopDetails(TaskResult.StopReason.EMPTY_RESPONSE, errorMsg));
             }
             var contextText = result.chatResponse().aiMessage().text();
             knowledge.add(new Tuple2<>("Initial context", contextText));
@@ -392,26 +403,32 @@ public class SearchAgent {
             logger.debug("Summarizing initial context relevance...");
             ArrayList<ChatMessage> messages = new ArrayList<>();
             messages.add(new SystemMessage("""
-                                                   You are a code expert that extracts ALL information from the input that is relevant to the given query.
-                                                   The input is an evaluation of existing code context against the query. Your summary will represent
-                                                   the relevant parts of the existing context for future reasoning steps.
-                                                   Be particularly sure to include ALL relevant source code chunks so they can be referenced later,
-                                                   but DO NOT speculate or guess: your answer must ONLY include information present in the input!
-                                                   """.stripIndent()));
+                                           You are a code expert that extracts ALL information from the input that is relevant to the given query.
+                                           The input is an evaluation of existing code context against the query. Your summary will represent
+                                           the relevant parts of the existing context for future reasoning steps.
+                                           Be particularly sure to include ALL relevant source code chunks so they can be referenced later,
+                                           but DO NOT speculate or guess: your answer must ONLY include information present in the input!
+                                           """.stripIndent()));
             messages.add(new UserMessage("""
-                                                 <query>
-                                                 %s
-                                                 </query>
-                                                 <information>
-                                                 %s
-                                                 </information>
-                                                 """.stripIndent().formatted(query, initialContextResult)));
+                                         <query>
+                                         %s
+                                         </query>
+                                         <information>
+                                         %s
+                                         </information>
+                                         """.stripIndent().formatted(query, initialContextResult)));
 
             ChatResponse response;
             try {
                 response = llm.sendRequest(messages).chatResponse();
             } catch (InterruptedException e) {
-                throw new RuntimeException(e);
+                Thread.currentThread().interrupt(); // Preserve interrupt status
+                logger.warn("Initial context summary interrupted for query {}", query, e);
+                return "Initial context summary interrupted."; // Return a placeholder or error message
+            }
+            if (response == null || response.aiMessage() == null) {
+                logger.warn("Initial context summary returned null response or AI message for query {}", query);
+                return "Failed to generate initial context summary."; // Return error message
             }
             return response.aiMessage().text();
         });
@@ -469,11 +486,13 @@ public class SearchAgent {
             var arguments = historyEntry.argumentsMap(); // Use helper from ToolHistoryEntry
 
             return switch (request.name()) { // Use request.name()
-                case "searchSymbols", "searchSubstrings", "searchFilenames" -> formatListParameter(arguments, "patterns");
+                case "searchSymbols", "searchSubstrings", "searchFilenames" ->
+                        formatListParameter(arguments, "patterns");
                 case "getFileContents" -> formatListParameter(arguments, "filenames");
                 case "getFileSummaries" -> formatListParameter(arguments, "filePaths");
                 case "getUsages" -> formatListParameter(arguments, "symbols");
-                case "getRelatedClasses", "getClassSkeletons", "getClassSources" -> formatListParameter(arguments, "classNames");
+                case "getRelatedClasses", "getClassSkeletons", "getClassSources" ->
+                        formatListParameter(arguments, "classNames");
                 case "getMethodSources" -> formatListParameter(arguments, "methodNames");
                 case "getCallGraphTo", "getCallGraphFrom" ->
                         arguments.getOrDefault("methodName", "").toString(); // Added graph tools
@@ -579,7 +598,7 @@ public class SearchAgent {
     /**
      * Extracts class name from a fully qualified method name
      */
-    private String extractClassNameFromMethod(String methodName) {
+    private @Nullable String extractClassNameFromMethod(String methodName) {
         int lastDot = methodName.lastIndexOf('.');
         if (lastDot > 0) {
             return methodName.substring(0, lastDot);
@@ -637,10 +656,10 @@ public class SearchAgent {
 
         // Construct JSON arguments for the call
         String argumentsJson = """
-                {
-                   "classNames": %s
-                }
-                """.formatted(toJsonArray(classList));
+                               {
+                                  "classNames": %s
+                               }
+                               """.formatted(toJsonArray(classList));
 
         // Create a new ToolExecutionRequest
         return ToolExecutionRequest.builder()
@@ -735,19 +754,19 @@ public class SearchAgent {
         // System prompt outlining capabilities
         var systemPrompt = new StringBuilder();
         systemPrompt.append("""
-                                    You are a code search agent that helps find relevant code based on queries.
-                                    Even if not explicitly stated, the query should be understood to refer to the current codebase,
-                                    and not a general-knowledge question.
-                                    Your goal is to find code definitions, implementations, and usages that answer the user's query.
-                                    """.stripIndent());
+                            You are a code search agent that helps find relevant code based on queries.
+                            Even if not explicitly stated, the query should be understood to refer to the current codebase,
+                            and not a general-knowledge question.
+                            Your goal is to find code definitions, implementations, and usages that answer the user's query.
+                            """.stripIndent());
 
         // Add knowledge gathered during search
         if (!knowledge.isEmpty()) {
             var collected = knowledge.stream().map(t -> systemPrompt.append("""
-                                                                                    <entry description="%s">
-                                                                                    %s
-                                                                                    </entry>
-                                                                                    """.stripIndent().formatted(t._1, t._2)))
+                                                                            <entry description="%s">
+                                                                            %s
+                                                                            </entry>
+                                                                            """.stripIndent().formatted(t._1, t._2)))
                     .collect(Collectors.joining("\n"));
             systemPrompt.append("\n<knowledge>\n%s\n</knowledge>\n".formatted(collected));
         }
@@ -767,22 +786,22 @@ public class SearchAgent {
         }
 
         var instructions = """
-                Determine the next tool to call to search for code related to the query, or `answer` if you have enough
-                information to answer the query.
-                - Round trips are expensive! If you have multiple search terms to learn about, group them in a single call.
-                - Of course, `abort` and `answer` tools cannot be composed with others.
-                """;
+                           Determine the next tool to call to search for code related to the query, or `answer` if you have enough
+                           information to answer the query.
+                           - Round trips are expensive! If you have multiple search terms to learn about, group them in a single call.
+                           - Of course, `abort` and `answer` tools cannot be composed with others.
+                           """;
         if (symbolsFound) {
             // Switch to beast mode if we're running out of time
             if (beastMode || actionHistorySize() > 0.8 * TOKEN_BUDGET) {
                 instructions = """
-                        <beast-mode>
-                        🔥 MAXIMUM PRIORITY OVERRIDE! 🔥
-                        - YOU MUST FINALIZE RESULTS NOW WITH AVAILABLE INFORMATION
-                        - USE DISCOVERED CODE UNITS TO PROVIDE BEST POSSIBLE ANSWER,
-                        - OR EXPLAIN WHY YOU DID NOT SUCCEED
-                        </beast-mode>
-                        """.stripIndent();
+                               <beast-mode>
+                               🔥 MAXIMUM PRIORITY OVERRIDE! 🔥
+                               - YOU MUST FINALIZE RESULTS NOW WITH AVAILABLE INFORMATION
+                               - USE DISCOVERED CODE UNITS TO PROVIDE BEST POSSIBLE ANSWER,
+                               - OR EXPLAIN WHY YOU DID NOT SUCCEED
+                               </beast-mode>
+                               """.stripIndent();
                 // Force finalize only
                 allowAnswer = true;
                 allowSearch = false;
@@ -792,21 +811,21 @@ public class SearchAgent {
             }
         } else {
             instructions += """
-                    Start with broad searches, and then explore more specific code units once you find a foothold.
-                    For example, if the user is asking
-                    [how do Cassandra reads prevent compaction from invalidating the sstables they are referencing]
-                    then we should start with searchSymbols([".*SSTable.*", ".*Compaction.*", ".*reference.*"],
-                    instead of a more specific pattern like ".*SSTable.*compaction.*" or ".*compaction.*invalidation.*".
-                    But once you have found specific relevant classes or methods, you can ask for them directly, you don't
-                    need to make another symbol request first.
-                    Don't forget to review your previous steps -- the search results won't change so don't repeat yourself!
-                    """;
+                            Start with broad searches, and then explore more specific code units once you find a foothold.
+                            For example, if the user is asking
+                            [how do Cassandra reads prevent compaction from invalidating the sstables they are referencing]
+                            then we should start with searchSymbols([".*SSTable.*", ".*Compaction.*", ".*reference.*"],
+                            instead of a more specific pattern like ".*SSTable.*compaction.*" or ".*compaction.*invalidation.*".
+                            But once you have found specific relevant classes or methods, you can ask for them directly, you don't
+                            need to make another symbol request first.
+                            Don't forget to review your previous steps -- the search results won't change so don't repeat yourself!
+                            """;
         }
         instructions += """
-                <query>
-                %s>
-                </query>
-                """.stripIndent().formatted(query);
+                        <query>
+                        %s>
+                        </query>
+                        """.stripIndent().formatted(query);
         messages.add(new UserMessage(userActionHistory + instructions.stripIndent()));
 
         return messages;
@@ -814,13 +833,13 @@ public class SearchAgent {
 
     private String formatHistory(ToolHistoryEntry step, int i) {
         return """
-                <step sequence="%d" tool="%s" %s>
-                 %s
-                </step>
-                """.stripIndent().formatted(i,
-                                            step.request.name(),
-                                            getToolParameterInfo(step),
-                                            step.getDisplayResult());
+               <step sequence="%d" tool="%s" %s>
+                %s
+               </step>
+               """.stripIndent().formatted(i,
+                                           step.request.name(),
+                                           getToolParameterInfo(step),
+                                           step.getDisplayResult());
     }
 
     /**
@@ -956,24 +975,25 @@ public class SearchAgent {
         try {
             // Get tool display metadata
             var displayMeta = ToolDisplayMeta.fromToolName(request.name());
-            
+
             // Skip empty explanations for answer/abort
             if (request.name().equals("answerSearch") || request.name().equals("abortSearch")) {
                 return "";
             }
-            
+
             // Parse the arguments
             var mapper = new ObjectMapper();
-            Map<String, Object> args = mapper.readValue(request.arguments(), new TypeReference<>() {});
-            
+            Map<String, Object> args = mapper.readValue(request.arguments(), new TypeReference<>() {
+            });
+
             // Convert to YAML format
             StringBuilder yamlBuilder = new StringBuilder();
-            
+
             // Process each argument entry
             for (var entry : args.entrySet()) {
                 String key = entry.getKey();
                 Object value = entry.getValue();
-                
+
                 // Handle different value types
                 if (value instanceof List<?> list) {
                     yamlBuilder.append(key).append(":\n");
@@ -990,7 +1010,7 @@ public class SearchAgent {
                     yamlBuilder.append(key).append(": ").append(value).append("\n");
                 }
             }
-            
+
             // Create the Markdown code fence with icon and headline
             return """
                    ```%s %s
@@ -1001,7 +1021,7 @@ public class SearchAgent {
             // Fallback to simpler format if JSON processing fails
             String paramInfo = getToolParameterInfoFromRequest(request);
             var displayMeta = ToolDisplayMeta.fromToolName(request.name());
-            return paramInfo.isBlank() ? displayMeta.getHeadline() : 
+            return paramInfo.isBlank() ? displayMeta.getHeadline() :
                    displayMeta.getHeadline() + " (" + paramInfo + ")";
         }
     }
@@ -1016,11 +1036,13 @@ public class SearchAgent {
             });
 
             return switch (request.name()) {
-                 case "searchSymbols", "searchSubstrings", "searchFilenames" -> formatListParameter(arguments, "patterns");
-                 case "getFileContents" -> formatListParameter(arguments, "filenames");
-                 case "getFileSummaries" -> formatListParameter(arguments, "filePaths");
-                 case "getUsages" -> formatListParameter(arguments, "symbols");
-                 case "getRelatedClasses", "getClassSkeletons", "getClassSources" -> formatListParameter(arguments, "classNames");
+                case "searchSymbols", "searchSubstrings", "searchFilenames" ->
+                        formatListParameter(arguments, "patterns");
+                case "getFileContents" -> formatListParameter(arguments, "filenames");
+                case "getFileSummaries" -> formatListParameter(arguments, "filePaths");
+                case "getUsages" -> formatListParameter(arguments, "symbols");
+                case "getRelatedClasses", "getClassSkeletons", "getClassSources" ->
+                        formatListParameter(arguments, "classNames");
                 case "getMethodSources" -> formatListParameter(arguments, "methodNames");
                 case "getCallGraphTo", "getCallGraphFrom" -> arguments.getOrDefault("methodName", "").toString();
                 case "answerSearch", "abortSearch" -> "";
@@ -1115,7 +1137,7 @@ public class SearchAgent {
                 }
             }
             case "getUsages", "getRelatedClasses", "getClassSkeletons", "getClassSources", "getMethodSources" ->
-                trackClassNamesFromResult(execResult.resultText());
+                    trackClassNamesFromResult(execResult.resultText());
             default -> {
                 // No specific post-execution logic for this tool
             }
@@ -1226,7 +1248,7 @@ public class SearchAgent {
         // Transform to CodeUnit
         var codeUnits = combinedNames.stream()
                 .flatMap(name -> analyzer.getDefinition(name).stream())
-                .flatMap(cu   -> cu.classUnit().stream())
+                .flatMap(cu -> cu.classUnit().stream())
                 .collect(Collectors.toSet());
         var coalesced = AnalyzerUtil.coalesceInnerClasses(codeUnits);
 
@@ -1255,9 +1277,9 @@ public class SearchAgent {
     }
 
     @Tool(value = """
-            Abort the search process when you determine the question is not relevant to this codebase or when an answer cannot be found.
-            Use this as a last resort when you're confident no useful answer can be provided.
-            """)
+                  Abort the search process when you determine the question is not relevant to this codebase or when an answer cannot be found.
+                  Use this as a last resort when you're confident no useful answer can be provided.
+                  """)
     public String abortSearch(
             @P("Explanation of why the question cannot be answered or is not relevant to this codebase")
             String explanation
@@ -1272,9 +1294,9 @@ public class SearchAgent {
     private static class ToolHistoryEntry {
         final ToolExecutionRequest request;
         final ToolExecutionResult execResult;
-        String compressedResult; // For searchSymbols/getRelatedClasses non-summarized case
-        String learnings; // Summarization result
-        CompletableFuture<String> summarizeFuture;
+        @Nullable String compressedResult; // For searchSymbols/getRelatedClasses non-summarized case
+        @Nullable String learnings; // Summarization result
+        @Nullable CompletableFuture<String> summarizeFuture;
 
         ToolHistoryEntry(ToolExecutionRequest request, ToolExecutionResult execResult) {
             this.request = request;

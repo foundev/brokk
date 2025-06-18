@@ -1,5 +1,6 @@
 package io.github.jbellis.brokk.analyzer;
 
+import org.jetbrains.annotations.Nullable;
 import io.github.jbellis.brokk.IProject;
 import io.github.jbellis.brokk.util.Environment;
 import org.apache.logging.log4j.LogManager;
@@ -34,7 +35,7 @@ public interface Language {
         return project.getRoot().resolve(".brokk").resolve(internalName().toLowerCase(Locale.ROOT) + ".cpg");
     }
 
-    default List<Path> getDependencyCandidates(IProject project) {
+    default List<Path> getDependencyCandidates(@Nullable IProject project) {
         return List.of();
     }
 
@@ -68,6 +69,7 @@ public interface Language {
             return new CSharpAnalyzer(project, project.loadBuildDetails().excludedDirectories());
         }
         @Override public IAnalyzer loadAnalyzer(IProject project) {return createAnalyzer(project);}
+        @Override public List<Path> getDependencyCandidates(@Nullable IProject project) { return Language.super.getDependencyCandidates(project); }
     };
 
     Language JAVA = new Language() {
@@ -87,7 +89,7 @@ public interface Language {
         }
 
         @Override
-        public List<Path> getDependencyCandidates(IProject project) {
+        public List<Path> getDependencyCandidates(@Nullable IProject project) {
             long startTime = System.currentTimeMillis();
 
             String userHome = System.getProperty("user.home");
@@ -194,7 +196,11 @@ public interface Language {
         @Override public IAnalyzer loadAnalyzer(IProject project) {return createAnalyzer(project);}
 
         @Override
-        public List<Path> getDependencyCandidates(IProject project) {
+        public List<Path> getDependencyCandidates(@Nullable IProject project) {
+            if (project == null) { // Guard against null project if its methods are unconditionally called
+                logger.warn("getDependencyCandidates called with null project for JavaScript.");
+                return List.of();
+            }
             logger.debug("Scanning for JavaScript dependency candidates in project: {}", project.getRoot());
             var results = new ArrayList<Path>();
             Path nodeModules = project.getRoot().resolve("node_modules");
@@ -258,7 +264,8 @@ public interface Language {
         }
         @Override public IAnalyzer loadAnalyzer(IProject project) {return createAnalyzer(project);}
 
-        private List<Path> findVirtualEnvs(Path root) {
+        private List<Path> findVirtualEnvs(@Nullable Path root) {
+            if (root == null) return List.of();
             List<Path> envs = new ArrayList<>();
             for (String candidate : List.of(".venv", "venv", "env")) {
                 Path p = root.resolve(candidate);
@@ -324,7 +331,11 @@ public interface Language {
         }
 
         @Override
-        public List<Path> getDependencyCandidates(IProject project) {
+        public List<Path> getDependencyCandidates(@Nullable IProject project) {
+            if (project == null) { // Guard against null project
+                logger.warn("getDependencyCandidates called with null project for Python.");
+                return List.of();
+            }
             logger.debug("Scanning for Python dependency candidates in project: {}", project.getRoot());
             List<Path> results = new ArrayList<>();
             List<Path> venvs = findVirtualEnvs(project.getRoot());
@@ -398,6 +409,7 @@ public interface Language {
         }
         @Override
         public boolean isCpg() { return true; }
+        @Override public List<Path> getDependencyCandidates(@Nullable IProject project) { return Language.super.getDependencyCandidates(project); }
     };
 
     Language GO = new Language() {
@@ -411,7 +423,7 @@ public interface Language {
         }
         @Override public IAnalyzer loadAnalyzer(IProject project) {return createAnalyzer(project);}
         // TODO
-        @Override public List<Path> getDependencyCandidates(IProject project) { return List.of(); }
+        @Override public List<Path> getDependencyCandidates(@Nullable IProject project) { return List.of(); }
     };
 
     Language RUST = new Language() {
@@ -425,7 +437,7 @@ public interface Language {
         }
         @Override public IAnalyzer loadAnalyzer(IProject project) {return createAnalyzer(project);}
         // TODO: Implement getDependencyCandidates for Rust (e.g. scan Cargo.lock, vendor dir)
-        @Override public List<Path> getDependencyCandidates(IProject project) { return List.of(); }
+        @Override public List<Path> getDependencyCandidates(@Nullable IProject project) { return List.of(); }
         // TODO: Refine isAnalyzed for Rust (e.g. target directory, .cargo, vendor)
         @Override
         public boolean isAnalyzed(IProject project, Path pathToImport) {
@@ -475,7 +487,7 @@ public interface Language {
         }
         @Override public IAnalyzer loadAnalyzer(IProject project) { return createAnalyzer(project); }
         // TODO: Implement getDependencyCandidates for PHP (e.g. composer's vendor directory)
-        @Override public List<Path> getDependencyCandidates(IProject project) { return List.of(); }
+        @Override public List<Path> getDependencyCandidates(@Nullable IProject project) { return List.of(); }
         // TODO: Refine isAnalyzed for PHP (e.g. vendor directory)
         @Override
         public boolean isAnalyzed(IProject project, Path pathToImport) {
@@ -514,6 +526,7 @@ public interface Language {
             return createAnalyzer(project);
         }
         @Override public boolean isCpg() { return false; }
+        @Override public List<Path> getDependencyCandidates(@Nullable IProject project) { return Language.super.getDependencyCandidates(project); }
     };
 
     List<Language> ALL_LANGUAGES = List.of(C_SHARP,

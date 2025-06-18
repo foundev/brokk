@@ -3,7 +3,6 @@ package io.github.jbellis.brokk.gui.dialogs;
 import io.github.jbellis.brokk.Llm;
 import dev.langchain4j.model.chat.StreamingChatLanguageModel;
 import io.github.jbellis.brokk.Service;
-import io.github.jbellis.brokk.TaskResult;
 import io.github.jbellis.brokk.agents.CodeAgent;
 import io.github.jbellis.brokk.analyzer.ProjectFile;
 import io.github.jbellis.brokk.gui.Chrome;
@@ -32,7 +31,7 @@ public class UpgradeAgentProgressDialog extends JDialog {
     private final SwingWorker<Void, ProgressData> worker;
     private final int totalFiles;
     private final AtomicInteger processedFileCount = new AtomicInteger(0);
-    private ExecutorService executorService; // Moved here for wider access
+    @Nullable private ExecutorService executorService;
 
 
     private record ProgressData(String fileName, @Nullable String errorMessage) {}
@@ -84,7 +83,8 @@ public class UpgradeAgentProgressDialog extends JDialog {
             @Override
             protected Void doInBackground() {
                 // Initialize the class field executorService here
-                UpgradeAgentProgressDialog.this.executorService = Executors.newFixedThreadPool(200);
+                UpgradeAgentProgressDialog.this.executorService = Executors.newFixedThreadPool(Math.min(200, Math.max(1, filesToProcess.size())));
+                var project = chrome.getProject();
                 var contextManager = chrome.getContextManager();
                 var service = contextManager.getService();
 
@@ -92,40 +92,81 @@ public class UpgradeAgentProgressDialog extends JDialog {
                     if (isCancelled()) {
                         break;
                     }
-                    executorService.submit(() -> {
+                    if (UpgradeAgentProgressDialog.this.executorService == null) { // Check for null
+                        publish(new ProgressData(file.toString(), "Executor service not initialized."));
+                        continue;
+                    }
+                    UpgradeAgentProgressDialog.this.executorService.submit(() -> {
                         if (Thread.currentThread().isInterrupted() || isCancelled()) {
                              publish(new ProgressData(file.toString(), "Cancelled by user."));
                             return;
                         }
+                        try {
+                            // First attempt with selected model
+                            StreamingChatLanguageModel llm = service.getModel(selectedFavorite.modelName(), selectedFavorite.reasoning());
+                            Llm llmWrapper = null;
+                            if (llm != null) {
+                                llmWrapper = contextManager.getLlm(llm, "Upgrade Agent: " + file.getFileName());
+                            }
+                            List<ChatMessage> messages = CodePrompts.instance.getSimpleFileReplaceMessages(project, file, instructions);
 
-                        var model = service.getModel(selectedFavorite.modelName(), selectedFavorite.reasoning());
-                        var agent = new CodeAgent(contextManager, model);
-                        // TODO provide a special-purpose IConsoleIO
-                        var result = agent.runSingleFileEdit(file, instructions, chrome);
+                            Optional<String> error;
+                            if (llmWrapper == null) {
+                                error = Optional.of("Selected model " + selectedFavorite.modelName() + " is unavailable or getLlm returned null.");
+                            } else {
+                                error = CodeAgent.executeReplace(file, llmWrapper, messages);
+                            }
 
-                        if (result.stopDetails().reason() == TaskResult.StopReason.INTERRUPTED) {
+                            if (error.isPresent()) {
+                                // Retry with grok-3-mini
+                                if (isCancelled() || Thread.currentThread().isInterrupted()){
+                                     publish(new ProgressData(file.toString(), "Cancelled before retry. Initial error: " + error.get()));
+                                    return;
+                                }
+                                StreamingChatLanguageModel retryModel = service.getModel(Service.GROK_3_MINI, Service.ReasoningLevel.DEFAULT);
+                                Llm retryLlmWrapper = null;
+                                if (retryModel != null) {
+                                    retryLlmWrapper = contextManager.getLlm(retryModel, "Upgrade Agent (retry): " + file.getFileName());
+                                }
+                                if (retryLlmWrapper == null) {
+                                    error = Optional.of("Retry model " + Service.GROK_3_MINI + " is unavailable or getLlm returned null. Original error: " + error.get());
+                                } else {
+                                    error = CodeAgent.executeReplace(file, retryLlmWrapper, messages); // Re-use messages
+                                }
+
+                                if (error.isPresent()) {
+                                    publish(new ProgressData(file.toString(), error.get()));
+                                } else {
+                                    publish(new ProgressData(file.toString(), null)); // Retry succeeded
+                                }
+                            } else {
+                                publish(new ProgressData(file.toString(), null)); // First attempt succeeded
+                            }
+                        } catch (IOException e) {
+                            publish(new ProgressData(file.toString(), "IO Error: " + e.getMessage()));
+                        } catch (InterruptedException e) {
                             Thread.currentThread().interrupt(); // Preserve interrupt status
                             publish(new ProgressData(file.toString(), "Processing interrupted."));
                         }
-
-                        if (result.stopDetails().reason() != TaskResult.StopReason.SUCCESS) {
-                            // TODO handle failure cases
-                        }
+                        // The `if (result.stopDetails()...)` block from HEAD is removed as the try-catch
+                        // structure above now handles success/failure/interrupt reporting.
                     });
                 }
 
-                executorService.shutdown();
-                try {
-                    // Wait for tasks to complete or for cancellation
-                    while (!executorService.awaitTermination(1, TimeUnit.SECONDS)) {
-                        if (isCancelled()) {
-                            executorService.shutdownNow();
-                            break;
+                if (UpgradeAgentProgressDialog.this.executorService != null) { // Check for null
+                    UpgradeAgentProgressDialog.this.executorService.shutdown();
+                    try {
+                        // Wait for tasks to complete or for cancellation
+                        while (!UpgradeAgentProgressDialog.this.executorService.awaitTermination(1, TimeUnit.SECONDS)) {
+                            if (isCancelled()) {
+                                UpgradeAgentProgressDialog.this.executorService.shutdownNow();
+                                break;
+                            }
                         }
+                    } catch (InterruptedException e) {
+                        UpgradeAgentProgressDialog.this.executorService.shutdownNow();
+                        Thread.currentThread().interrupt();
                     }
-                } catch (InterruptedException e) {
-                    executorService.shutdownNow();
-                    Thread.currentThread().interrupt();
                 }
                 return null;
             }

@@ -19,9 +19,8 @@ import java.awt.*;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.nio.file.Files;
-import java.util.HashSet;
+import java.util.*;
 import java.util.List;
-import java.util.Set;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
@@ -42,9 +41,9 @@ public class VoiceInputButton extends JButton {
     private final @Nullable Future<Set<String>> customSymbolsFuture;
 
     // For STT (mic) usage
-    private volatile TargetDataLine micLine = null;
+    private volatile @Nullable TargetDataLine micLine = null;
     private final ByteArrayOutputStream micBuffer = new ByteArrayOutputStream();
-    private volatile Thread micCaptureThread = null;
+    @Nullable private volatile Thread micCaptureThread = null;
     private @Nullable ImageIcon micOnIcon;
     private @Nullable ImageIcon micOffIcon;
 
@@ -90,8 +89,8 @@ public class VoiceInputButton extends JButton {
 
         // Load mic icons
         try {
-            micOnIcon = new ImageIcon(getClass().getResource("/mic-on.png"));
-            micOffIcon = new ImageIcon(getClass().getResource("/mic-off.png"));
+            micOnIcon = new ImageIcon(Objects.requireNonNull(getClass().getResource("/mic-on.png")));
+            micOffIcon = new ImageIcon(Objects.requireNonNull(getClass().getResource("/mic-off.png")));
             // Scale icons to fit the dynamic button size
             micOnIcon = new ImageIcon(micOnIcon.getImage().getScaledInstance(iconDisplaySize, iconDisplaySize, Image.SCALE_SMOOTH));
             micOffIcon = new ImageIcon(micOffIcon.getImage().getScaledInstance(iconDisplaySize, iconDisplaySize, Image.SCALE_SMOOTH));
@@ -168,7 +167,7 @@ public class VoiceInputButton extends JButton {
 
             AudioFormat format = new AudioFormat(16000.0f, 16, 1, true, true);
             DataLine.Info info = new DataLine.Info(TargetDataLine.class, format);
-            micLine = (TargetDataLine) AudioSystem.getLine(info);
+            micLine = (TargetDataLine) Objects.requireNonNull(AudioSystem.getLine(info));
             micLine.open(format);
             micLine.start();
 
@@ -287,8 +286,9 @@ public class VoiceInputButton extends JButton {
                     // Perform transcription
                     String result;
                     var sttModel = contextManager.getService().sttModel();
+                    Set<String> finalSymbolsForTranscription = symbolsForTranscription != null ? symbolsForTranscription : Collections.emptySet();
                     try {
-                        result = sttModel.transcribe(tempFile, symbolsForTranscription);
+                        result = sttModel.transcribe(tempFile, finalSymbolsForTranscription);
                     } catch (Exception e) {
                         IConsoleIO iConsoleIO = contextManager.getIo();
                         iConsoleIO.toolError("Error transcribing audio: " + e.getMessage(), "Error");

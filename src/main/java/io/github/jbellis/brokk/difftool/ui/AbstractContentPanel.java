@@ -1,5 +1,7 @@
 package io.github.jbellis.brokk.difftool.ui;
 
+import org.jetbrains.annotations.Nullable;
+
 import javax.swing.*;
 import javax.swing.event.UndoableEditEvent;
 import javax.swing.event.UndoableEditListener;
@@ -49,12 +51,12 @@ public abstract class AbstractContentPanel
     public void doDown() {
     }
 
-    public class MyUndoManager
-            extends UndoManager
-            implements UndoableEditListener {
+    public class MyUndoManager extends UndoManager implements UndoableEditListener {
+        @Nullable
         CompoundEdit activeEdit;
 
         private MyUndoManager() {
+            this.activeEdit = null;
         }
 
         public void start(String text) {
@@ -66,10 +68,11 @@ public abstract class AbstractContentPanel
         }
 
         public void end(String text) {
-            activeEdit.end();
-            addEdit(activeEdit);
-            activeEdit = null;
-
+            if (activeEdit != null) {
+                activeEdit.end();
+                addEdit(activeEdit);
+                activeEdit = null;
+            }
             checkActions();
         }
 

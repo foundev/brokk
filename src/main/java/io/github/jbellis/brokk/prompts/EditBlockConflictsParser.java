@@ -5,7 +5,7 @@ import dev.langchain4j.data.message.ChatMessage;
 import dev.langchain4j.data.message.UserMessage;
 import io.github.jbellis.brokk.EditBlock;
 import io.github.jbellis.brokk.analyzer.ProjectFile;
-
+import org.jetbrains.annotations.Nullable;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Set;
@@ -119,7 +119,7 @@ public class EditBlockConflictsParser extends EditBlockParser {
     private static final Pattern REPLACE = Pattern.compile("^\\s*>{5,9} REPLACE\\s*(\\S+?)\\s*$", Pattern.MULTILINE);
 
     public EditBlock.ExtendedParseResult parse(String content) {
-        return parse(content, null);
+        return parse(content, java.util.Collections.emptySet());
     }
 
     @Override
@@ -286,8 +286,8 @@ public class EditBlockConflictsParser extends EditBlockParser {
         // After processing all lines, flush leftover text
         flushLeftoverText(leftoverText, outputBlocks);
 
-        String errorText = parseErrors.isEmpty() ? null : parseErrors.toString();
-        return new EditBlock.ExtendedParseResult(outputBlocks, errorText);
+        String errorText = parseErrors.toString();
+        return new EditBlock.ExtendedParseResult(outputBlocks, errorText.isEmpty() ? "" : errorText);
     }
 
     /**
@@ -308,7 +308,7 @@ public class EditBlockConflictsParser extends EditBlockParser {
     private static void revertLinesToLeftover(StringBuilder leftover,
                                               String searchLine,
                                               List<String> collectedLines,
-                                              String trailingLine)
+                                              @Nullable String trailingLine)
     {
         leftover.append(searchLine).append("\n");
         for (var ln : collectedLines) {

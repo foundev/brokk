@@ -5,6 +5,7 @@ import dev.langchain4j.agent.tool.Tool;
 import dev.langchain4j.agent.tool.ToolSpecifications;
 import dev.langchain4j.data.message.ChatMessage;
 import dev.langchain4j.data.message.ChatMessageType;
+import org.jetbrains.annotations.Nullable;
 import dev.langchain4j.data.message.SystemMessage;
 import dev.langchain4j.data.message.UserMessage;
 import dev.langchain4j.model.chat.StreamingChatLanguageModel;
@@ -18,7 +19,6 @@ import io.github.jbellis.brokk.context.FrozenFragment;
 import io.github.jbellis.brokk.util.Messages;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
-import org.jetbrains.annotations.NotNull;
 
 import java.io.IOException;
 import java.io.UncheckedIOException;
@@ -177,6 +177,7 @@ public class ContextAgent {
                         content = file.read();
                     } catch (IOException e) {
                         debug("IOException reading file for token calculation: {}", file, e);
+                        content = ""; // Ensure content is not null for token calculation
                     }
                     totalTokens += Messages.getApproximateTokens(content);
                 } else {
@@ -387,7 +388,7 @@ public class ContextAgent {
         return new RecommendationResult(false, List.of(), reason);
     }
 
-    private @NotNull RecommendationResult createResult(@NotNull LlmRecommendation llmRecommendation) {
+    private RecommendationResult createResult(LlmRecommendation llmRecommendation) {
         var recommendedFiles = llmRecommendation.recommendedFiles();
         var recommendedClasses = llmRecommendation.recommendedClasses();
         var reasoning = llmRecommendation.reasoning();
@@ -442,7 +443,7 @@ public class ContextAgent {
     /**
      * one SkeletonFragment per summary so ArchitectAgent can easily ask user which ones to include
      */
-    private static @NotNull List<ContextFragment> skeletonPerSummary(IContextManager contextManager, Map<CodeUnit, String> relevantSummaries) {
+    private static List<ContextFragment> skeletonPerSummary(IContextManager contextManager, Map<CodeUnit, String> relevantSummaries) {
         return relevantSummaries.keySet().stream()
                 .map(s -> (ContextFragment) new ContextFragment.SkeletonFragment(contextManager, List.of(s.fqName()), ContextFragment.SummaryType.CLASS_SKELETON))
                 .toList();
@@ -463,7 +464,7 @@ public class ContextAgent {
                 .collect(Collectors.toMap(Map.Entry::getKey, Map.Entry::getValue, (v1, v2) -> v1));
     }
 
-    private @NotNull Map<CodeUnit, @NotNull String> getSummaries(Collection<CodeUnit> classes, boolean parallel) {
+    private Map<CodeUnit, String> getSummaries(Collection<CodeUnit> classes, boolean parallel) {
         var coalescedClasses = AnalyzerUtil.coalesceInnerClasses(Set.copyOf(classes));
         debug("Found {} classes", coalescedClasses.size());
 
@@ -500,9 +501,9 @@ public class ContextAgent {
     }
 
     private LlmRecommendation askLlmToRecommendContext(List<String> filenames,
-                                                       @NotNull Map<CodeUnit, String> summaries,
-                                                         @NotNull Map<ProjectFile, String> contentsMap,
-                                                         @NotNull Collection<ChatMessage> workspaceRepresentation) throws InterruptedException
+                                                       Map<CodeUnit, String> summaries,
+                                                         Map<ProjectFile, String> contentsMap,
+                                                         Collection<ChatMessage> workspaceRepresentation) throws InterruptedException
     {
         if (deepScan) {
             return askLlmDeepRecommendContext(filenames, summaries, contentsMap, workspaceRepresentation);
@@ -514,9 +515,9 @@ public class ContextAgent {
     // --- Deep Scan (Tool-based) Recommendation ---
 
     private LlmRecommendation askLlmDeepRecommendContext(List<String> filenames,
-                                                         @NotNull Map<CodeUnit, String> summaries,
-                                                         @NotNull Map<ProjectFile, String> contentsMap,
-                                                         @NotNull Collection<ChatMessage> workspaceRepresentation) throws InterruptedException
+                                                         Map<CodeUnit, String> summaries,
+                                                         Map<ProjectFile, String> contentsMap,
+                                                         Collection<ChatMessage> workspaceRepresentation) throws InterruptedException
     {
          // Determine the type of context being provided
         String contextTypeElement;
@@ -657,9 +658,9 @@ public class ContextAgent {
     }
 
     private LlmRecommendation askLlmQuickRecommendContext(List<String> filenames,
-                                                          @NotNull Map<CodeUnit, String> summaries,
-                                                          @NotNull Map<ProjectFile, String> contentsMap,
-                                                          @NotNull Collection<ChatMessage> workspaceRepresentation) throws InterruptedException
+                                                          Map<CodeUnit, String> summaries,
+                                                          Map<ProjectFile, String> contentsMap,
+                                                          Collection<ChatMessage> workspaceRepresentation) throws InterruptedException
     {
         String reasoning = "LLM recommended via simple prompt.";
         List<ProjectFile> recommendedFiles = List.of();
@@ -729,7 +730,7 @@ public class ContextAgent {
      */
     private List<String> simpleRecommendItems(ContextInputType inputType,
                                               String inputBlob,
-                                              Integer topK,
+                                              @Nullable Integer topK,
                                               Collection<ChatMessage> workspaceRepresentation) throws InterruptedException
     {
         var systemMessage = new StringBuilder("""

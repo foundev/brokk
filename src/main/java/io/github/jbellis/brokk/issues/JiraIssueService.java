@@ -12,6 +12,7 @@ import org.jetbrains.annotations.Nullable;
 import java.io.IOException;
 import java.net.URI;
 import java.net.URISyntaxException;
+import java.time.Instant;
 import java.time.OffsetDateTime;
 import java.time.format.DateTimeFormatter;
 import java.time.format.DateTimeParseException;
@@ -26,7 +27,7 @@ public class JiraIssueService implements IssueService {
 
     private final JiraAuth jiraAuth;
     private final IProject project; // May be needed for project-specific Jira settings
-    private List<String> availableStatusesCache;
+    @Nullable private List<String> availableStatusesCache;
 
     public JiraIssueService(IProject project) {
         this.project = project;
@@ -177,8 +178,20 @@ public class JiraIssueService implements IssueService {
                     } catch (URISyntaxException e) {
                         logger.warn("Could not construct htmlUrl for issue {}: {}", issueKey, baseUrl, e);
                     }
+                    // Provide default non-null values for fields that expect it
+                    Date finalUpdatedAt = Objects.requireNonNullElse(updatedAt, Date.from(Instant.EPOCH));
 
-                    issueHeaders.add(new IssueHeader(issueKey, title, author, updatedAt, labels, assignees, status, htmlUrl));
+                    URI nonNullHtmlUrl;
+                    try {
+                         nonNullHtmlUrl = Objects.requireNonNullElse(htmlUrl, new URI("urn:brokk:missing-uri"));
+                    } catch (URISyntaxException e) {
+                        // This path should ideally be impossible if the URN is valid.
+                        // If it can happen, we need a robust fallback.
+                        // Forcing a non-null value even in failure of fallback URI creation:
+                        try { nonNullHtmlUrl = new URI("urn:brokk:error-uri-fallback-failed"); }
+                        catch (URISyntaxException fatalE) { throw new AssertionError(fatalE); } // Should never happen
+                    }
+                    issueHeaders.add(new IssueHeader(issueKey, title, author, finalUpdatedAt, labels, assignees, status, nonNullHtmlUrl));
                 }
             } else {
                 logger.warn("Jira response 'issues' field is not an array or is missing.");
@@ -294,8 +307,23 @@ public class JiraIssueService implements IssueService {
                 logger.error("Could not construct htmlUrl for issue {}: {}", key, baseUrl, e);
                 throw new IOException("Could not construct htmlUrl for issue " + key, e);
             }
+            // Provide default non-null values
+            Date finalUpdatedAt = Objects.requireNonNullElse(updatedAt, Date.from(Instant.EPOCH));
+            URI finalHtmlUrl;
+            try {
+                finalHtmlUrl = htmlUrl != null ? htmlUrl : new URI("urn:brokk:missing-uri");
+            } catch (URISyntaxException e) {
+                logger.error("URISyntaxException for fallback URI for issue {}: {}", key, e.getMessage());
+                // Assign a "known good" URI or throw if this state is unacceptable
+                try {
+                    finalHtmlUrl = new URI("urn:brokk:error-uri-fallback-failed");
+                } catch (URISyntaxException fatalE) {
+                    throw new AssertionError("Fallback URI construction failed", fatalE);
+                }
+            }
 
-            IssueHeader header = new IssueHeader(key, title, author, updatedAt, labels, assignees, status, htmlUrl);
+
+            IssueHeader header = new IssueHeader(key, title, author, finalUpdatedAt, labels, assignees, status, finalHtmlUrl);
 
             // Extract renderedBody (HTML)
             String renderedDescription = rootNode.path("renderedFields").path("description").asText("");
@@ -317,8 +345,10 @@ public class JiraIssueService implements IssueService {
 
                     String createdStr = rawComment.path("created").asText(null); // ISO date from raw fields
                     Date createdDate = parseJiraDateTime(createdStr);
+                    // Provide default non-null value
+                    Date finalCreatedDate = Objects.requireNonNullElse(createdDate, Date.from(Instant.EPOCH));
 
-                    comments.add(new Comment(authorName, bodyHtml, createdDate));
+                    comments.add(new Comment(authorName, bodyHtml, finalCreatedDate));
                 }
                 logger.debug("Parsed {} comments for Jira issue {}", comments.size(), issueId);
             } else {

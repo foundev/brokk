@@ -38,6 +38,7 @@ public class AnalyzerWrapper implements AutoCloseable {
     private volatile boolean paused = false;
 
     private volatile Future<IAnalyzer> future;
+    @Nullable
     private volatile IAnalyzer currentAnalyzer = null;
     private volatile boolean rebuildInProgress = false;
     private volatile boolean externalRebuildRequested = false;
@@ -154,7 +155,7 @@ public class AnalyzerWrapper implements AutoCloseable {
             );
         }
 
-        if (needsGitRefresh) {
+        if (needsGitRefresh && this.gitRepoRoot != null) { // Added null check for gitRepoRoot before resolve
             logger.debug("Changes in git metadata directory ({}) detected", this.gitRepoRoot.resolve(".git"));
             if (listener != null) {
                 listener.onRepoChange();
@@ -250,7 +251,7 @@ public class AnalyzerWrapper implements AutoCloseable {
             Language lang = projectLangs.iterator().next();
             assert lang != Language.NONE;
 
-            Path cpgPath = lang.isCpg() ? lang.getCpgPath(project) : null;
+            Path cpgPath = lang.isCpg() ? lang.getCpgPath(project) : Path.of(""); // Provide non-null default
             long startTime = System.currentTimeMillis();
 
             if (isInitialLoad && project.getAnalyzerRefresh() == IProject.CpgRefresh.UNSET) {
@@ -284,7 +285,7 @@ public class AnalyzerWrapper implements AutoCloseable {
 
             for (Language lang : projectLangs) {
                 if (lang == Language.NONE) continue;
-                Path cpgPath = lang.isCpg() ? lang.getCpgPath(project) : null;
+                Path cpgPath = lang.isCpg() ? lang.getCpgPath(project) : Path.of(""); // Provide non-null default
                 IAnalyzer delegate;
                 long langStartTime = System.currentTimeMillis();
 
@@ -703,6 +704,6 @@ public class AnalyzerWrapper implements AutoCloseable {
     private record FileChangeEvent(EventType type, Path path) {
     }
     
-    private record CachedAnalyzerResult(IAnalyzer analyzer, boolean needsRebuild) {
+    private record CachedAnalyzerResult(@Nullable IAnalyzer analyzer, boolean needsRebuild) {
     }
 }

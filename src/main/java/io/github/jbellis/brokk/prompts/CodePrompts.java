@@ -645,7 +645,9 @@ public abstract class CodePrompts {
      */
     public final Collection<ChatMessage> getWorkspaceSummaryMessages(IContextManager cm) {
         var c = cm.topContext();
-
+        if (c == null) {
+            return List.of();
+        }
         var summaries = Streams.concat(c.getReadOnlyFragments(), c.getEditableFragments())
                 .map(ContextFragment::formatSummary)
                 .filter(s -> !s.isBlank())

@@ -6,6 +6,7 @@ import io.github.jbellis.brokk.analyzer.CodeUnit;
 import io.github.jbellis.brokk.analyzer.ExternalFile;
 import io.github.jbellis.brokk.analyzer.ProjectFile;
 import io.github.jbellis.brokk.util.FragmentUtils;
+import org.fife.ui.rsyntaxtextarea.SyntaxConstants;
 import org.jetbrains.annotations.Nullable;
 
 import javax.imageio.ImageIO;
@@ -90,38 +91,45 @@ public final class FrozenFragment extends ContextFragment.VirtualFragment {
     public ContextFragment.FragmentType getType() {
         return originalType;
     }
-    
+
     @Override
     public String shortDescription() {
-        return shortDescriptionContent;
+        return Objects.toString(shortDescriptionContent, "");
     }
 
     @Override
     public String description() {
-        return descriptionContent;
+        return Objects.toString(descriptionContent, "");
     }
 
     @Override
-    public String text() {
+    public String text() { // Must be @NonNull
         if (isTextFragment) {
-            return textContent;
+            return Objects.toString(textContent, ""); // Default to empty string if null
         } else {
             return "[Image content]";
         }
     }
-    
+
     @Override
-    public Image image() {
+    public Image image() { // Must be @NonNull if !isTextFragment
         if (isTextFragment) {
             throw new UnsupportedOperationException("This fragment does not contain image content");
         }
+        // imageBytesContent being null means this FrozenFragment might represent an image that couldn't be loaded/persisted.
+        // Returning a placeholder is a valid way to fulfill the @NonNull contract if an actual image isn't available.
+        if (imageBytesContent == null) {
+            return new BufferedImage(1, 1, BufferedImage.TYPE_INT_ARGB); // Placeholder
+        }
         try {
-            return bytesToImage(imageBytesContent);
+            Image img = bytesToImage(imageBytesContent);
+            // If bytesToImage returns null (e.g., ImageIO.read failed), return placeholder.
+            return Objects.requireNonNullElseGet(img, () -> new BufferedImage(1, 1, BufferedImage.TYPE_INT_ARGB));
         } catch (IOException e) {
             throw new UncheckedIOException(e);
         }
     }
-    
+
     @Override
     public String format() {
         return """
@@ -143,10 +151,10 @@ public final class FrozenFragment extends ContextFragment.VirtualFragment {
     public boolean isText() {
         return isTextFragment;
     }
-    
+
     @Override
-    public String syntaxStyle() {
-        return syntaxStyle;
+    public String syntaxStyle() { // Must be @NonNull
+        return Objects.toString(syntaxStyle, SyntaxConstants.SYNTAX_STYLE_NONE);
     }
 
     /**
@@ -310,7 +318,9 @@ public final class FrozenFragment extends ContextFragment.VirtualFragment {
                 default -> { /* No type-specific meta beyond what's standard for hashing */ }
             }
 
-            String contentHash = FragmentUtils.calculateContentHash(type, fullDescription, shortDescription, textContent, imageBytesContent,
+            String contentHash = FragmentUtils.calculateContentHash(type, fullDescription, shortDescription,
+                                                                    Objects.toString(textContent, ""),
+                                                                    Objects.requireNonNullElse(imageBytesContent, new byte[0]),
                                                                     isText, syntaxStyle, files,
                                                                     originalClassName, meta);
 
@@ -438,11 +448,7 @@ public final class FrozenFragment extends ContextFragment.VirtualFragment {
      * @return PNG bytes, or null if image is null
      * @throws IOException If conversion fails
      */
-    public static byte[] imageToBytes(@Nullable Image image) throws IOException {
-        if (image == null) {
-            return null;
-        }
-        
+    public static byte[] imageToBytes(Image image) throws IOException {
         BufferedImage bufferedImage;
         if (image instanceof BufferedImage bi) {
             bufferedImage = bi;
@@ -470,11 +476,7 @@ public final class FrozenFragment extends ContextFragment.VirtualFragment {
      * @return The converted image, or null if bytes is null
      * @throws IOException If conversion fails
      */
-    public static Image bytesToImage(@Nullable byte[] bytes) throws IOException {
-        if (bytes == null) {
-            return null;
-        }
-        
+    public static Image bytesToImage(byte[] bytes) throws IOException {
         try (var bais = new ByteArrayInputStream(bytes)) {
             return ImageIO.read(bais);
         }

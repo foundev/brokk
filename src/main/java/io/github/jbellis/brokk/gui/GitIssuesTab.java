@@ -32,6 +32,7 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
 import io.github.jbellis.brokk.util.Environment;
+import org.jetbrains.annotations.Nullable;
 
 public class GitIssuesTab extends JPanel implements SettingsChangeListener {
     private static final Logger logger = LogManager.getLogger(GitIssuesTab.class);
@@ -57,7 +58,8 @@ public class GitIssuesTab extends JPanel implements SettingsChangeListener {
     private JButton captureButton;
 
     private FilterBox statusFilter;
-    private FilterBox resolutionFilter;
+    @Nullable
+    private FilterBox resolutionFilter; // Initialized conditionally
     private FilterBox authorFilter;
     private FilterBox labelFilter;
     private FilterBox assigneeFilter;
@@ -819,7 +821,8 @@ public class GitIssuesTab extends JPanel implements SettingsChangeListener {
         return options;
     }
 
-    private String getBaseFilterValue(String displayOptionWithCount) {
+    @Nullable
+    private String getBaseFilterValue(@Nullable String displayOptionWithCount) {
         if (displayOptionWithCount == null) {
             return null; // This is the "All" case (FilterBox name shown)
         }

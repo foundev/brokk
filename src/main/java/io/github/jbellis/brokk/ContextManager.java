@@ -13,6 +13,7 @@ import io.github.jbellis.brokk.context.ContextHistory;
 import io.github.jbellis.brokk.context.ContextHistory.UndoResult;
 import io.github.jbellis.brokk.context.FrozenFragment;
 import io.github.jbellis.brokk.gui.Chrome;
+import org.jetbrains.annotations.Nullable;
 import io.github.jbellis.brokk.prompts.CodePrompts;
 import io.github.jbellis.brokk.prompts.EditBlockParser;
 import io.github.jbellis.brokk.prompts.SummarizerPrompts;
@@ -23,9 +24,9 @@ import io.github.jbellis.brokk.tools.WorkspaceTools;
 import io.github.jbellis.brokk.util.*;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
-import org.jetbrains.annotations.NotNull;
 
 import javax.swing.*;
+import java.util.Objects;
 import java.io.IOException;
 import java.io.UncheckedIOException;
 import java.nio.charset.StandardCharsets;
@@ -42,6 +43,7 @@ import java.util.stream.Collectors;
 import java.util.stream.IntStream;
 
 import static java.lang.Math.max;
+import static org.checkerframework.checker.nullness.util.NullnessUtil.castNonNull;
 
 /**
  * Manages the current and previous context, along with other state like prompts and message history.
@@ -74,12 +76,10 @@ public class ContextManager implements IContextManager, AutoCloseable {
         return TEST_FILE_PATTERN.matcher(file.toString()).matches();
     }
 
-    @NotNull
     private LoggingExecutorService createLoggingExecutorService(ExecutorService toWrap) {
         return createLoggingExecutorService(toWrap, Set.of());
     }
 
-    @NotNull
     private LoggingExecutorService createLoggingExecutorService(ExecutorService toWrap, Set<Class<? extends Throwable>> ignoredExceptions) {
         return new LoggingExecutorService(toWrap, th -> {
             var thread = Thread.currentThread();
@@ -126,7 +126,7 @@ public class ContextManager implements IContextManager, AutoCloseable {
     // Context history for undo/redo functionality (stores frozen contexts)
     private final ContextHistory contextHistory;
     // The current, mutable, live context that the user interacts with
-    private volatile Context liveContext;
+    private volatile Context liveContext = Context.EMPTY; // Initialize to a non-null default
     private final List<ContextListener> contextListeners = new CopyOnWriteArrayList<>();
 
     @Override
@@ -135,18 +135,19 @@ public class ContextManager implements IContextManager, AutoCloseable {
     }
 
     @Override
-    public void addContextListener(@NotNull ContextListener listener) {
+    public void addContextListener(ContextListener listener) {
         contextListeners.add(listener);
     }
 
     @Override
-    public void removeContextListener(@NotNull ContextListener listener) {
+    public void removeContextListener(ContextListener listener) {
         contextListeners.remove(listener);
     }
 
     /**
      * Minimal constructor called from Brokk
      */
+    @SuppressWarnings("NullAway.Init") // For complex Swing initialization patterns / listener setup
     public ContextManager(AbstractProject project)
     {
         this.project = project;
@@ -183,6 +184,8 @@ public class ContextManager implements IContextManager, AutoCloseable {
                 // pass
             }
         };
+        this.analyzerWrapper = new AnalyzerWrapper(project, this::submitBackgroundTask, null); // Initialize analyzerWrapper
+        this.currentSessionId = UUID.randomUUID(); // Initialize currentSessionId
     }
 
     /**
@@ -194,19 +197,20 @@ public class ContextManager implements IContextManager, AutoCloseable {
         // load last active session, if present
         var lastActiveSessionId = project.getLastActiveSession();
         var sessions = project.listSessions();
-        UUID sessionId;
+        UUID sessionIdToLoad;
         if (lastActiveSessionId.isPresent() && sessions.stream().anyMatch(s -> s.id().equals(lastActiveSessionId.get()))) {
             // Try to resume the last active session for this worktree
-            sessionId = lastActiveSessionId.get();
-            logger.info("Resuming last active session {}", sessionId);
+            sessionIdToLoad = lastActiveSessionId.get();
+            logger.info("Resuming last active session {}", sessionIdToLoad);
         } else {
             var newSessionInfo = project.newSession(DEFAULT_SESSION_NAME);
-            sessionId = newSessionInfo.id();
+            sessionIdToLoad = newSessionInfo.id();
             logger.info("Created and loaded new session: {}", newSessionInfo.id());
         }
+        this.currentSessionId = sessionIdToLoad; // Set currentSessionId here
 
         // load session contents
-        var loadedCH = project.loadHistory(sessionId, this);
+        var loadedCH = project.loadHistory(currentSessionId, this);
         if (loadedCH.getHistory().isEmpty()) {
             liveContext = new Context(this, buildWelcomeMessage());
             contextHistory.setInitialContext(liveContext.freezeAndCleanup().frozenContext());
@@ -215,16 +219,22 @@ public class ContextManager implements IContextManager, AutoCloseable {
             for (int i = 1; i < loadedCH.getHistory().size(); i++) {
                 contextHistory.addFrozenContextAndClearRedo(loadedCH.getHistory().get(i));
             }
-            liveContext = Context.unfreeze(contextHistory.topContext());
+            Context top = contextHistory.topContext();
+            liveContext = (top == null) ? new Context(this, buildWelcomeMessage()) : Context.unfreeze(castNonNull(top));
         }
 
         // make it official
-        updateActiveSession(sessionId);
+        updateActiveSession(currentSessionId);
 
         // Notify listeners and UI on EDT
         SwingUtilities.invokeLater(() -> {
-            notifyContextListeners(topContext());
+            var tc = topContext();
+            notifyContextListeners(Objects.requireNonNullElse(tc, Context.EMPTY)); // notifyContextListeners handles null tc
             if (io != null && io instanceof Chrome) { // Check if UI is ready
+                // Chrome.updateContextHistoryTable expects @NonNull, but HistoryOutputPanel handles null.
+                // If tc is null, we pass Context.EMPTY to satisfy Chrome if it can't be changed to @Nullable,
+                // assuming HistoryOutputPanel treats Context.EMPTY as "show empty table".
+                io.updateContextHistoryTable(Objects.requireNonNullElse(tc, Context.EMPTY));
                 io.enableActionButtons();
             }
         });
@@ -276,8 +286,9 @@ public class ContextManager implements IContextManager, AutoCloseable {
                 project.getRepo().refresh();
                 if (liveContext != null) {
                     var fr = liveContext.freezeAndCleanup();
+                    var tc = topContext();
                     // we can't rely on pushContext's change detection because here we care about the contents and not the fragment identity
-                    if (!topContext().workspaceEquals(fr.frozenContext())) {
+                    if (tc != null && !tc.workspaceEquals(fr.frozenContext())) {
                         pushContext(ctx -> fr.liveContext().withParsedOutput(null, "Loaded external changes"));
                     }
                     // analyzer refresh will call this too, but it will be delayed
@@ -291,8 +302,9 @@ public class ContextManager implements IContextManager, AutoCloseable {
                 // possible for analyzer build to finish before context load does
                 if (liveContext != null) {
                     var fr = liveContext.freezeAndCleanup();
+                    var tc = topContext();
                     // we can't rely on pushContext's change detection because here we care about the contents and not the fragment identity
-                    if (!topContext().workspaceEquals(fr.frozenContext())) {
+                    if (tc != null && !tc.workspaceEquals(fr.frozenContext())) {
                         pushContext(ctx -> fr.liveContext().withParsedOutput(null, "Code Intelligence changes"));
                     }
                     io.updateWorkspace();
@@ -342,7 +354,12 @@ public class ContextManager implements IContextManager, AutoCloseable {
         // For shared history, it should be project.getMasterRootPathForConfig().
         // Let's assume Llm.getHistoryBaseDir is smart or this function will be adjusted.
         // For now, using getMasterRootPathForConfig for clarity that history should be shared.
-        var historyBaseDir = Llm.getHistoryBaseDir(project.getMasterRootPathForConfig());
+        Path masterRoot = project.getMasterRootPathForConfig();
+        if (masterRoot == null) {
+            logger.warn("Master root path for config is null, cannot determine LLM history base directory for cleanup.");
+            return;
+        }
+        var historyBaseDir = Llm.getHistoryBaseDir(masterRoot);
         if (!Files.isDirectory(historyBaseDir)) {
             logger.debug("LLM history log directory {} does not exist, skipping cleanup.", historyBaseDir);
             return;
@@ -442,7 +459,7 @@ public class ContextManager implements IContextManager, AutoCloseable {
     }
 
     @Override
-    public Context topContext() {
+    public @Nullable Context topContext() {
         return contextHistory.topContext();
     }
 
@@ -450,6 +467,7 @@ public class ContextManager implements IContextManager, AutoCloseable {
      * Return the currently selected FROZEN context from history in the UI.
      * For operations, use topContext() to get the live context.
      */
+    @Nullable
     public Context selectedContext() {
         return contextHistory.getSelectedContext();
     }
@@ -619,10 +637,10 @@ public class ContextManager implements IContextManager, AutoCloseable {
     public void editFiles(Collection<ProjectFile> files)
     {
         var filesByType = files.stream()
-                               .collect(Collectors.partitioningBy(BrokkFile::isText));
+                .collect(Collectors.partitioningBy(BrokkFile::isText));
 
-        var textFiles = filesByType.get(true);
-        var binaryFiles = filesByType.get(false);
+        var textFiles = castNonNull(filesByType.get(true));
+        var binaryFiles = castNonNull(filesByType.get(false));
 
         if (!textFiles.isEmpty()) {
             var proposedEditableFragments = textFiles.stream()
@@ -651,9 +669,9 @@ public class ContextManager implements IContextManager, AutoCloseable {
         var uniqueNewEditableFragments = fragmentsToAdd.stream()
                 .filter(frag -> !currentEditableFileSet.contains(frag.file()))
                 .toList();
-        
+
         return currentLiveCtx.removeReadonlyFiles(existingReadOnlyFragmentsToRemove)
-                             .addEditableFiles(uniqueNewEditableFragments);
+                .addEditableFiles(uniqueNewEditableFragments);
     }
 
     /**
@@ -683,7 +701,7 @@ public class ContextManager implements IContextManager, AutoCloseable {
                 .toList();
 
         return currentLiveCtx.removeEditableFiles(existingEditableFragmentsToRemove)
-                             .addReadonlyFiles(uniqueNewReadOnlyFragments);
+                .addReadonlyFiles(uniqueNewReadOnlyFragments);
     }
 
     /**
@@ -734,8 +752,20 @@ public class ContextManager implements IContextManager, AutoCloseable {
         if (!(f instanceof FrozenFragment)) {
             return f;
         }
-
-        int idx = topContext().getAllFragmentsInDisplayOrder().indexOf(f);
+        var tc = topContext();
+        if (tc == null) {
+            // This case should ideally not happen if 'f' is a FrozenFragment implying a history exists.
+            // However, to be safe, return 'f' itself or handle as an error.
+            logger.warn("mapToLiveFragment called with a FrozenFragment but topContext is null. Returning original fragment.");
+            return f;
+        }
+        int idx = tc.getAllFragmentsInDisplayOrder().indexOf(f);
+        if (idx == -1 || idx >= liveContext.getAllFragmentsInDisplayOrder().size()) {
+            // Fragment not found in topContext's display order, or index out of bounds for liveContext.
+            // This indicates a potential inconsistency.
+            logger.warn("Fragment {} not found in topContext or index out of bounds for liveContext. Returning original fragment.", f.id());
+            return f;
+        }
         return liveContext.getAllFragmentsInDisplayOrder().get(idx);
     }
 
@@ -772,14 +802,22 @@ public class ContextManager implements IContextManager, AutoCloseable {
 
     public boolean undoContext() {
         UndoResult result = contextHistory.undo(1, io);
-        if (result.wasUndone()) {
-            liveContext = Context.unfreeze(topContext());
-            notifyContextListeners(topContext());
-            project.saveHistory(contextHistory, currentSessionId); // Save history of frozen contexts
-            return true;
+        if (!result.wasUndone()) {
+            return false;
         }
 
-        return false;
+        Context tc = topContext();
+        if (tc == null) {
+            logger.error("topContext is null after successful undo. This should not happen.");
+            liveContext = Context.EMPTY;
+        } else {
+            liveContext = Context.unfreeze(Objects.requireNonNull(tc));
+        }
+        notifyContextListeners(Objects.requireNonNullElse(tc, Context.EMPTY));
+        project.saveHistory(contextHistory, currentSessionId); // Save history of frozen contexts
+        io.systemOutput("Undid " + result.steps() + " step" + (result.steps() > 1 ? "s" : "") + "!");
+        return true;
+
     }
 
     /**
@@ -789,8 +827,14 @@ public class ContextManager implements IContextManager, AutoCloseable {
         return submitUserTask("Undoing", () -> {
             UndoResult result = contextHistory.undoUntil(targetFrozenContext, io);
             if (result.wasUndone()) {
-                liveContext = Context.unfreeze(topContext());
-                notifyContextListeners(topContext());
+                var tc = topContext();
+                if (tc == null) { // Should not happen if undo was successful
+                    logger.error("topContext is null after successful undoUntil. This should not happen.");
+                    liveContext = Context.EMPTY;
+                } else {
+                    liveContext = Context.unfreeze(tc);
+                }
+                notifyContextListeners(Objects.requireNonNullElse(tc, Context.EMPTY));
                 project.saveHistory(contextHistory, currentSessionId);
                 io.systemOutput("Undid " + result.steps() + " step" + (result.steps() > 1 ? "s" : "") + "!");
             } else {
@@ -806,8 +850,14 @@ public class ContextManager implements IContextManager, AutoCloseable {
         return submitUserTask("Redoing", () -> {
             boolean wasRedone = contextHistory.redo(io);
             if (wasRedone) {
-                liveContext = Context.unfreeze(topContext());
-                notifyContextListeners(topContext());
+                Context tc = topContext();
+                if (tc == null) {
+                    logger.error("topContext is null after successful redo. This should not happen.");
+                    liveContext = Context.EMPTY;
+                } else {
+                    liveContext = Context.unfreeze(Objects.requireNonNull(tc));
+                }
+                notifyContextListeners(Objects.requireNonNullElse(tc, Context.EMPTY));
                 project.saveHistory(contextHistory, currentSessionId);
                 io.systemOutput("Redo!");
             } else {
@@ -855,7 +905,9 @@ public class ContextManager implements IContextManager, AutoCloseable {
      * @param fragmentsToKeep     A list of fragments from {@code sourceFrozenContext} to append. These are matched by ID.
      * @return A Future representing the completion of the task.
      */
-    public Future<?> addFilteredToContextAsync(Context sourceFrozenContext, List<ContextFragment> fragmentsToKeep) {
+    public Future<?> addFilteredToContextAsync(Context
+                                                       sourceFrozenContext, List<ContextFragment> fragmentsToKeep)
+    {
         return submitUserTask("Copying workspace items from historical state", () -> {
             try {
                 String actionMessage = "Copied workspace items from historical state";
@@ -865,9 +917,9 @@ public class ContextManager implements IContextManager, AutoCloseable {
                 Set<TaskEntry> existingEntries = new HashSet<>(finalHistory);
 
                 Optional<ContextFragment.HistoryFragment> selectedHistoryFragmentOpt = fragmentsToKeep.stream()
-                    .filter(ContextFragment.HistoryFragment.class::isInstance)
-                    .map(ContextFragment.HistoryFragment.class::cast)
-                    .findFirst();
+                        .filter(ContextFragment.HistoryFragment.class::isInstance)
+                        .map(ContextFragment.HistoryFragment.class::cast)
+                        .findFirst();
 
                 if (selectedHistoryFragmentOpt.isPresent()) {
                     List<TaskEntry> entriesToAppend = selectedHistoryFragmentOpt.get().entries();
@@ -949,7 +1001,9 @@ public class ContextManager implements IContextManager, AutoCloseable {
      *
      * @param image The java.awt.Image pasted from the clipboard.
      */
-    public ContextFragment.AnonymousImageFragment addPastedImageFragment(java.awt.Image image, String descriptionOverride) {
+    public ContextFragment.AnonymousImageFragment addPastedImageFragment(java.awt.Image image, String
+            descriptionOverride)
+    {
         Future<String> descriptionFuture;
         if (descriptionOverride != null && !descriptionOverride.isBlank()) {
             descriptionFuture = CompletableFuture.completedFuture(descriptionOverride);
@@ -970,7 +1024,7 @@ public class ContextManager implements IContextManager, AutoCloseable {
      * @param image The java.awt.Image pasted from the clipboard.
      */
     public void addPastedImageFragment(java.awt.Image image) {
-        addPastedImageFragment(image, null); // Calls the overload with descriptionOverride as null
+        addPastedImageFragment(image, ""); // Calls the overload with descriptionOverride as non-null empty string
     }
 
     /**
@@ -991,8 +1045,8 @@ public class ContextManager implements IContextManager, AutoCloseable {
         contextActionExecutor.submit(() -> {
             try {
                 // Capture from the selected *frozen* context in history view
-                var selectedFrozenCtx = selectedContext(); // This is from history, frozen
-                if (selectedFrozenCtx.getParsedOutput() != null) {
+                var selectedFrozenCtx = selectedContext(); // This is from history, frozen, can be null
+                if (selectedFrozenCtx != null && selectedFrozenCtx.getParsedOutput() != null) {
                     // Add the captured (TaskFragment, which is Virtual) to the *live* context
                     addVirtualFragment(selectedFrozenCtx.getParsedOutput());
                     io.systemOutput("Content captured from output");
@@ -1042,7 +1096,7 @@ public class ContextManager implements IContextManager, AutoCloseable {
      */
     public boolean addStacktraceFragment(StackTrace stacktrace) {
         assert stacktrace != null;
-        var exception = stacktrace.getExceptionType();
+        var exception = Objects.toString(stacktrace.getExceptionType(), "UnknownException");
         var sources = new HashSet<CodeUnit>();
         var content = new StringBuilder();
         IAnalyzer localAnalyzer = getAnalyzerUninterrupted();
@@ -1135,7 +1189,11 @@ public class ContextManager implements IContextManager, AutoCloseable {
      */
     @Override
     public List<ChatMessage> getHistoryMessages() {
-        var taskHistory = topContext().getTaskHistory();
+        var tc = topContext();
+        if (tc == null) {
+            return List.of();
+        }
+        var taskHistory = tc.getTaskHistory();
         var messages = new ArrayList<ChatMessage>();
         EditBlockParser parser = getParserForWorkspace();
 
@@ -1153,7 +1211,9 @@ public class ContextManager implements IContextManager, AutoCloseable {
         taskHistory.stream()
                 .filter(e -> !e.isCompressed())
                 .forEach(e -> {
-                    var entryRawMessages = e.log().messages();
+                    var log = e.log();
+                    if (log == null) return; // Should not happen if not compressed, but defensive
+                    var entryRawMessages = log.messages();
                     // Determine the messages to include from the entry
                     var relevantEntryMessages = entryRawMessages.getLast() instanceof AiMessage
                                                 ? entryRawMessages
@@ -1214,7 +1274,11 @@ public class ContextManager implements IContextManager, AutoCloseable {
     }
 
     public List<ChatMessage> getHistoryMessagesForCopy() {
-        var taskHistory = topContext().getTaskHistory();
+        var tc = topContext();
+        if (tc == null) {
+            return List.of();
+        }
+        var taskHistory = tc.getTaskHistory();
 
         var messages = new ArrayList<ChatMessage>();
         var allTaskEntries = taskHistory.stream()
@@ -1299,7 +1363,9 @@ public class ContextManager implements IContextManager, AutoCloseable {
      *
      * @return A collection containing one UserMessage (potentially multimodal) and one AiMessage acknowledgment, or empty if no content.
      */
-    public Collection<ChatMessage> getWorkspaceContentsMessages(boolean includeRelatedClasses) throws InterruptedException {
+    public Collection<ChatMessage> getWorkspaceContentsMessages(boolean includeRelatedClasses) throws
+            InterruptedException
+    {
         return CodePrompts.instance.getWorkspaceContentsMessages(this, includeRelatedClasses);
     }
 
@@ -1352,7 +1418,11 @@ public class ContextManager implements IContextManager, AutoCloseable {
 
     @Override
     public String getReadOnlySummary() {
-        return topContext().getReadOnlyFragments()
+        var tc = topContext();
+        if (tc == null) {
+            return "";
+        }
+        return tc.getReadOnlyFragments()
                 .map(this::readOnlySummaryDescription)
                 .filter(st -> !st.isBlank())
                 .collect(Collectors.joining(", "));
@@ -1360,14 +1430,22 @@ public class ContextManager implements IContextManager, AutoCloseable {
 
     @Override
     public String getEditableSummary() {
-        return topContext().getEditableFragments()
+        var tc = topContext();
+        if (tc == null) {
+            return "";
+        }
+        return tc.getEditableFragments()
                 .map(this::editableSummaryDescription)
                 .collect(Collectors.joining(", "));
     }
 
     @Override
     public Set<ProjectFile> getEditableFiles() {
-        return topContext().editableFiles()
+        var tc = topContext();
+        if (tc == null) {
+            return Set.of();
+        }
+        return tc.editableFiles()
                 .filter(ContextFragment.ProjectPathFragment.class::isInstance)
                 .map(ContextFragment.ProjectPathFragment.class::cast)
                 .map(ContextFragment.ProjectPathFragment::file)
@@ -1376,7 +1454,11 @@ public class ContextManager implements IContextManager, AutoCloseable {
 
     @Override
     public Set<BrokkFile> getReadonlyFiles() {
-        return topContext().readonlyFiles()
+        var tc = topContext();
+        if (tc == null) {
+            return Set.of();
+        }
+        return tc.readonlyFiles()
                 .filter(ContextFragment.PathFragment.class::isInstance)
                 .map(ContextFragment.PathFragment.class::cast)
                 .map(ContextFragment.PathFragment::file)
@@ -1393,13 +1475,15 @@ public class ContextManager implements IContextManager, AutoCloseable {
      * @return The new `liveContext`, or the existing `liveContext` if no changes were made by the generator.
      */
     public Context pushContext(Function<Context, Context> contextGenerator) {
-        Instant start = Instant.now();
-        while (liveContext == null && java.time.Duration.between(start, Instant.now()).toSeconds() < 5) {
-            Thread.onSpinWait();
-        }
-        if (liveContext == null) {
-            logger.error("Timeout waiting for liveContext after 5 seconds");
-            liveContext = new Context(this, "Placeholder Workspace");
+        // Ensure liveContext is initialized, should not be null after constructor completes.
+        // If it were truly possible for liveContext to be null here for an extended period,
+        // the logic below would need to handle that. However, it's initialized to Context.EMPTY.
+        // The while loop is a spin wait which is generally discouraged.
+        // Assuming liveContext is always non-null after construction finishes.
+        if (liveContext == null) { // Should ideally not be reachable if liveContext is properly initialized
+            logger.error("liveContext is unexpectedly null before pushContext applies generator.");
+            // Attempt a recovery, though this indicates a deeper issue.
+            liveContext = new Context(this, "Recovered Placeholder Workspace");
         }
 
         var updatedLiveContext = contextGenerator.apply(liveContext);
@@ -1409,9 +1493,7 @@ public class ContextManager implements IContextManager, AutoCloseable {
             return liveContext;
         }
 
-        liveContext = updatedLiveContext; // Update to the new live state
-
-        var fr = liveContext.freezeAndCleanup();
+        var fr = updatedLiveContext.freezeAndCleanup();
         liveContext = fr.liveContext();
         var frozen = fr.frozenContext();
         contextHistory.addFrozenContextAndClearRedo(frozen); // Add frozen version to history
@@ -1459,7 +1541,12 @@ public class ContextManager implements IContextManager, AutoCloseable {
     /**
      * should only be called with Frozen contexts, so that calling its methods doesn't cause an expensive Analyzer operation on the EDT
      */
-    private void notifyContextListeners(Context ctx) {
+    private void notifyContextListeners(@Nullable Context ctx) {
+        if (ctx == null) {
+            // Or handle this scenario as appropriate, e.g., notify with a default/empty context
+            logger.warn("notifyContextListeners called with null context");
+            return;
+        }
         assert !ctx.containsDynamicFragments();
         for (var listener : contextListeners) {
             listener.contextChanged(ctx);
@@ -1611,7 +1698,7 @@ public class ContextManager implements IContextManager, AutoCloseable {
                 inferredDetails = BuildDetails.EMPTY;
             }
 
-            project.saveBuildDetails(inferredDetails);
+            project.saveBuildDetails(Objects.requireNonNullElse(inferredDetails, BuildDetails.EMPTY));
 
             SwingUtilities.invokeLater(() -> {
                 var dlg = SettingsDialog.showSettingsDialog((Chrome) io, "Build");
@@ -1625,8 +1712,12 @@ public class ContextManager implements IContextManager, AutoCloseable {
 
     @Override
     public EditBlockParser getParserForWorkspace() {
+        var tc = topContext();
+        if (tc == null) {
+            return EditBlockParser.instance;
+        }
         // text() on live fragment
-        var allText = topContext().allFragments()
+        var allText = tc.allFragments()
                 .filter(ContextFragment::isText)
                 .map(ContextFragment::text)
                 .collect(Collectors.joining("\n"));
@@ -1788,6 +1879,7 @@ public class ContextManager implements IContextManager, AutoCloseable {
      * <p>
      * returns null if the session is empty, otherwise returns the new TaskEntry
      */
+    @Nullable
     public TaskEntry addToHistory(TaskResult result, boolean compress) {
         assert result != null;
         if (result.output().messages().isEmpty() && result.originalContents().isEmpty()) {
@@ -1877,8 +1969,9 @@ public class ContextManager implements IContextManager, AutoCloseable {
             project.saveHistory(contextHistory, currentSessionId); // Save the initial empty/welcome state
 
             // notifications
-            notifyContextListeners(topContext());
-            io.updateContextHistoryTable(topContext());
+            var tc = topContext();
+            notifyContextListeners(tc); // notifyContextListeners handles null tc
+            io.updateContextHistoryTable(Objects.requireNonNullElse(tc, Context.EMPTY));
         });
     }
 
@@ -1906,7 +1999,8 @@ public class ContextManager implements IContextManager, AutoCloseable {
      * @param newSessionName      The name for the new session.
      * @return A CompletableFuture representing the completion of the session creation task.
      */
-    public CompletableFuture<Void> createSessionFromContextAsync(Context sourceFrozenContext, String newSessionName) {
+    public CompletableFuture<Void> createSessionFromContextAsync(Context sourceFrozenContext, String newSessionName)
+    {
         var future = submitUserTask("Creating new session '" + newSessionName + "' from workspace", () -> {
             logger.debug("Attempting to create and switch to new session '{}' from workspace of context '{}'",
                          newSessionName, sourceFrozenContext.getAction());
@@ -1930,7 +2024,10 @@ public class ContextManager implements IContextManager, AutoCloseable {
             project.saveHistory(this.contextHistory, this.currentSessionId);
 
             // 6. Notify UI about the context change.
-            notifyContextListeners(topContext());
+            var tc = topContext();
+            if (tc != null) {
+                notifyContextListeners(tc);
+            }
         });
         return CompletableFuture.runAsync(() -> {
             try {
@@ -1994,10 +2091,13 @@ public class ContextManager implements IContextManager, AutoCloseable {
                 for (int i = 1; i < loadedCh.getHistory().size(); i++) {
                     contextHistory.addFrozenContextAndClearRedo(loadedCh.getHistory().get(i));
                 }
-                liveContext = Context.unfreeze(topContext());
+                var tcAfterLoad = topContext(); // Re-fetch after history manipulation
+                liveContext = (tcAfterLoad == null) ? new Context(this, "Welcome to session: " + sessionName) : Context.unfreeze(Objects.requireNonNull(tcAfterLoad));
             }
-            notifyContextListeners(topContext());
-            io.updateContextHistoryTable(topContext());
+
+            var tcNotify = topContext(); // Final top context for notification
+            notifyContextListeners(Objects.requireNonNullElse(tcNotify, Context.EMPTY));
+            io.updateContextHistoryTable(Objects.requireNonNullElse(tcNotify, Context.EMPTY));
         });
         return CompletableFuture.runAsync(() -> {
             try {
@@ -2080,11 +2180,11 @@ public class ContextManager implements IContextManager, AutoCloseable {
             for (int i = 1; i < loadedCh.getHistory().size(); i++) {
                 contextHistory.addFrozenContextAndClearRedo(loadedCh.getHistory().get(i));
             }
-            liveContext = Context.unfreeze(topContext());
+            liveContext = Context.unfreeze(Objects.requireNonNull(topContext()));
             updateActiveSession(copiedSessionInfo.id());
 
-            notifyContextListeners(topContext());
-            io.updateContextHistoryTable(topContext());
+            notifyContextListeners(Objects.requireNonNullElse(topContext(), Context.EMPTY));
+            io.updateContextHistoryTable(Objects.requireNonNullElse(topContext(), Context.EMPTY));
         });
         return CompletableFuture.runAsync(() -> {
             try {
@@ -2123,8 +2223,13 @@ public class ContextManager implements IContextManager, AutoCloseable {
         return submitUserTask("Compressing History", () -> {
             io.disableHistoryPanel();
             try {
+                var tc = topContext();
+                if (tc == null) {
+                    io.systemOutput("No context available to compress history from.");
+                    return;
+                }
                 // Operate on the task history
-                var taskHistoryToCompress = topContext().getTaskHistory();
+                var taskHistoryToCompress = tc.getTaskHistory();
                 if (taskHistoryToCompress.isEmpty()) {
                     io.systemOutput("No history to compress.");
                     return;
@@ -2147,6 +2252,8 @@ public class ContextManager implements IContextManager, AutoCloseable {
 
                 // pushContext will update liveContext with the compressed history
                 // and add a frozen version to contextHistory.
+                // The result of pushContext is the new live context, which is not directly used here
+                // but the side effects (history update, listeners) are important.
                 pushContext(currentLiveCtx -> currentLiveCtx.withCompressedHistory(List.copyOf(compressedTaskEntries)));
                 io.systemOutput("Task history compressed successfully.");
             } finally {

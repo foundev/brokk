@@ -22,7 +22,7 @@ public class SwingUtil {
      * @param defaultValue Value to return if execution fails
      * @return Result from task or defaultValue if execution fails
      */
-    public static <T> T runOnEdt(Callable<T> task, T defaultValue) {
+    public static <T> @Nullable T runOnEdt(Callable<T> task, @Nullable T defaultValue) {
         try {
             if (SwingUtilities.isEventDispatchThread()) {
                 return task.call();
@@ -126,6 +126,7 @@ public class SwingUtil {
     /**
      * Replacement for the deprecated {@code JTextComponent.modelToView(int)}.
      */
+    @Nullable
     public static Rectangle modelToView(JTextComponent comp, int pos) throws BadLocationException {
         var r2d = comp.modelToView2D(pos);
         return r2d == null

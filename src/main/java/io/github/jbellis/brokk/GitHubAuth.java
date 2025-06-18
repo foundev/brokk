@@ -19,6 +19,7 @@ import org.jetbrains.annotations.Nullable;
 
 import java.io.IOException;
 import java.util.List;
+import java.util.Objects;
 import java.util.concurrent.TimeUnit;
 
 /**
@@ -28,14 +29,15 @@ import java.util.concurrent.TimeUnit;
 public class GitHubAuth
 {
     private static final Logger logger = LogManager.getLogger(GitHubAuth.class);
+    @Nullable
     private static GitHubAuth instance;
 
     private final String owner;
     private final String repoName;
     @Nullable private final String host; // For GHES endpoint
 
-    private GitHub githubClient;
-    private GHRepository ghRepository;
+    @Nullable private GitHub githubClient;
+    @Nullable private GHRepository ghRepository;
 
     public GitHubAuth(String owner, String repoName, @Nullable String host)
     {
@@ -81,17 +83,17 @@ public class GitHubAuth
         if (!usingOverride || (effectiveOwner == null || effectiveOwner.isBlank()) || (effectiveRepoName == null || effectiveRepoName.isBlank())) {
             var repo = (GitRepo) project.getRepo();
             if (repo == null) {
-                if (instance != null) {
+                if (instance != null) { // Instance can be null
                     logger.info("Git repository not available for project '{}' (when attempting to use git remote). Invalidating GitHubAuth instance for {}/{}.",
                                 project.getRoot().getFileName().toString(), instance.getOwner(), instance.getRepoName());
-                    instance = null;
                 }
+                instance = null; // Ensure instance is null if repo is null
                 throw new IOException("Git repository not available from project '" + project.getRoot().getFileName().toString() + "' for GitHubAuth (when attempting to use git remote).");
             }
 
             var remoteUrl = repo.getRemoteUrl();
             // Use GitUiUtil for parsing owner/repo from URL
-            var parsedOwnerRepoDetails = io.github.jbellis.brokk.gui.GitUiUtil.parseOwnerRepoFromUrl(remoteUrl);
+            var parsedOwnerRepoDetails = io.github.jbellis.brokk.gui.GitUiUtil.parseOwnerRepoFromUrl(Objects.requireNonNullElse(remoteUrl, ""));
 
             if (parsedOwnerRepoDetails != null) {
                 effectiveOwner = parsedOwnerRepoDetails.owner();
@@ -241,7 +243,7 @@ public class GitHubAuth
     public GHRepository getGhRepository() throws IOException
     {
         connect(); // Ensures ghRepository is initialized or throws
-        return this.ghRepository;
+        return Objects.requireNonNull(this.ghRepository, "ghRepository should be non-null after successful connect()");
     }
 
     /**
@@ -260,7 +262,7 @@ public class GitHubAuth
      */
     public GitHub getGitHub() throws IOException {
         connect();
-        return this.githubClient;
+        return Objects.requireNonNull(this.githubClient, "githubClient should be non-null after successful connect()");
     }
 
     /**

@@ -21,8 +21,11 @@ import javax.swing.text.BadLocationException;
 import io.github.jbellis.brokk.gui.GuiTheme;
 import io.github.jbellis.brokk.gui.ThemeAware;
 import io.github.jbellis.brokk.gui.util.KeyboardShortcutUtil;
+import org.apache.logging.log4j.LogManager;
+import org.apache.logging.log4j.Logger;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
+
 
 /**
  * This panel shows the side-by-side file panels, the diff curves, plus search bars.
@@ -30,6 +33,8 @@ import org.jetbrains.annotations.Nullable;
  */
 public class BufferDiffPanel extends AbstractContentPanel implements ThemeAware
 {
+    private static final Logger logger = LogManager.getLogger(BufferDiffPanel.class);
+
     /**
      * Enum representing the two sides of the diff panel.
      * Provides type safety and clarity compared to magic numbers.
@@ -56,10 +61,7 @@ public class BufferDiffPanel extends AbstractContentPanel implements ThemeAware
         }
     }
 
-
-    @NotNull
     private final BrokkDiffPanel mainPanel;
-    @NotNull
     private GuiTheme guiTheme;
 
     // Instead of JMRevision:
@@ -69,7 +71,9 @@ public class BufferDiffPanel extends AbstractContentPanel implements ThemeAware
     private AbstractDelta<String> selectedDelta;
 
     private int selectedLine;
+    @Nullable
     private GenericSearchBar leftSearchBar;
+    @Nullable
     private GenericSearchBar rightSearchBar;
 
     // The left & right "file panels" using type-safe enum map
@@ -81,12 +85,14 @@ public class BufferDiffPanel extends AbstractContentPanel implements ThemeAware
     private ScrollSynchronizer scrollSynchronizer;
     private JSplitPane splitPane;
 
-    public BufferDiffPanel(BrokkDiffPanel mainPanel, @NotNull GuiTheme theme)
+    public BufferDiffPanel(BrokkDiffPanel mainPanel, GuiTheme theme)
     {
         this.mainPanel = mainPanel;
         this.guiTheme = theme;
+
         // Let the mainPanel keep a reference to us for toolbar/undo/redo interplay
         mainPanel.setBufferDiffPanel(this);
+
         init();
         setFocusable(true);
     }
@@ -224,7 +230,6 @@ public class BufferDiffPanel extends AbstractContentPanel implements ThemeAware
         registerSearchKeyBindings();
     }
 
-
     /**
      * Build the top row that holds search bars.
      */
@@ -238,11 +243,11 @@ public class BufferDiffPanel extends AbstractContentPanel implements ThemeAware
         var barContainer = new JPanel(layout);
 
         // Create GenericSearchBar instances using the FilePanel's SearchableComponent adapters
-        var leftPanel = getFilePanel(PanelSide.LEFT);
-        var rightPanel = getFilePanel(PanelSide.RIGHT);
-        if (leftPanel != null && rightPanel != null) {
-            leftSearchBar = new GenericSearchBar(leftPanel.createSearchableComponent());
-            rightSearchBar = new GenericSearchBar(rightPanel.createSearchableComponent());
+        var leftFilePanel = getFilePanel(PanelSide.LEFT);
+        var rightFilePanel = getFilePanel(PanelSide.RIGHT);
+        if (leftFilePanel != null && rightFilePanel != null) {
+            leftSearchBar = new GenericSearchBar(leftFilePanel.createSearchableComponent());
+            rightSearchBar = new GenericSearchBar(rightFilePanel.createSearchableComponent());
         }
 
         // Add search bars aligned with the text areas below
@@ -295,7 +300,7 @@ public class BufferDiffPanel extends AbstractContentPanel implements ThemeAware
         return scrollSynchronizer;
     }
 
-    public @NotNull BrokkDiffPanel getMainPanel()
+    public BrokkDiffPanel getMainPanel()
     {
         return mainPanel;
     }
@@ -511,7 +516,9 @@ public class BufferDiffPanel extends AbstractContentPanel implements ThemeAware
             }
 
             // Remove this delta so we can't click it again
-            patch.getDeltas().remove(delta);
+            if (patch != null) {
+                patch.getDeltas().remove(delta);
+            }
 
             setSelectedDelta(null);
             setSelectedLine(sourceChunk.getPosition());
@@ -553,7 +560,9 @@ public class BufferDiffPanel extends AbstractContentPanel implements ThemeAware
         toEditor.replaceSelection("");
 
         // Remove the just-used delta
-        patch.getDeltas().remove(delta);
+        if (patch != null) {
+            patch.getDeltas().remove(delta);
+        }
 
         setSelectedDelta(null);
         setSelectedLine(chunk.getPosition());
@@ -572,12 +581,25 @@ public class BufferDiffPanel extends AbstractContentPanel implements ThemeAware
             if (fp == null) continue;
             if (!fp.isDocumentChanged()) continue;
             var doc = fp.getBufferDocument();
-            try {
-                doc.write();
-            } catch (Exception ex) {
-                JOptionPane.showMessageDialog(mainPanel,
-                                              "Can't save file: " + doc.getName() + "\n" + ex.getMessage(),
-                                              "Problem writing file", JOptionPane.ERROR_MESSAGE);
+            if (doc != null) { // Guard against null doc
+                try {
+                    doc.write();
+                } catch (Exception ex) {
+                    JOptionPane.showMessageDialog(mainPanel,
+                                                  "Can't save file: " + doc.getName() + "\n" + ex.getMessage(),
+                                                  "Problem writing file", JOptionPane.ERROR_MESSAGE);
+                }
+            } else {
+                // Log or handle the case where a file panel has a null document but is marked as changed.
+                // This shouldn't ideally happen.
+                String panelName = "UnknownPanelSide";
+                for (var entry : filePanels.entrySet()) {
+                    if (entry.getValue() == fp) {
+                        panelName = entry.getKey().getDocumentType();
+                        break;
+                    }
+                }
+                logger.warn("FilePanel {} marked as changed but has a null document. Skipping save.", panelName);
             }
         }
     }
@@ -695,7 +717,9 @@ public class BufferDiffPanel extends AbstractContentPanel implements ThemeAware
         // Note: We only register Esc, not Cmd+F, to avoid conflicts with our custom handler
         if (leftSearchBar != null) {
             KeyboardShortcutUtil.registerSearchEscapeShortcut(leftSearchBar.getSearchField(), () -> {
-                leftSearchBar.clearHighlights();
+                if (leftSearchBar != null) { // Double check for safety within lambda
+                    leftSearchBar.clearHighlights();
+                }
                 var leftPanel = getFilePanel(PanelSide.LEFT);
                 if (leftPanel != null) {
                     leftPanel.getEditor().requestFocusInWindow();
@@ -704,7 +728,9 @@ public class BufferDiffPanel extends AbstractContentPanel implements ThemeAware
         }
         if (rightSearchBar != null) {
             KeyboardShortcutUtil.registerSearchEscapeShortcut(rightSearchBar.getSearchField(), () -> {
-                rightSearchBar.clearHighlights();
+                if (rightSearchBar != null) { // Double check for safety within lambda
+                    rightSearchBar.clearHighlights();
+                }
                 var rightPanel = getFilePanel(PanelSide.RIGHT);
                 if (rightPanel != null) {
                     rightPanel.getEditor().requestFocusInWindow();

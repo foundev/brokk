@@ -15,6 +15,7 @@ import java.awt.event.WindowEvent;
 import java.io.File;
 import java.io.IOException;
 import java.nio.file.Path;
+import java.util.Objects;
 
 public class StartupDialog extends JDialog {
     private static final Logger logger = LogManager.getLogger(StartupDialog.class);
@@ -33,7 +34,7 @@ public class StartupDialog extends JDialog {
         REQUIRE_BOTH           // Neither valid key nor project exists
     }
 
-    private StartupDialog(Frame owner, @Nullable String initialKey, boolean keyInitiallyValid, @Nullable Path initialProjectPath, DialogMode mode) {
+    private StartupDialog(@Nullable Frame owner, @Nullable String initialKey, boolean keyInitiallyValid, @Nullable Path initialProjectPath, DialogMode mode) {
         super(owner, "Welcome to Brokk", true);
         io.github.jbellis.brokk.gui.Chrome.applyIcon(this);
         this.initialKey = initialKey;
@@ -224,7 +225,11 @@ public class StartupDialog extends JDialog {
         }
 
         assert finalKeyToUse != null : "finalKeyToUse should have been set if no errors occurred.";
-        MainProject.setBrokkKey(finalKeyToUse);
+        // It's okay for finalKeyToUse to be null here if we're just setting it to something previously validated,
+        // but setBrokkKey should handle null if it's possible (e.g. user clears field).
+        // However, current logic ensures finalKeyToUse is non-null or an error is shown.
+        MainProject.setBrokkKey(Objects.requireNonNull(finalKeyToUse));
+
 
         // --- Determine the Project Path ---
         Path finalProjectPathToUse;
@@ -261,7 +266,7 @@ public class StartupDialog extends JDialog {
         dispose();
     }
 
-    public static @Nullable Path showDialog(Frame owner, @Nullable String initialKey, boolean keyInitiallyValid, @Nullable Path initialProjectPath, DialogMode mode) {
+    public static @Nullable Path showDialog(@Nullable Frame owner, @Nullable String initialKey, boolean keyInitiallyValid, @Nullable Path initialProjectPath, DialogMode mode) {
         var dialog = new StartupDialog(owner, initialKey, keyInitiallyValid, initialProjectPath, mode);
         dialog.setVisible(true); // Blocks until dispose() is called
         return dialog.selectedProjectPath;
