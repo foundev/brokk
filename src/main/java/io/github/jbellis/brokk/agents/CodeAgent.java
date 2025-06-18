@@ -44,12 +44,16 @@ public class CodeAgent {
     private final IConsoleIO io;
 
     public CodeAgent(IContextManager contextManager, StreamingChatLanguageModel model) {
-        this.contextManager = contextManager;
-        this.model = model;
-        this.io = contextManager.getIo();
+        this(contextManager, model, contextManager.getIo());
     }
 
-    private LlmOutcome handleLlmInteraction(EditState currentState, IConsoleIO io, Llm coder, MessageProvider messageProvider) {
+    public CodeAgent(IContextManager contextManager, StreamingChatLanguageModel model, IConsoleIO io) {
+        this.contextManager = contextManager;
+        this.model = model;
+        this.io = io;
+    }
+
+    private LlmOutcome handleLlmInteraction(EditState currentState, Llm coder, MessageProvider messageProvider) {
         StreamingResult streamingResult;
         try {
             var allMessages = messageProvider.getMessages(currentState);
@@ -85,7 +89,7 @@ public class CodeAgent {
         return new LlmOutcome(newState, streamingResult);
     }
 
-    private ParseOutcome handleParsing(EditState currentState, StreamingResult streamingResult, EditBlockParser parser, IConsoleIO io) {
+    private ParseOutcome handleParsing(EditState currentState, StreamingResult streamingResult, EditBlockParser parser) {
         String llmText = streamingResult.chatResponse().aiMessage().text();
         logger.debug("Got response (potentially partial if LLM connection was cut off)");
 
@@ -141,7 +145,7 @@ public class CodeAgent {
         return new ParseOutcome(newState, continueToApplyPhase);
     }
 
-    private EditState handleApplyEdits(EditState currentState, EditBlockParser parser, IConsoleIO io) {
+    private EditState handleApplyEdits(EditState currentState, EditBlockParser parser) {
         var blocks = new ArrayList<>(currentState.blocks()); // mutable copy for this method scope
         int blocksAppliedWithoutBuild = currentState.blocksAppliedWithoutBuild();
         int applyFailures = currentState.applyFailures();
@@ -228,20 +232,19 @@ public class CodeAgent {
     }
 
     private EditState requestEdits(EditState currentState,
-                                   IConsoleIO io,
                                    Llm coder,
                                    EditBlockParser parser,
                                    MessageProvider messageProvider)
     {
-        LlmOutcome llmOutcome = handleLlmInteraction(currentState, io, coder, messageProvider);
-        ParseOutcome parseOutcome = handleParsing(llmOutcome.newState(), llmOutcome.streamingResult(), parser, io);
+        LlmOutcome llmOutcome = handleLlmInteraction(currentState, coder, messageProvider);
+        ParseOutcome parseOutcome = handleParsing(llmOutcome.newState(), llmOutcome.streamingResult(), parser);
 
         if (!parseOutcome.continueToApply()) {
             return parseOutcome.newState(); // Return for next iteration of runTask's loop (retry for parsing)
         }
 
         // Parsing was successful or a partial parse yielded blocks and no immediate retry message.
-        return handleApplyEdits(parseOutcome.newState(), parser, io);
+        return handleApplyEdits(parseOutcome.newState(), parser);
     }
 
     /**
@@ -283,7 +286,7 @@ public class CodeAgent {
 
         try {
             while (true) {
-                editState = requestEdits(editState, io, coder, parser, messageProvider);
+                editState = requestEdits(editState, coder, parser, messageProvider);
 
                 // Attempt build/verification
                 var verificationCommand = BuildAgent.determineVerificationCommand(contextManager);
@@ -328,7 +331,10 @@ public class CodeAgent {
                               stopDetails);
     }
 
-    public TaskResult runSingleFileEdit(ProjectFile file, String instructions, IConsoleIO io) {
+    public TaskResult runSingleFileEdit(ProjectFile file,
+                                        String instructions,
+                                        List<ChatMessage> readOnlyMessages)
+    {
         var coder = contextManager.getLlm(model, "Code: " + instructions, true);
 
         String text;
@@ -342,12 +348,14 @@ public class CodeAgent {
         var originalWorkspaceEditableMessages = CodePrompts.instance.getSingleFileEditableMessage(file);
         MessageProvider messageProvider = state -> {
             try {
+                // readOnlyMessages is now passed in, no need to construct it here with getWorkspaceReadOnlyMessages
                 return CodePrompts.instance.getSingleFileMessages(contextManager.getProject().getStyleGuide(),
-                                                                  parser,
-                                                                  state.taskMessages(),
-                                                                  state.nextRequest(),
-                                                                  state.originalContentsOfChangedFiles().keySet(),
-                                                                  originalWorkspaceEditableMessages);
+                                                          parser,
+                                                          readOnlyMessages,
+                                                          state.taskMessages(),
+                                                          state.nextRequest(),
+                                                          state.originalContentsOfChangedFiles().keySet(),
+                                                          originalWorkspaceEditableMessages);
             } catch (InterruptedException e) {
                 Thread.currentThread().interrupt(); // Preserve interrupt status
                 throw new RuntimeException("Message collection interrupted", e);
@@ -366,7 +374,7 @@ public class CodeAgent {
         try {
             //noinspection InfiniteLoopStatement
             while (true) {
-                editState = requestEdits(editState, io, coder, parser, messageProvider);
+                editState = requestEdits(editState, coder, parser, messageProvider);
             }
         } catch (EditStopException e) {
             logger.debug("CodeAgent task stopped for {}", e.getStopDetails());

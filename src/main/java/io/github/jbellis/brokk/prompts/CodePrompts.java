@@ -81,6 +81,7 @@ public abstract class CodePrompts {
 
     public final List<ChatMessage> getSingleFileMessages(String styleGuide,
                                                          EditBlockParser parser,
+                                                         List<ChatMessage> readOnlyMessages,
                                                          List<ChatMessage> taskMessages,
                                                          UserMessage request,
                                                          Set<ProjectFile> changedFiles,
@@ -89,7 +90,7 @@ public abstract class CodePrompts {
     {
         var messages = new ArrayList<ChatMessage>();
 
-        var text = """
+        var systemPrompt = """
           <instructions>
           %s
           </instructions>
@@ -97,8 +98,9 @@ public abstract class CodePrompts {
           %s
           </style_guide>
           """.stripIndent().formatted(systemIntro(""), styleGuide).trim();
+        messages.add(new SystemMessage(systemPrompt));
 
-        messages.add(new SystemMessage(text));
+        messages.addAll(readOnlyMessages);
         messages.addAll(originalWorkspaceEditableMessages);
         messages.addAll(parser.exampleMessages());
         messages.addAll(taskMessages);
