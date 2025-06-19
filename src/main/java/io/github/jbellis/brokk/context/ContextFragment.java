@@ -188,7 +188,7 @@ public interface ContextFragment {
      */
     default IAnalyzer getAnalyzer() {
         var cm = getContextManager();
-        assert cm != null : "Analyzer should only be called if context manager is available.";
+        requireNonNull(cm);
         return cm.getAnalyzerUninterrupted();
     }
 
@@ -254,7 +254,7 @@ public interface ContextFragment {
 
     record ProjectPathFragment(ProjectFile file,
                                String id,
-                               @Nullable IContextManager contextManager) implements PathFragment
+                               IContextManager contextManager) implements PathFragment
     {
         // Primary constructor for new dynamic fragments
         public ProjectPathFragment(ProjectFile file, IContextManager contextManager) {
@@ -721,11 +721,7 @@ public interface ContextFragment {
 
         @Override
         public Set<ProjectFile> files() {
-            @Nullable var cm = getContextManager();
-            if (cm == null) {
-                return Set.of();
-            }
-            return parseProjectFiles(text(), cm.getProject());
+            return parseProjectFiles(text(), getContextManager().getProject());
         }
 
         @Override
@@ -868,13 +864,6 @@ public interface ContextFragment {
             super(id, contextManager);
             this.descriptionFuture = descriptionFuture;
         }
-
-        // This constructor is for subclasses to call after they've computed their ID (hash)
-        // The nextId based constructor from VirtualFragment is not suitable here.
-        // public PasteFragment(IContextManager contextManager, Future<String> descriptionFuture) {
-        //    super(contextManager); // This would assign a dynamic ID, which is not desired.
-        //    this.descriptionFuture = descriptionFuture;
-        // }
 
         @Override
         public boolean isDynamic() {
@@ -1473,8 +1462,8 @@ public interface ContextFragment {
                           FragmentType.HISTORY,
                           "Task History (" + history.size() + " task" + (history.size() > 1 ? "s" : "") + ")",
                           TaskEntry.formatMessages(history.stream().flatMap(e -> e.isCompressed()
-                                                                                 ? Stream.of(Messages.customSystem(e.summary()))
-                                                                                 : e.log().messages().stream()).toList()),
+                                                                                 ? Stream.of(Messages.customSystem(castNonNull(e.summary())))
+                                                                                 : castNonNull(e.log()).messages().stream()).toList()),
                           SyntaxConstants.SYNTAX_STYLE_MARKDOWN,
                           HistoryFragment.class.getName()),
                   contextManager);
@@ -1499,11 +1488,6 @@ public interface ContextFragment {
         }
 
         @Override
-        public boolean isText() {
-            return true;
-        }
-
-        @Override
         public boolean isDynamic() {
             return false;
         }
@@ -1514,8 +1498,8 @@ public interface ContextFragment {
             // but lots of stuff breaks without text(), so I am putting that off for another refactor
             return TaskEntry.formatMessages(history.stream().flatMap(e -> 
                 e.isCompressed() 
-                    ? Stream.of(Messages.customSystem(e.summary()))
-                    : e.log().messages().stream()
+                    ? Stream.of(Messages.customSystem(castNonNull(e.summary())))
+                    : castNonNull(e.log()).messages().stream()
             ).toList());
         }
 

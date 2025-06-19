@@ -65,6 +65,7 @@ public interface IContextManager {
      * Returns the frozen counterpart of liveContext.
      * @return the frozen counterpart of liveContext
      */
+    @Nullable
     default Context topContext() {
         throw new UnsupportedOperationException();
     }

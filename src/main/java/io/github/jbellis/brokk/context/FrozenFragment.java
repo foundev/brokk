@@ -446,12 +446,7 @@ public final class FrozenFragment extends ContextFragment.VirtualFragment {
      * @return PNG bytes, or null if image is null
      * @throws IOException If conversion fails
      */
-    @Nullable
-    public static byte[] imageToBytes(@Nullable Image image) throws IOException {
-        if (image == null) {
-            return null;
-        }
-        
+    public static byte[] imageToBytes(Image image) throws IOException {
         BufferedImage bufferedImage;
         if (image instanceof BufferedImage bi) {
             bufferedImage = bi;
@@ -479,11 +474,7 @@ public final class FrozenFragment extends ContextFragment.VirtualFragment {
      * @return The converted image, or null if bytes is null
      * @throws IOException If conversion fails
      */
-    @Nullable
-    public static Image bytesToImage(@Nullable byte[] bytes) throws IOException {
-        if (bytes == null) {
-            return null;
-        }
+    public static Image bytesToImage(byte[] bytes) throws IOException {
         try (var bais = new ByteArrayInputStream(bytes)) {
             return ImageIO.read(bais);
         }
