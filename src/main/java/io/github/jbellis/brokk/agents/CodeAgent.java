@@ -146,6 +146,20 @@ public class CodeAgent {
     }
 
     private EditState handleApplyEdits(EditState currentState, EditBlockParser parser) {
+        // Now that we're done with incomplete response processing, redact SEARCH/REPLACE blocks
+        // from all AI messages to reduce bloat in subsequent requests
+        var taskMessages = currentState.taskMessages();
+        for (int i = taskMessages.size() - 1; i >= 0; i--) {
+            if (taskMessages.get(i) instanceof AiMessage aiMessage) {
+                var redactedMessage = ContextManager.redactAiMessage(aiMessage, parser);
+                if (redactedMessage.isPresent()) {
+                    taskMessages.set(i, redactedMessage.get());
+                } else {
+                    taskMessages.remove(i);
+                }
+            }
+        }
+
         var blocks = new ArrayList<>(currentState.blocks()); // mutable copy for this method scope
         int blocksAppliedWithoutBuild = currentState.blocksAppliedWithoutBuild();
         int applyFailures = currentState.applyFailures();
@@ -228,7 +242,7 @@ public class CodeAgent {
             applyFailures = 0;
         }
 
-        return currentState.afterApplyingEdits(applyFailures, blocks, blocksAppliedWithoutBuild, nextRequest, originalContentsOfChangedFiles);
+        return currentState.afterApplyingEdits(taskMessages, applyFailures, blocks, blocksAppliedWithoutBuild, nextRequest, originalContentsOfChangedFiles);
     }
 
     private EditState requestEdits(EditState currentState,
@@ -863,7 +877,7 @@ public class CodeAgent {
                                  this.taskMessages());
         }
 
-        public EditState afterApplyingEdits(int applyFailures, List<EditBlock.SearchReplaceBlock> blocks, int blocksAppliedWithoutBuild, UserMessage nextRequest, Map<ProjectFile, String> originalContentsOfChangedFiles) {
+        public EditState afterApplyingEdits(List<ChatMessage> taskMessages, int applyFailures, List<EditBlock.SearchReplaceBlock> blocks, int blocksAppliedWithoutBuild, UserMessage nextRequest, Map<ProjectFile, String> originalContentsOfChangedFiles) {
             return new EditState(this.parseFailures(),
                                  applyFailures,
                                  blocks,
@@ -872,7 +886,7 @@ public class CodeAgent {
                                  this.currentTaskInstructions(),
                                  this.initialGoal(),
                                  originalContentsOfChangedFiles,
-                                 this.taskMessages());
+                                 taskMessages);
         }
 
         public EditState afterBuildVerification(UserMessage nextRequest, String buildFailureMessage) {
