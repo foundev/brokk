@@ -57,16 +57,15 @@ public record TaskEntry(int sequence, @Nullable ContextFragment.TaskFragment log
     @Override
     public String toString() {
         if (isCompressed()) {
-            String currentSummary = summary == null ? "" : summary;
             return """
               <task sequence=%s summarized=true>
               %s
               </task>
-              """.stripIndent().formatted(sequence, currentSummary.indent(2).stripTrailing());
+              """.stripIndent().formatted(sequence, summary.indent(2).stripTrailing());
         }
 
-        var logMessages = (log == null || log.messages() == null) ? List.<ChatMessage>of() : log.messages();
-        var logText = formatMessages(logMessages);
+        // We know `log` is not null if not compressed, thanks to the record's assert and `isCompressed()`
+        var logText = formatMessages(log.messages());
         return """
           <task sequence=%s>
           %s

@@ -25,9 +25,8 @@ public class SearchBarPanel extends JPanel {
     private final SearchCallback searchCallback;
     private final boolean showCaseSensitive;
     private final boolean showNavigation;
-    @Nullable
-    private JCheckBox caseSensitiveCheckBox;
-    private final int minimumSearchChars; // Default minimum characters to trigger search
+    private @Nullable JCheckBox caseSensitiveCheckBox = new JCheckBox("Case sensitive");
+    private final int minimumSearchChars; // Default minimum characters to trigger search 
     private boolean validSearchActive = false; // Track if a valid search is currently active
     
     /**
@@ -51,7 +50,6 @@ public class SearchBarPanel extends JPanel {
         this.searchCallback = searchCallback;
         this.showCaseSensitive = showCaseSensitive;
         this.showNavigation = showNavigation;
-        this.caseSensitiveCheckBox = null; // Explicitly initialize @Nullable field
         this.minimumSearchChars = Math.max(1, minimumSearchChars); // Ensure at least 1 character
         init();
     }
@@ -116,15 +114,23 @@ public class SearchBarPanel extends JPanel {
             JPanel buttonPanel = new JPanel(new FlowLayout(FlowLayout.CENTER, 5, 5));
             
             JButton previousButton = new JButton("Previous");
-            if (hasIcon("/images/prev.png")) {
-                previousButton.setIcon(new ImageIcon(Objects.requireNonNull(getClass().getResource("/images/prev.png"))));
+            try {
+                if (hasIcon("/images/prev.png")) {
+                    previousButton.setIcon(new ImageIcon(getClass().getResource("/images/prev.png")));
+                }
+            } catch (NullPointerException e) {
+                // Icon not found - continue without it
             }
             previousButton.addActionListener(getPreviousAction());
             initButton(previousButton);
             
             JButton nextButton = new JButton("Next");
-            if (hasIcon("/images/next.png")) {
-                nextButton.setIcon(new ImageIcon(Objects.requireNonNull(getClass().getResource("/images/next.png"))));
+            try {
+                if (hasIcon("/images/next.png")) {
+                    nextButton.setIcon(new ImageIcon(getClass().getResource("/images/next.png")));
+                }
+            } catch (NullPointerException e) {
+                // Icon not found - continue without it
             }
             nextButton.addActionListener(getNextAction());
             initButton(nextButton);
@@ -202,6 +208,7 @@ public class SearchBarPanel extends JPanel {
         }
         searchResult.setIcon(null);
         searchResult.setText("");
+        updateSearchResults(null); // Clear previous results display
     }
     
     public void performSearch() {
@@ -232,7 +239,6 @@ public class SearchBarPanel extends JPanel {
                 validSearchActive = false;
             }
             searchResult.setText("");
-            updateSearchResults(null); // Clear previous results display
         }
     }
     
@@ -248,8 +254,12 @@ public class SearchBarPanel extends JPanel {
                 searchField.setForeground(Color.red);
             }
             
-            if (hasIcon("/images/result.png")) {
-                searchResult.setIcon(new ImageIcon(Objects.requireNonNull(getClass().getResource("/images/result.png"))));
+            try {
+                if (hasIcon("/images/result.png")) {
+                    searchResult.setIcon(new ImageIcon(getClass().getResource("/images/result.png")));
+                }
+            } catch (NullPointerException e) {
+                // Icon not found - continue without it
             }
             searchResult.setText("Phrase not found");
         } else {

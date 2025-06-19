@@ -8,6 +8,7 @@ import org.jetbrains.annotations.Nullable;
 import javax.imageio.ImageIO;
 import javax.swing.*;
 import java.awt.*;
+import java.awt.event.ActionEvent;
 import java.awt.event.KeyEvent;
 import java.awt.image.BufferedImage;
 import java.io.IOException;
@@ -15,7 +16,7 @@ import java.io.IOException;
 public class PreviewImagePanel extends JPanel {
     @Nullable
     private final BrokkFile file;
-    private BufferedImage image;
+    private Image image;
 
     public PreviewImagePanel(@Nullable BrokkFile file) {
         super(new BorderLayout());
@@ -26,29 +27,33 @@ public class PreviewImagePanel extends JPanel {
     }
 
     private void loadImage() {
-            if (file != null) {
-                try {
-                    image = ImageIO.read(file.absPath().toFile());
-                    if (image == null) {
-                        JOptionPane.showMessageDialog(this, "Could not read image file.", "Error", JOptionPane.ERROR_MESSAGE);
-                    }
-                } catch (IOException e) {
-                    JOptionPane.showMessageDialog(this, "Error loading image: " + e.getMessage(), "Error", JOptionPane.ERROR_MESSAGE);
-                }
-            }
+        if (file == null) {
+            return;
         }
 
-        public void setImage(Image image) {
-            SwingUtilities.invokeLater(() -> {
-                this.image = (BufferedImage)image;
-                removeAll();
-                setupUI();
-                revalidate();
-                repaint();
-            });
+        try {
+            image = ImageIO.read(file.absPath().toFile());
+            if (image == null) {
+                JOptionPane.showMessageDialog(this, "Could not read image file.", "Error", JOptionPane.ERROR_MESSAGE);
+            }
+        } catch (IOException e) {
+            JOptionPane.showMessageDialog(this, "Error loading image: " + e.getMessage(), "Error", JOptionPane.ERROR_MESSAGE);
         }
+    }
+
+    public void setImage(Image image) {
+        SwingUtilities.invokeLater(() -> {
+            this.image = image;
+            removeAll();
+            setupUI();
+            revalidate();
+            repaint();
+        });
+    }
 
     private void setupUI() {
+        assert SwingUtilities.isEventDispatchThread();
+
         if (image != null) {
             JLabel imageLabel = new JLabel(new ImageIcon(image));
             JScrollPane scrollPane = new JScrollPane(imageLabel);
@@ -78,15 +83,13 @@ public class PreviewImagePanel extends JPanel {
 
     public static void showFrame(ContextManager contextManager, String title, PreviewImagePanel previewPanel) {
         JFrame frame = Chrome.newFrame(title);
-            frame.setContentPane(previewPanel);
-            frame.setDefaultCloseOperation(JFrame.DISPOSE_ON_CLOSE); // Dispose frame on close
+        frame.setContentPane(previewPanel);
+        frame.setDefaultCloseOperation(JFrame.DISPOSE_ON_CLOSE); // Dispose frame on close
 
-        var project = contextManager.getProject();
+        @Nullable var project = contextManager.getProject();
         assert project != null;
-        var storedBounds = project.getPreviewWindowBounds();
-        if (storedBounds != null) {
-            frame.setBounds(storedBounds);
-        }
+        @Nullable var storedBounds = project.getPreviewWindowBounds();
+        frame.setBounds(storedBounds);
 
         // Add listener to save bounds
         frame.addComponentListener(new java.awt.event.ComponentAdapter() {
@@ -108,13 +111,12 @@ public class PreviewImagePanel extends JPanel {
      */
     private void registerEscapeKey() {
         // Register ESC key to close the dialog
-        KeyStroke escapeKeyStroke = KeyStroke.getKeyStroke(KeyEvent.VK_ESCAPE, 0);
+        final KeyStroke escapeKeyStroke = KeyStroke.getKeyStroke(KeyEvent.VK_ESCAPE, 0);
 
         // Add ESC handler to panel to close window
         getInputMap(JComponent.WHEN_IN_FOCUSED_WINDOW).put(escapeKeyStroke, "closePreview");
         getActionMap().put("closePreview", new AbstractAction() {
-            @Override
-            public void actionPerformed(java.awt.event.ActionEvent e) {
+            @Override public void actionPerformed(ActionEvent e) {
                 Window window = SwingUtilities.getWindowAncestor(PreviewImagePanel.this);
                 if (window != null) {
                     window.dispose();

@@ -1,22 +1,17 @@
 package io.github.jbellis.brokk.gui.dialogs;
 
-import io.github.jbellis.brokk.Llm;
-import dev.langchain4j.model.chat.StreamingChatLanguageModel;
 import io.github.jbellis.brokk.Service;
+import io.github.jbellis.brokk.TaskResult;
 import io.github.jbellis.brokk.agents.CodeAgent;
 import io.github.jbellis.brokk.analyzer.ProjectFile;
 import io.github.jbellis.brokk.gui.Chrome;
-import io.github.jbellis.brokk.prompts.CodePrompts;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
-import dev.langchain4j.data.message.ChatMessage;
 import org.jetbrains.annotations.Nullable;
 
 import javax.swing.*;
 import java.awt.*;
-import java.io.IOException;
 import java.util.List;
-import java.util.Optional;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
@@ -31,7 +26,7 @@ public class UpgradeAgentProgressDialog extends JDialog {
     private final SwingWorker<Void, ProgressData> worker;
     private final int totalFiles;
     private final AtomicInteger processedFileCount = new AtomicInteger(0);
-    @Nullable private ExecutorService executorService;
+    private final ExecutorService executorService;
 
 
     private record ProgressData(String fileName, @Nullable String errorMessage) {}
@@ -43,6 +38,7 @@ public class UpgradeAgentProgressDialog extends JDialog {
                                       Chrome chrome) {
         super(owner, "Upgrade Agent Progress", true);
         this.totalFiles = filesToProcess.size();
+        this.executorService = Executors.newFixedThreadPool(Math.min(200, Math.max(1, filesToProcess.size())));
 
         setLayout(new BorderLayout(10, 10));
         setPreferredSize(new Dimension(600, 400));
@@ -82,91 +78,48 @@ public class UpgradeAgentProgressDialog extends JDialog {
 
             @Override
             protected Void doInBackground() {
-                // Initialize the class field executorService here
-                UpgradeAgentProgressDialog.this.executorService = Executors.newFixedThreadPool(Math.min(200, Math.max(1, filesToProcess.size())));
                 var project = chrome.getProject();
                 var contextManager = chrome.getContextManager();
                 var service = contextManager.getService();
-
                 for (ProjectFile file : filesToProcess) {
                     if (isCancelled()) {
                         break;
                     }
-                    if (UpgradeAgentProgressDialog.this.executorService == null) { // Check for null
-                        publish(new ProgressData(file.toString(), "Executor service not initialized."));
-                        continue;
-                    }
-                    UpgradeAgentProgressDialog.this.executorService.submit(() -> {
+                    executorService.submit(() -> {
                         if (Thread.currentThread().isInterrupted() || isCancelled()) {
                              publish(new ProgressData(file.toString(), "Cancelled by user."));
                             return;
                         }
-                        try {
-                            // First attempt with selected model
-                            StreamingChatLanguageModel llm = service.getModel(selectedFavorite.modelName(), selectedFavorite.reasoning());
-                            Llm llmWrapper = null;
-                            if (llm != null) {
-                                llmWrapper = contextManager.getLlm(llm, "Upgrade Agent: " + file.getFileName());
-                            }
-                            List<ChatMessage> messages = CodePrompts.instance.getSimpleFileReplaceMessages(project, file, instructions);
 
-                            Optional<String> error;
-                            if (llmWrapper == null) {
-                                error = Optional.of("Selected model " + selectedFavorite.modelName() + " is unavailable or getLlm returned null.");
-                            } else {
-                                error = CodeAgent.executeReplace(file, llmWrapper, messages);
-                            }
+                        var model = service.getModel(selectedFavorite.modelName(), selectedFavorite.reasoning());
+                        var agent = new CodeAgent(contextManager, model);
+                        // TODO provide a special-purpose IConsoleIO for the agent
+                        var result = agent.runSingleFileEdit(file, instructions, chrome);
 
-                            if (error.isPresent()) {
-                                // Retry with grok-3-mini
-                                if (isCancelled() || Thread.currentThread().isInterrupted()){
-                                     publish(new ProgressData(file.toString(), "Cancelled before retry. Initial error: " + error.get()));
-                                    return;
-                                }
-                                StreamingChatLanguageModel retryModel = service.getModel(Service.GROK_3_MINI, Service.ReasoningLevel.DEFAULT);
-                                Llm retryLlmWrapper = null;
-                                if (retryModel != null) {
-                                    retryLlmWrapper = contextManager.getLlm(retryModel, "Upgrade Agent (retry): " + file.getFileName());
-                                }
-                                if (retryLlmWrapper == null) {
-                                    error = Optional.of("Retry model " + Service.GROK_3_MINI + " is unavailable or getLlm returned null. Original error: " + error.get());
-                                } else {
-                                    error = CodeAgent.executeReplace(file, retryLlmWrapper, messages); // Re-use messages
-                                }
-
-                                if (error.isPresent()) {
-                                    publish(new ProgressData(file.toString(), error.get()));
-                                } else {
-                                    publish(new ProgressData(file.toString(), null)); // Retry succeeded
-                                }
-                            } else {
-                                publish(new ProgressData(file.toString(), null)); // First attempt succeeded
-                            }
-                        } catch (IOException e) {
-                            publish(new ProgressData(file.toString(), "IO Error: " + e.getMessage()));
-                        } catch (InterruptedException e) {
+                        if (result.stopDetails().reason() == TaskResult.StopReason.INTERRUPTED) {
                             Thread.currentThread().interrupt(); // Preserve interrupt status
                             publish(new ProgressData(file.toString(), "Processing interrupted."));
+                        } else if (result.stopDetails().reason() != TaskResult.StopReason.SUCCESS) {
+                            // TODO: Better error message based on result.stopDetails().reason()
+                            publish(new ProgressData(file.toString(), "Failed: " + result.stopDetails().reason()));
+                        } else {
+                            publish(new ProgressData(file.toString(), null)); // Success
                         }
-                        // The `if (result.stopDetails()...)` block from HEAD is removed as the try-catch
-                        // structure above now handles success/failure/interrupt reporting.
                     });
                 }
 
-                if (UpgradeAgentProgressDialog.this.executorService != null) { // Check for null
-                    UpgradeAgentProgressDialog.this.executorService.shutdown();
-                    try {
-                        // Wait for tasks to complete or for cancellation
-                        while (!UpgradeAgentProgressDialog.this.executorService.awaitTermination(1, TimeUnit.SECONDS)) {
-                            if (isCancelled()) {
-                                UpgradeAgentProgressDialog.this.executorService.shutdownNow();
-                                break;
-                            }
+                executorService.shutdown();
+                try {
+                    // Wait for tasks to complete or for cancellation
+                    while (!executorService.awaitTermination(1, TimeUnit.SECONDS)) {
+                        if (isCancelled()) {
+                            executorService.shutdownNow();
+                            break;
                         }
-                    } catch (InterruptedException e) {
-                        UpgradeAgentProgressDialog.this.executorService.shutdownNow();
-                        Thread.currentThread().interrupt();
                     }
+                } catch (InterruptedException e) {
+                    executorService.shutdownNow();
+                    Thread.currentThread().interrupt();
                 }
                 return null;
             }
@@ -185,11 +138,14 @@ public class UpgradeAgentProgressDialog extends JDialog {
 
             @Override
             protected void done() {
-                if (executorService != null && !executorService.isTerminated()) {
+                if (!executorService.isTerminated()) {
                     executorService.shutdownNow();
                 }
                 cancelButton.setText("Close");
-                cancelButton.removeActionListener(cancelButton.getActionListeners()[0]); // remove old cancel listener
+                // Remove all action listeners to be safe, then add the new one
+                for (var al : cancelButton.getActionListeners()) {
+                    cancelButton.removeActionListener(al);
+                }
                 cancelButton.addActionListener(e -> setVisible(false));
 
                 if (isCancelled()) {
@@ -218,14 +174,12 @@ public class UpgradeAgentProgressDialog extends JDialog {
         cancelButton.addActionListener(e -> {
             if (!worker.isDone()) {
                 worker.cancel(true);
-                if (UpgradeAgentProgressDialog.this.executorService != null) {
-                    UpgradeAgentProgressDialog.this.executorService.shutdownNow();
-                }
+                executorService.shutdownNow(); // Always shut down if cancellation is requested
             } else { // Worker is done, button is "Close"
                 setVisible(false);
             }
         });
-        
+
         setDefaultCloseOperation(JDialog.DO_NOTHING_ON_CLOSE); // Prevent closing via 'X' until worker is done or explicitly cancelled
         addWindowListener(new java.awt.event.WindowAdapter() {
             @Override
@@ -237,9 +191,7 @@ public class UpgradeAgentProgressDialog extends JDialog {
                         JOptionPane.QUESTION_MESSAGE);
                     if (choice == JOptionPane.YES_OPTION) {
                         worker.cancel(true);
-                        if (UpgradeAgentProgressDialog.this.executorService != null) {
-                            UpgradeAgentProgressDialog.this.executorService.shutdownNow();
-                        }
+                        executorService.shutdownNow(); // Always shut down if cancellation is confirmed
                     }
                 } else {
                     setVisible(false);

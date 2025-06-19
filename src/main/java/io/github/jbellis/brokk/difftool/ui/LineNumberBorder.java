@@ -25,13 +25,13 @@ public class LineNumberBorder extends EmptyBorder {
     private final FilePanel filePanel;
 
     // Colors for the background and line separator
-    private Color background;
-    private Color lineColor;
+    private volatile Color background;
+    private volatile Color lineColor;
 
     // Font settings for displaying line numbers
-    private Font font;
-    private int fontWidth;
-    private int fontHeight;
+    private final Font font;
+    private final int fontWidth;
+    private final int fontHeight;
 
     /**
      * Constructs a LineNumberBorder with the specified FilePanel.
@@ -43,37 +43,25 @@ public class LineNumberBorder extends EmptyBorder {
         super(0, 40 + MARGIN, 0, 0);
 
         this.filePanel = filePanel;
-        init();
-    }
-
-    /**
-     * Initializes font and color settings for the line number display.
-     */
-    private void init() {
-        // Use a monospaced font for consistent number alignment
-        font = new Font("Monospaced", Font.PLAIN, 10);
-
-        // Retrieve font metrics for calculating character width and height
+        // Initialize font settings
+        this.font = new Font("Monospaced", Font.PLAIN, 10);
         FontMetrics fm = filePanel.getEditor().getFontMetrics(font);
-        fontWidth     = fm.stringWidth("0"); // Width of a single character
-        fontHeight    = fm.getHeight();      // Height of the font
-
-        // Initialize the colours once; they will be refreshed on every paint call
-        updateColors();
-        // Ensure background and lineColor are initialized even if updateColors() doesn't set them due to some theme issue
-        if (this.background == null) this.background = Color.LIGHT_GRAY;
-        if (this.lineColor == null) this.lineColor = Color.DARK_GRAY;
-
+        this.fontWidth = fm.stringWidth("0");
+        this.fontHeight = fm.getHeight();
+        var baseColor = Colors.getPanelBackground();
+        this.lineColor = ColorUtil.darker(baseColor);
+        this.background = ColorUtil.brighter(baseColor);
     }
+
 
     /**
      * Refreshes background and separator colours so that they always follow
      * the current Look-and-Feel / theme.
      */
-    private void updateColors() {
+    private synchronized void updateColors() {
         var baseColor = Colors.getPanelBackground();
-        lineColor     = ColorUtil.darker(baseColor);
-        background    = ColorUtil.brighter(baseColor);
+        this.lineColor = ColorUtil.darker(baseColor);
+        this.background = ColorUtil.brighter(baseColor);
     }
 
     /**
@@ -103,34 +91,25 @@ public class LineNumberBorder extends EmptyBorder {
         // Ensure colours match the active theme
         updateColors();
 
-        Rectangle clip;
-        int startLine, endLine;
-        int y, lineHeight;
-        String s;
-        int heightCorrection;
-        Rectangle r1;
-        JTextArea textArea;
-
-        clip = g.getClipBounds();
+        Rectangle clip = g.getClipBounds();
+        JTextArea textArea = filePanel.getEditor();
 
         try {
-            // Retrieve the text area from the FilePanel
-            textArea = filePanel.getEditor();
 
             // Determine the first and last visible line numbers
-            startLine = textArea.getLineOfOffset(startOffset);
-            endLine = textArea.getLineOfOffset(endOffset);
+            int startLine = textArea.getLineOfOffset(startOffset);
+            int endLine = textArea.getLineOfOffset(endOffset);
 
             // Get the pixel coordinates of the first visible line (modern API)
-            r1 = SwingUtil.modelToView(textArea, startOffset);
+            Rectangle r1 = SwingUtil.modelToView(textArea, startOffset);
             if (r1 == null) {
                  // This can happen if the text area is not yet displayable or has no content
-                logger.warn("modelToView returned null for startOffset {}, cannot paint line numbers.", startOffset);
+                logger.debug("modelToView returned null for startOffset {} (text area not yet displayable)", startOffset);
                 return;
             }
-            y = r1.y;
-            lineHeight = r1.height;
-            heightCorrection = (lineHeight - fontHeight) / 2;
+            int y = r1.y;
+            int lineHeight = r1.height;
+            int heightCorrection = (lineHeight - fontHeight) / 2;
 
             // Draw vertical separator line
             g.setColor(lineColor);
@@ -143,7 +122,7 @@ public class LineNumberBorder extends EmptyBorder {
             // Iterate through visible lines and draw the corresponding numbers
             for (int line = startLine; line <= endLine; line++) {
                 y += lineHeight;
-                s = Integer.toString(line + 1);
+                String s = Integer.toString(line + 1);
                 g.drawString(s, left - (fontWidth * s.length()) - 1 - MARGIN, y - heightCorrection);
             }
         } catch (BadLocationException ex) {

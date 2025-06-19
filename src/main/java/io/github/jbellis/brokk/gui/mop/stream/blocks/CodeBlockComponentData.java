@@ -17,8 +17,7 @@ import javax.swing.*;
 import javax.swing.text.BadLocationException;
 import javax.swing.text.DefaultCaret;
 import java.io.IOException;
-import java.util.Locale; // Added import
-import java.util.Objects;
+import java.util.Locale;
 import java.util.Optional;
 
 /**
@@ -38,7 +37,7 @@ public record CodeBlockComponentData(int id, String body, String lang) implement
     /**
      * Creates an RSyntaxTextArea for a code block, setting the syntax style and theme.
      */
-    private RSyntaxTextArea createConfiguredCodeArea(String fenceInfo, String content, boolean isDarkTheme) {
+    private RSyntaxTextArea createConfiguredCodeArea(@Nullable String fenceInfo, String content, boolean isDarkTheme) {
         var codeArea = new RSyntaxTextArea(content);
         codeArea.setEditable(false);
         codeArea.setLineWrap(true);
@@ -139,20 +138,18 @@ public record CodeBlockComponentData(int id, String body, String lang) implement
      * @param isDarkTheme Whether dark theme is active
      * @return A panel containing the styled code block
      */
-    private JPanel createMessageBubble(RSyntaxTextArea textArea, String fenceInfo, boolean isDarkTheme) {
+    private JPanel createMessageBubble(RSyntaxTextArea textArea, @Nullable String fenceInfo, boolean isDarkTheme) {
         // Format the title based on fence info
-        String title = fenceInfo.isEmpty() ? "Code" :
+        String title = fenceInfo == null || fenceInfo.isEmpty() ? "Code" :
                        fenceInfo.substring(0, 1).toUpperCase(Locale.ROOT) + fenceInfo.substring(1);
 
         // Use code icon
-        var iconNullable = SwingUtil.uiIcon("FileChooser.listViewIcon"); 
-        var icon = Objects.requireNonNullElse(iconNullable, new ImageIcon());
-
+        var icon = SwingUtil.uiIcon("FileChooser.listViewIcon");
 
         // Create the panel using BaseChatMessagePanel
         return new MessageBubble(
                 title,
-                icon, 
+                icon,
                 textArea,
                 isDarkTheme,
                 ThemeColors.getColor(isDarkTheme, "codeHighlight"),
@@ -164,7 +161,7 @@ public record CodeBlockComponentData(int id, String body, String lang) implement
     /**
      * Gets the appropriate syntax style constant for a language.
      */
-    private String getSyntaxStyle(String lang) {
+    private String getSyntaxStyle(@Nullable String lang) {
         if (lang == null || lang.isEmpty()) {
             return SyntaxConstants.SYNTAX_STYLE_NONE;
         }

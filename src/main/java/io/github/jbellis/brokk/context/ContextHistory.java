@@ -27,7 +27,7 @@ public class ContextHistory {
     private final Deque<Context> redo   = new ArrayDeque<>();
 
     /** UI-selection; never {@code null} once an initial context is set. */
-    private @Nullable Context selected = null; // Initialize to null, will be set by setInitialContext
+    private @Nullable Context selected;
 
     /* ───────────────────────── public API ─────────────────────────── */
 
@@ -44,10 +44,9 @@ public class ContextHistory {
     public synchronized boolean hasUndoStates() { return history.size() > 1; }
     public synchronized boolean hasRedoStates() { return !redo.isEmpty();  }
 
-    @Nullable
-    public synchronized Context getSelectedContext() {
+    public synchronized @Nullable Context getSelectedContext() {
         if (selected == null || !history.contains(selected)) {
-            selected = topContext(); // topContext() can return null
+            selected = topContext();
         }
         return selected;
     }
@@ -62,7 +61,12 @@ public class ContextHistory {
             selected = ctx;
             return true;
         }
-        logger.warn("Attempted to select context {} not present in history", ctx == null ? "null" : ctx);
+        if (logger.isWarnEnabled()) {
+            logger.warn("Attempted to select context {} not present in history (history size: {}, available contexts: {})", 
+                       ctx == null ? "null" : ctx, 
+                       history.size(),
+                       history.stream().map(Context::toString).collect(java.util.stream.Collectors.joining(", ")));
+        }
         return false;
     }
 
@@ -73,6 +77,7 @@ public class ContextHistory {
         redo.clear();
         history.add(frozenInitial);
         selected = frozenInitial;
+        logger.debug("Initial context set: {}", frozenInitial);
     }
 
     /** Push {@code frozen} and clear redo stack. */
@@ -106,7 +111,10 @@ public class ContextHistory {
         return UndoResult.success(toUndo);
     }
 
-    public synchronized UndoResult undoUntil(Context target, IConsoleIO io) {
+    public synchronized UndoResult undoUntil(@Nullable Context target, IConsoleIO io) {
+        if (target == null) {
+            return UndoResult.none();
+        }
         var idx = indexOf(target);
         if (idx < 0) return UndoResult.none();
         var distance = history.size() - 1 - idx;
@@ -131,7 +139,12 @@ public class ContextHistory {
     /* ────────────────────────── private helpers ─────────────────────────── */
 
     private void truncateHistory() {
-        while (history.size() > MAX_DEPTH) history.removeFirst();
+        while (history.size() > MAX_DEPTH) {
+            var removed = history.removeFirst();
+            if (logger.isDebugEnabled()) {
+                logger.debug("Truncated history (removed oldest context: {})", removed);
+            }
+        }
     }
 
     private int indexOf(Context ctx) {
@@ -146,7 +159,11 @@ public class ContextHistory {
     /**
      * Applies the state from a frozen context to the workspace by restoring files.
      */
-    private void applyFrozenContextToWorkspace(Context frozenContext, IConsoleIO io) {
+    private void applyFrozenContextToWorkspace(@Nullable Context frozenContext, IConsoleIO io) {
+        if (frozenContext == null) {
+            logger.warn("Attempted to apply null context to workspace");
+            return;
+        }
         assert !frozenContext.containsDynamicFragments();
         var restoredFiles = new ArrayList<String>();
         frozenContext.editableFiles.forEach(fragment -> {

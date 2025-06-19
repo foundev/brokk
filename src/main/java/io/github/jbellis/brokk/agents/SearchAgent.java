@@ -3,7 +3,6 @@ package io.github.jbellis.brokk.agents;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.google.common.base.Splitter; // Added import
 import dev.langchain4j.agent.tool.P;
 import dev.langchain4j.agent.tool.Tool;
 import dev.langchain4j.agent.tool.ToolExecutionRequest;
@@ -71,8 +70,7 @@ public class SearchAgent {
     private final List<Tuple2<String, String>> knowledge = new ArrayList<>();
     private final Set<String> toolCallSignatures = new HashSet<>();
     private final Set<String> trackedClassNames = new HashSet<>();
-    @Nullable
-    private CompletableFuture<String> initialContextSummary = null;
+    private CompletableFuture<String> initialContextSummary;
 
     private TokenUsage totalUsage = new TokenUsage(0, 0);
 
@@ -116,21 +114,18 @@ public class SearchAgent {
         // If this step has a summarizeFuture, block for result
         if (step.summarizeFuture != null) {
             try {
-                // Block and assign learnings
-                step.learnings = step.summarizeFuture.get(); // Directly access fields of ToolHistoryEntry
+                step.learnings = step.summarizeFuture.get();
                 logger.debug("Summarization complete for step: {}", step.request.name());
             } catch (ExecutionException e) {
                 Throwable cause = e.getCause();
                 logger.error("Error waiting for summary for tool {}: {}", step.request.name(), cause == null ? "Unknown cause" : cause.getMessage(), cause);
-                // Store raw result as learnings on error
-                step.learnings = step.execResult.resultText(); // Use text from execResult
+                step.learnings = step.execResult.resultText();
             } catch (InterruptedException e) {
                 Thread.currentThread().interrupt();
                 logger.warn("Interrupted while waiting for summary for tool {}", step.request.name());
-                // Store raw result if interrupted
-                step.learnings = step.execResult.resultText(); // Use text from execResult
+                step.learnings = "Summarization interrupted."; // Return a placeholder or error message
             } finally {
-                step.summarizeFuture = null; // Clear the future once handled
+                step.summarizeFuture = null;
             }
         }
     }
@@ -138,13 +133,10 @@ public class SearchAgent {
     /**
      * Asynchronously summarizes a raw result using the quick model
      */
-    private CompletableFuture<String> summarizeResultAsync(String query, ToolHistoryEntry step)
-    {
-        // Use supplyAsync to run in background
+    private CompletableFuture<String> summarizeResultAsync(String query, ToolHistoryEntry step) {
         return CompletableFuture.supplyAsync(() -> {
             logger.debug("Summarizing result ...");
-            // Build short system prompt or messages
-            ArrayList<ChatMessage> messages = new ArrayList<>();
+            var messages = new ArrayList<ChatMessage>();
             messages.add(new SystemMessage("""
                                            You are a code expert that extracts ALL information from the input that is relevant to the given query.
                                            Your partner has included his reasoning about what he is looking for; your work will be the only knowledge
@@ -174,30 +166,30 @@ public class SearchAgent {
                                          <tool name="%s" %s>
                                          %s
                                          </tool>
-                                         """.stripIndent().formatted(
+                                         """.formatted(
                     query,
                     reasoning,
                     step.request.name(),
-                    getToolParameterInfo(step), // Pass ToolHistoryEntry
+                    getToolParameterInfo(step),
                     step.execResult.resultText()
             )));
 
-            Llm.StreamingResult result = null;
+            Llm.StreamingResult result;
             try {
                 result = llm.sendRequest(messages);
             } catch (InterruptedException e) {
-                Thread.currentThread().interrupt(); // Preserve interrupt status
+                Thread.currentThread().interrupt();
                 logger.warn("Summarization interrupted for tool {}", step.request.name(), e);
-                return step.execResult.resultText(); // Return raw result if interrupted
+                return "Summarization interrupted.";
             }
             if (result.error() != null) {
                 logger.warn("Summarization failed or was cancelled. Error: {}", result.error().getMessage());
                 return step.execResult.resultText(); // Return raw result on failure
             }
-            ChatResponse chatResponse = result.chatResponse();
+            var chatResponse = result.chatResponse();
             if (chatResponse == null || chatResponse.aiMessage() == null) {
                 logger.warn("Summarization returned null response or AI message.");
-                return step.execResult.resultText(); // Return raw result if response is incomplete
+                return "Failed to generate summary.";
             }
             return chatResponse.aiMessage().text();
         });
@@ -220,7 +212,7 @@ public class SearchAgent {
                    %s
                    </fragment>
                    """.stripIndent().formatted(f.description(),
-                                               f.sources().stream().map(CodeUnit::fqName).collect(Collectors.joining(", ")), // No analyzer, parentheses removed
+                                               f.sources().stream().map(CodeUnit::fqName).collect(Collectors.joining(", ")),
                                                text);
         }).collect(Collectors.joining("\n\n"));
         if (!contextWithClasses.isBlank()) {
@@ -276,7 +268,8 @@ public class SearchAgent {
             // Special handling based on previous steps
             updateActionControlsBasedOnContext();
 
-            updateActionControlsBasedOnContext();
+            // This line was duplicated. Removed the duplicate.
+            // updateActionControlsBasedOnContext();
 
             // Decide what action(s) to take for this query
             List<ToolExecutionRequest> toolRequests;
@@ -284,7 +277,6 @@ public class SearchAgent {
                 toolRequests = determineNextActions();
             } catch (InterruptedException e) {
                 logger.debug("Caught InterruptedException in determineNextActions", e);
-                // let interrupted() check in next loop handle it
                 Thread.currentThread().interrupt();
                 continue;
             }
@@ -350,9 +342,10 @@ public class SearchAgent {
             }
 
             // Wait for initial context summary if it's pending (before the second LLM call)
-            if (initialContextSummary != null) {
+            var summaryFuture = initialContextSummary;
+            if (summaryFuture != null) {
                 try {
-                    String summary = initialContextSummary.get();
+                    String summary = summaryFuture.get();
                     logger.debug("Initial context summary complete.");
                     // Find the initial context entry in knowledge (assuming it's the first one)
                     assert !knowledge.isEmpty() && knowledge.getFirst()._1.equals("Initial context");
@@ -403,19 +396,19 @@ public class SearchAgent {
             logger.debug("Summarizing initial context relevance...");
             ArrayList<ChatMessage> messages = new ArrayList<>();
             messages.add(new SystemMessage("""
-                                           You are a code expert that extracts ALL information from the input that is relevant to the given query.
-                                           The input is an evaluation of existing code context against the query. Your summary will represent
-                                           the relevant parts of the existing context for future reasoning steps.
-                                           Be particularly sure to include ALL relevant source code chunks so they can be referenced later,
-                                           but DO NOT speculate or guess: your answer must ONLY include information present in the input!
+                                                   You are a code expert that extracts ALL information from the input that is relevant to the given query.
+                                                   The input is an evaluation of existing code context against the query. Your summary will represent
+                                                   the relevant parts of the existing context for future reasoning steps.
+                                                   Be particularly sure to include ALL relevant source code chunks so they can be referenced later,
+                                                   but DO NOT speculate or guess: your answer must ONLY include information present in the input!
                                            """.stripIndent()));
             messages.add(new UserMessage("""
-                                         <query>
-                                         %s
-                                         </query>
-                                         <information>
-                                         %s
-                                         </information>
+                                                 <query>
+                                                 %s
+                                                 </query>
+                                                 <information>
+                                                 %s
+                                                 </information>
                                          """.stripIndent().formatted(query, initialContextResult)));
 
             ChatResponse response;
@@ -426,21 +419,15 @@ public class SearchAgent {
                 logger.warn("Initial context summary interrupted for query {}", query, e);
                 return "Initial context summary interrupted."; // Return a placeholder or error message
             }
-            if (response == null || response.aiMessage() == null) {
-                logger.warn("Initial context summary returned null response or AI message for query {}", query);
-                return "Failed to generate initial context summary."; // Return error message
-            }
             return response.aiMessage().text();
         });
     }
 
     private int actionHistorySize() {
-        var toIndex = min(actionHistory.size() - 1, 0);
-        var historyString = IntStream.range(0, toIndex)
-                .mapToObj(actionHistory::get)
+        var historyString = actionHistory.stream()
                 .map(h -> formatHistory(h, -1))
                 .collect(Collectors.joining());
-        return Messages.getApproximateTokens(historyString); // Static method
+        return Messages.getApproximateTokens(historyString);
     }
 
     /**
@@ -478,32 +465,23 @@ public class SearchAgent {
      * Gets human-readable parameter information from a ToolHistoryEntry (which contains the request).
      */
     private String getToolParameterInfo(ToolHistoryEntry historyEntry) {
-        if (historyEntry == null) return "";
-        var request = historyEntry.request; // Use request from history entry
+        var arguments = historyEntry.argumentsMap();
 
-        try {
-            // We need the arguments map from the history entry helper
-            var arguments = historyEntry.argumentsMap(); // Use helper from ToolHistoryEntry
-
-            return switch (request.name()) { // Use request.name()
-                case "searchSymbols", "searchSubstrings", "searchFilenames" ->
-                        formatListParameter(arguments, "patterns");
-                case "getFileContents" -> formatListParameter(arguments, "filenames");
-                case "getFileSummaries" -> formatListParameter(arguments, "filePaths");
-                case "getUsages" -> formatListParameter(arguments, "symbols");
-                case "getRelatedClasses", "getClassSkeletons", "getClassSources" ->
-                        formatListParameter(arguments, "classNames");
-                case "getMethodSources" -> formatListParameter(arguments, "methodNames");
-                case "getCallGraphTo", "getCallGraphFrom" ->
-                        arguments.getOrDefault("methodName", "").toString(); // Added graph tools
-                case "answerSearch", "abortSearch" -> "finalizing";
-                default ->
-                        throw new IllegalArgumentException("Unknown tool name " + request.name()); // Use request.name()
-            };
-        } catch (Exception e) {
-            logger.error("Error getting parameter info", e);
-            return "";
-        }
+        return switch (historyEntry.request.name()) {
+            case "searchSymbols", "searchSubstrings", "searchFilenames" ->
+                    formatListParameter(arguments, "patterns");
+            case "getFileContents" -> formatListParameter(arguments, "filenames");
+            case "getFileSummaries" -> formatListParameter(arguments, "filePaths");
+            case "getUsages" -> formatListParameter(arguments, "symbols");
+            case "getRelatedClasses", "getClassSkeletons", "getClassSources" ->
+                    formatListParameter(arguments, "classNames");
+            case "getMethodSources" -> formatListParameter(arguments, "methodNames");
+            case "getCallGraphTo", "getCallGraphFrom" ->
+                    arguments.getOrDefault("methodName", "").toString();
+            case "answerSearch", "abortSearch" -> "finalizing";
+            default ->
+                    throw new IllegalArgumentException("Unknown tool name " + historyEntry.request.name());
+        };
     }
 
     /**
@@ -556,9 +534,7 @@ public class SearchAgent {
      */
     private void trackClassNamesFromToolCall(ToolExecutionRequest request) {
         try {
-            var mapper = new ObjectMapper();
-            var arguments = mapper.readValue(request.arguments(), new TypeReference<Map<String, Object>>() {
-            });
+            var arguments = new ToolHistoryEntry(request, null).argumentsMap(); // Use helper
             String toolName = request.name();
 
             switch (toolName) {
@@ -609,9 +585,9 @@ public class SearchAgent {
     /**
      * Extracts class name from a symbol
      */
-    private Optional<? extends String> extractClassNameFromSymbol(String symbol) {
+    private Optional<String> extractClassNameFromSymbol(String symbol) {
         return analyzer.getDefinition(symbol)
-                .flatMap(cu -> cu.classUnit().flatMap(cu2 -> Optional.of(cu2.fqName())));
+                .flatMap(cu -> cu.classUnit().map(CodeUnit::fqName));
     }
 
     /**
@@ -619,64 +595,50 @@ public class SearchAgent {
      * Returns the original request if not a duplicate.
      * Returns null if the forged request would ALSO be a duplicate (signals caller to skip).
      */
-    private ToolExecutionRequest handleDuplicateRequestIfNeeded(ToolExecutionRequest request) { // Takes/returns ToolExecutionRequest
+    private ToolExecutionRequest handleDuplicateRequestIfNeeded(ToolExecutionRequest request) {
         if (!analyzer.isCpg()) {
-            // No duplicate detection without CPG analyzer (as CPG tools are the ones likely duplicated)
             return request;
         }
 
-        // Get signatures for this request
         var requestSignatures = createToolCallSignatures(request);
 
-        // If we already have seen any of these signatures, forge a replacement call
         if (toolCallSignatures.stream().anyMatch(requestSignatures::contains)) {
             logger.debug("Duplicate tool call detected: {}. Forging a getRelatedClasses call instead.", requestSignatures);
             request = createRelatedClassesRequest();
 
-            // if the forged call is itself a duplicate, use the original request but force Beast Mode next
             if (toolCallSignatures.containsAll(createToolCallSignatures(request))) {
                 logger.debug("Pagerank would be duplicate too!  Switching to Beast Mode.");
                 beastMode = true;
                 return request;
             }
         }
-
-        // Return the request (original if no duplication, or the replacement)
         return request;
     }
 
     /**
      * Creates a ToolExecutionRequest for getRelatedClasses using all currently tracked class names.
      */
-    private ToolExecutionRequest createRelatedClassesRequest() { // Returns ToolExecutionRequest
-        // Build the arguments for the getRelatedClasses call.
-        // We'll pass all currently tracked class names, so that the agent
-        // sees "related classes" from everything discovered so far.
+    private ToolExecutionRequest createRelatedClassesRequest() {
         var classList = new ArrayList<>(trackedClassNames);
 
-        // Construct JSON arguments for the call
         String argumentsJson = """
                                {
                                   "classNames": %s
                                }
                                """.formatted(toJsonArray(classList));
 
-        // Create a new ToolExecutionRequest
         return ToolExecutionRequest.builder()
                 .name("getRelatedClasses")
                 .arguments(argumentsJson)
                 .build();
     }
 
-    private String toJsonArray(List<String> items)
-    {
-        // Create a JSON array from the list. e.g. ["Foo","Bar"]
+    private String toJsonArray(List<String> items) {
         var mapper = new ObjectMapper();
         try {
             return mapper.writeValueAsString(items);
         } catch (JsonProcessingException e) {
             logger.error("Error serializing array", e);
-            // fallback to an empty array
             return "[]";
         }
     }
@@ -688,12 +650,9 @@ public class SearchAgent {
     private List<ToolExecutionRequest> determineNextActions() throws InterruptedException {
         List<ChatMessage> messages = buildPrompt();
 
-        // Ask LLM for next action with tools
         List<String> allowedToolNames = calculateAllowedToolNames();
         List<ToolSpecification> tools = new ArrayList<>(toolRegistry.getRegisteredTools(allowedToolNames));
-        // Get specs for agent-specific tools (answer/abort) if allowed
         if (allowAnswer) {
-            // Pass an instance of the tools class, correct typo, add missing parenthesis
             tools.addAll(toolRegistry.getTools(this, List.of("answerSearch", "abortSearch")));
         }
         var result = llm.sendRequest(messages, tools, ToolChoice.REQUIRED, false);
@@ -704,12 +663,11 @@ public class SearchAgent {
         var response = result.chatResponse();
         if (response == null || response.aiMessage() == null) {
             logger.warn("LLM returned empty response when determining next action");
-            return List.of(); // Should not happen if Coder handled error correctly
+            return List.of();
         }
 
         totalUsage = TokenUsage.sum(totalUsage, response.tokenUsage());
 
-        // Parse response into potentially multiple actions
         return parseResponseToRequests(ToolRegistry.removeDuplicateToolRequests(response.aiMessage()));
     }
 
@@ -718,9 +676,8 @@ public class SearchAgent {
      */
     private List<String> calculateAllowedToolNames() {
         List<String> names = new ArrayList<>();
-        if (beastMode) return names; // Only answer/abort in beast mode
+        if (beastMode) return names;
 
-        // Add names based on CPG analyzer presence and state flags
         if (analyzer.isCpg()) {
             if (allowSearch) {
                 names.add("searchSymbols");
@@ -731,11 +688,11 @@ public class SearchAgent {
                 names.add("getClassSkeletons");
                 names.add("getClassSources");
                 names.add("getMethodSources");
-                names.add("getCallGraphTo"); // Keep or remove based on toolset
+                names.add("getCallGraphTo");
                 names.add("getCallGraphFrom");
             }
         }
-        if (allowTextSearch) { // Text search tools don't depend on analyzer
+        if (allowTextSearch) {
             names.add("searchSubstrings");
             names.add("searchFilenames");
             names.add("getFileContents");
@@ -751,30 +708,26 @@ public class SearchAgent {
     private List<ChatMessage> buildPrompt() {
         List<ChatMessage> messages = new ArrayList<>();
 
-        // System prompt outlining capabilities
         var systemPrompt = new StringBuilder();
         systemPrompt.append("""
                             You are a code search agent that helps find relevant code based on queries.
                             Even if not explicitly stated, the query should be understood to refer to the current codebase,
                             and not a general-knowledge question.
                             Your goal is to find code definitions, implementations, and usages that answer the user's query.
-                            """.stripIndent());
+                            """);
 
-        // Add knowledge gathered during search
         if (!knowledge.isEmpty()) {
             var collected = knowledge.stream().map(t -> systemPrompt.append("""
                                                                             <entry description="%s">
                                                                             %s
                                                                             </entry>
-                                                                            """.stripIndent().formatted(t._1, t._2)))
+                                                                            """.formatted(t._1, t._2)))
                     .collect(Collectors.joining("\n"));
             systemPrompt.append("\n<knowledge>\n%s\n</knowledge>\n".formatted(collected));
         }
 
-        var sysPromptStr = systemPrompt.toString();
-        messages.add(new SystemMessage(sysPromptStr));
+        messages.add(new SystemMessage(systemPrompt.toString()));
 
-        // Add action history to user message
         StringBuilder userActionHistory = new StringBuilder();
         if (!actionHistory.isEmpty()) {
             userActionHistory.append("\n<action-history>\n");
@@ -792,7 +745,6 @@ public class SearchAgent {
                            - Of course, `abort` and `answer` tools cannot be composed with others.
                            """;
         if (symbolsFound) {
-            // Switch to beast mode if we're running out of time
             if (beastMode || actionHistorySize() > 0.8 * TOKEN_BUDGET) {
                 instructions = """
                                <beast-mode>
@@ -801,8 +753,7 @@ public class SearchAgent {
                                - USE DISCOVERED CODE UNITS TO PROVIDE BEST POSSIBLE ANSWER,
                                - OR EXPLAIN WHY YOU DID NOT SUCCEED
                                </beast-mode>
-                               """.stripIndent();
-                // Force finalize only
+                               """;
                 allowAnswer = true;
                 allowSearch = false;
                 allowTextSearch = false;
@@ -825,8 +776,8 @@ public class SearchAgent {
                         <query>
                         %s>
                         </query>
-                        """.stripIndent().formatted(query);
-        messages.add(new UserMessage(userActionHistory + instructions.stripIndent()));
+                        """.formatted(query);
+        messages.add(new UserMessage(userActionHistory + instructions));
 
         return messages;
     }
@@ -836,10 +787,10 @@ public class SearchAgent {
                <step sequence="%d" tool="%s" %s>
                 %s
                </step>
-               """.stripIndent().formatted(i,
-                                           step.request.name(),
-                                           getToolParameterInfo(step),
-                                           step.getDisplayResult());
+               """.formatted(i,
+                             step.request.name(),
+                             getToolParameterInfo(step),
+                             step.getDisplayResult());
     }
 
     /**
@@ -852,13 +803,11 @@ public class SearchAgent {
             return List.of();
         }
 
-        // Process each request with duplicate detection
         var requests = response.toolExecutionRequests().stream()
                 .map(this::handleDuplicateRequestIfNeeded)
-                .filter(Objects::nonNull) // Filter out skipped duplicates if handleDuplicate decided to skip
+                .filter(Objects::nonNull)
                 .toList();
 
-        // If we have an Answer or Abort action, it must be the only one
         var answerOrAbort = requests.stream()
                 .filter(req -> req.name().equals("answerSearch") || req.name().equals("abortSearch"))
                 .findFirst();
@@ -867,13 +816,11 @@ public class SearchAgent {
             if (requests.size() > 1) {
                 logger.warn("LLM returned answer/abort with other tools. Isolating answer/abort.");
             }
-            // Return only the answer/abort request
             return List.of(answerOrAbort.get());
         }
 
         if (requests.isEmpty() && !response.toolExecutionRequests().isEmpty()) {
             logger.warn("All tool requests were filtered out (likely as duplicates ending in beast mode trigger).");
-            // Return empty list, the main loop will handle the beastMode flag.
         }
 
         return requests;
@@ -901,7 +848,7 @@ public class SearchAgent {
             var entry = new ToolHistoryEntry(request, result);
 
             handlePostExecution(entry);
-            handleToolExecutionResult(result);
+            handleToolExecutionResult(entry.execResult); // Pass execResult from entry
             history.add(entry);
         }
 
@@ -1015,10 +962,9 @@ public class SearchAgent {
             return """
                    ```%s %s
                    %s```
-                   """.stripIndent().formatted(displayMeta.getIcon(), displayMeta.getHeadline(), yamlBuilder);
+                   """.formatted(displayMeta.getIcon(), displayMeta.getHeadline(), yamlBuilder);
         } catch (Exception e) {
             logger.error("Error formatting tool request explanation", e);
-            // Fallback to simpler format if JSON processing fails
             String paramInfo = getToolParameterInfoFromRequest(request);
             var displayMeta = ToolDisplayMeta.fromToolName(request.name());
             return paramInfo.isBlank() ? displayMeta.getHeadline() :
@@ -1046,7 +992,7 @@ public class SearchAgent {
                 case "getMethodSources" -> formatListParameter(arguments, "methodNames");
                 case "getCallGraphTo", "getCallGraphFrom" -> arguments.getOrDefault("methodName", "").toString();
                 case "answerSearch", "abortSearch" -> "";
-                default -> ""; // Avoid exception for unknown tools
+                default -> "";
             };
         } catch (Exception e) {
             logger.error("Error getting parameter info for request {}: {}", request.name(), e);
@@ -1062,13 +1008,12 @@ public class SearchAgent {
         var request = historyEntry.request;
         var execResult = historyEntry.execResult;
 
-        // Only process successful executions
         if (execResult.status() != ToolExecutionResult.Status.SUCCESS) {
             return;
         }
 
         String toolName = request.name();
-        String resultText = execResult.resultText(); // Null check done in factory/constructor
+        String resultText = execResult.resultText();
         var toolsRequiringSummaries = Set.of("searchSymbols", "getUsages", "getClassSources",
                                              "searchSubstrings", "searchFilenames", "getFileContents", "getRelatedClasses",
                                              "getFileSummaries");
@@ -1077,9 +1022,7 @@ public class SearchAgent {
             logger.debug("Queueing summarization for tool {} (length {})", toolName, Messages.getApproximateTokens(resultText));
             historyEntry.summarizeFuture = summarizeResultAsync(query, historyEntry);
         } else if (toolName.equals("searchSymbols") || toolName.equals("getRelatedClasses")) {
-            // Apply prefix compression if not summarizing for searchSymbols and getRelatedClasses
-            if (!resultText.startsWith("No ") && !resultText.startsWith("[")) { // Check if not empty/error/already compressed
-                // AnalysisTools now returns raw comma-separated list for these.
+            if (!resultText.startsWith("No ") && !resultText.startsWith("[")) {
                 try {
                     List<String> rawSymbols = Arrays.asList(resultText.split(",\\s*"));
                     String label = toolName.equals("searchSymbols") ? "Relevant symbols" : "Related classes";
@@ -1087,7 +1030,6 @@ public class SearchAgent {
                     logger.debug("Applied compression for tool {}", toolName);
                 } catch (Exception e) {
                     logger.error("Error during symbol compression for {}: {}", toolName, e.getMessage());
-                    // Fallback: use raw result text - already stored in execResult
                 }
             } else {
                 logger.debug("Skipping compression for {} (result: '{}')", toolName, resultText);
@@ -1102,14 +1044,14 @@ public class SearchAgent {
         if (symbols == null || symbols.isEmpty()) {
             return label + ": None found";
         }
-        var compressionResult = SearchTools.compressSymbolsWithPackagePrefix(symbols); // Use static helper
+        var compressionResult = SearchTools.compressSymbolsWithPackagePrefix(symbols);
         String commonPrefix = compressionResult._1();
         List<String> compressedSymbols = compressionResult._2();
 
         if (commonPrefix.isEmpty()) {
             return label + ": " + String.join(", ", symbols.stream().sorted().toList());
         }
-        return SearchTools.formatCompressedSymbolsInternal(label, compressedSymbols.stream().sorted().toList(), commonPrefix); // Use static helper
+        return SearchTools.formatCompressedSymbolsInternal(label, compressedSymbols.stream().sorted().toList(), commonPrefix);
     }
 
 
@@ -1118,16 +1060,12 @@ public class SearchAgent {
      * This is where the "composition" happens.
      */
     private void handleToolExecutionResult(ToolExecutionResult execResult) {
-        // Check for execution errors first
         if (execResult.status() == ToolExecutionResult.Status.FAILURE) {
             logger.warn("Tool execution failed or returned error: {} - {}", execResult.toolName(), execResult.resultText());
-            // Potentially update agent state based on error (e.g., disable a tool?)
             return;
         }
 
-        // Tool-specific state updates
         String toolName = execResult.toolName();
-        // Use expression switch
         switch (toolName) {
             case "searchSymbols" -> {
                 this.allowTextSearch = true;
@@ -1139,7 +1077,6 @@ public class SearchAgent {
             case "getUsages", "getRelatedClasses", "getClassSkeletons", "getClassSources", "getMethodSources" ->
                     trackClassNamesFromResult(execResult.resultText());
             default -> {
-                // No specific post-execution logic for this tool
             }
         }
     }
@@ -1149,8 +1086,9 @@ public class SearchAgent {
      * Implementation needs to be robust to different tool output formats.
      */
     private void trackClassNamesFromResult(String resultText) {
-        if (resultText == null || resultText.isBlank() || resultText.startsWith("No ") || resultText.startsWith("Error:"))
+        if (resultText == null || resultText.isBlank() || resultText.startsWith("No ") || resultText.startsWith("Error:")) {
             return;
+        }
 
         Set<String> potentialNames = new HashSet<>();
 
@@ -1158,7 +1096,7 @@ public class SearchAgent {
         // Handle compressed format "[Common package prefix: 'prefix'] item1, item2"
         String effectiveResult = resultText;
         String prefix = "";
-        if (resultText.startsWith("[")) {
+        if (resultText.startsWith("[") && resultText.contains("] ")) {
             int prefixEnd = resultText.indexOf("] ");
             if (prefixEnd > 0) {
                 // Extract prefix carefully, handling potential nested quotes/brackets? Unlikely here.
@@ -1171,31 +1109,27 @@ public class SearchAgent {
             }
         }
 
-        // Add prefix back if needed
-        String finalPrefix = prefix; // Final for lambda
+        String finalPrefix = prefix;
         potentialNames.addAll(Arrays.stream(effectiveResult.split("[,\\s]+"))
                                       .map(String::trim)
                                       .filter(s -> !s.isEmpty())
-                                      .map(s -> finalPrefix.isEmpty() ? s : finalPrefix + s) // Re-add prefix
-                                      .filter(s -> s.contains(".") && Character.isJavaIdentifierStart(s.charAt(0))) // Basic FQCN check
+                                      .map(s -> finalPrefix.isEmpty() ? s : finalPrefix + "." + s)
+                                      .filter(s -> s.contains(".") && Character.isJavaIdentifierStart(s.charAt(0)))
                                       .toList());
 
-        // Regex for "Source code of X:" or "class X"
-        Pattern classPattern = Pattern.compile("(?:Source code of |class )([\\w.$]+)"); // Include $ for inner classes
+        Pattern classPattern = Pattern.compile("(?:Source code of |class )([\\w.$]+)");
         var matcher = classPattern.matcher(resultText);
         while (matcher.find()) {
             potentialNames.add(matcher.group(1));
         }
 
-        // Add FQCNs extracted from symbols found in usage reports
-        Pattern usagePattern = Pattern.compile("Usage in ([\\w.$]+)\\."); // Match FQCN before method name
+        Pattern usagePattern = Pattern.compile("Usage in ([\\w.$]+)\\.");
         matcher = usagePattern.matcher(resultText);
         while (matcher.find()) {
             potentialNames.add(matcher.group(1));
         }
 
         if (!potentialNames.isEmpty()) {
-            // Filter again for plausible FQCNs before adding
             var validNames = potentialNames.stream()
                     .map(this::extractClassNameFromSymbol)
                     .filter(Optional::isPresent)
@@ -1218,34 +1152,26 @@ public class SearchAgent {
         var execResult = finalStep.execResult;
         var explanationText = execResult.resultText();
 
-        // Basic validation (should have been caught earlier, but assert for safety)
         assert request.name().equals("answerSearch") : "createFinalFragment called with wrong tool: " + request.name();
         assert execResult.status() == ToolExecutionResult.Status.SUCCESS : "createFinalFragment called with failed step";
         assert explanationText != null && !explanationText.isBlank() && !explanationText.equals("Success") : "createFinalFragment called with blank/default explanation";
 
-        var arguments = finalStep.argumentsMap(); // Use helper
-        // Ensure classNames is treated as List<String>
-        Object classNamesObj = arguments.get("classNames");
-        List<String> classNames = new ArrayList<>();
-        if (classNamesObj instanceof List<?> list) {
-            list.forEach(item -> {
-                if (item instanceof String s) {
-                    classNames.add(s);
-                }
-            });
-        } else if (classNamesObj != null) {
-            logger.warn("Expected 'classNames' to be a List<String>, but got: {}", classNamesObj.getClass());
-        }
+        var arguments = finalStep.argumentsMap();
+        List<String> classNames = Optional.ofNullable(arguments.get("classNames"))
+                .filter(List.class::isInstance)
+                .map(obj -> (List<?>) obj)
+                .orElse(List.of())
+                .stream()
+                .filter(String.class::isInstance)
+                .map(String.class::cast)
+                .toList();
 
         logger.debug("LLM-determined relevant classes for final answer are {}", classNames);
 
-        // Combine LLM list with all tracked names for broader context, then coalesce
         Set<String> combinedNames = new HashSet<>(classNames);
-        // TODO I'm skeptical that just throwing in all the classes examined during the search is the right approach
-        // -- would we get better results parsing the answer for classname matches?
         combinedNames.addAll(trackedClassNames);
         logger.debug("Combined tracked and LLM classes before normalize/coalesce: {}", combinedNames);
-        // Transform to CodeUnit
+
         var codeUnits = combinedNames.stream()
                 .flatMap(name -> analyzer.getDefinition(name).stream())
                 .flatMap(cu -> cu.classUnit().stream())
@@ -1258,7 +1184,7 @@ public class SearchAgent {
         var sessionName = "Search: " + query;
         var fragment = new ContextFragment.SearchFragment(contextManager, sessionName, List.copyOf(io.getLlmRawMessages()), coalesced);
         return new TaskResult(sessionName,
-                              fragment, Map.of(), // SearchFragment doesn't modify files
+                              fragment, Map.of(),
                               new TaskResult.StopDetails(TaskResult.StopReason.SUCCESS));
     }
 
@@ -1268,10 +1194,7 @@ public class SearchAgent {
             String explanation,
             @P("List of fully qualified class names (FQCNs) of ALL classes relevant to the explanation. Do not skip even minor details!")
             List<String> classNames
-    )
-    {
-        // Return the explanation provided by the LLM.
-        // The SearchAgent uses this result when it detects the 'answer' tool was chosen.
+    ) {
         logger.debug("Answer tool selected with explanation: {}", explanation);
         return explanation;
     }
@@ -1283,10 +1206,7 @@ public class SearchAgent {
     public String abortSearch(
             @P("Explanation of why the question cannot be answered or is not relevant to this codebase")
             String explanation
-    )
-    {
-        // Return the explanation provided by the LLM.
-        // The SearchAgent uses this result when it detects the 'abort' tool was chosen.
+    ) {
         logger.debug("Abort tool selected with explanation: {}", explanation);
         return explanation;
     }
@@ -1312,7 +1232,7 @@ public class SearchAgent {
             return "<%s>\n%s\n</%s>".formatted(resultKind, execResult.resultText(), resultKind);
         }
 
-        void setCompressedResult(String compressed) {
+        void setCompressedResult(@Nullable String compressed) {
             this.compressedResult = compressed;
         }
 
@@ -1324,7 +1244,7 @@ public class SearchAgent {
                 });
             } catch (JsonProcessingException e) {
                 logger.error("Error parsing arguments for request {}: {}", request.name(), e.getMessage());
-                return Map.of(); // Return empty map on error
+                return Map.of();
             }
         }
     }

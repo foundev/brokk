@@ -27,8 +27,8 @@ public class FileSelectionDialog extends JDialog {
     private final JButton okButton;
     private final JButton cancelButton;
 
-    private @Nullable BrokkFile selectedFile = null;
-    private boolean confirmed = false;
+    private @Nullable BrokkFile selectedFile;
+    private boolean confirmed;
 
     /**
      * Constructor for single file selection, potentially with external candidates.
@@ -41,19 +41,18 @@ public class FileSelectionDialog extends JDialog {
      * @param autocompleteCandidates Optional collection of external file paths for autocompletion.
      */
     public FileSelectionDialog(Frame parent, @Nullable IProject project, String title, boolean allowExternalFiles,
-                               @Nullable Predicate<File> fileFilter, Future<List<Path>> autocompleteCandidates) {
+                              @Nullable Predicate<@Nullable File> fileFilter, @Nullable Future<List<Path>> autocompleteCandidates) {
         super(parent, title, true); // modal dialog
-        assert autocompleteCandidates != null;
 
         // Configure the FileSelectionPanel
         var panelConfig = new FileSelectionPanel.Config(project,
-                                                        allowExternalFiles,
-                                                        fileFilter != null ? fileFilter : f -> true,
-                                                        autocompleteCandidates,
-                                                        false, // multiSelect = false
-                                                        this::handlePanelSingleFileConfirmed,
-                                                        project != null, // includeProjectFilesInAutocomplete only if project is not null
-                                                        ""); // Provide empty string for help text instead of null
+                                                       allowExternalFiles,
+                                                       fileFilter,
+                                                       autocompleteCandidates,
+                                                       false, // multiSelect = false 
+                                                       this::handlePanelSingleFileConfirmed,
+                                                       true, // includeProjectFilesInAutocomplete
+                                                       ""); // help text
         fileSelectionPanel = new FileSelectionPanel(panelConfig);
 
         JPanel mainPanel = new JPanel(new BorderLayout(8, 8));
@@ -103,38 +102,28 @@ public class FileSelectionDialog extends JDialog {
         setLocationRelativeTo(parent);
     }
 
-    private void handlePanelSingleFileConfirmed(BrokkFile file) {
+    private void handlePanelSingleFileConfirmed(@Nullable BrokkFile file) {
+        this.selectedFile = file;
+        this.confirmed = file != null;
         if (file != null) {
-            this.selectedFile = file;
-            this.confirmed = true;
-            // Update text in panel's input, though panel might do this itself
             fileSelectionPanel.setInputText(file.absPath().toString());
-            dispose();
         }
+        dispose();
     }
 
     private void doOk() {
         List<BrokkFile> resolvedFiles = fileSelectionPanel.resolveAndGetSelectedFiles();
-        if (!resolvedFiles.isEmpty()) {
-            this.selectedFile = resolvedFiles.getFirst(); // Single selection dialog
-            this.confirmed = true;
+        this.selectedFile = resolvedFiles.isEmpty() ? null : resolvedFiles.getFirst();
+        this.confirmed = this.selectedFile != null;
+        
+        String currentInput = fileSelectionPanel.getInputText().trim();
+        if (!resolvedFiles.isEmpty() || currentInput.isEmpty()) {
             dispose();
         } else {
-            // If resolveAndGetSelectedFiles returned empty, it means input was empty or invalid.
-            // For single file, if input is not empty but invalid, show a message.
-            String currentInput = fileSelectionPanel.getInputText().trim();
-            if (!currentInput.isEmpty()) {
-                JOptionPane.showMessageDialog(this,
-                                              "Could not resolve file: " + currentInput,
-                                              "File Not Found",
-                                              JOptionPane.ERROR_MESSAGE);
-                // Keep dialog open for user to correct input
-            } else {
-                // Empty input, just close
-                this.selectedFile = null;
-                this.confirmed = false;
-                dispose();
-            }
+            JOptionPane.showMessageDialog(this,
+                                        "Could not resolve file: " + currentInput,
+                                        "File Not Found", 
+                                        JOptionPane.ERROR_MESSAGE);
         }
     }
 

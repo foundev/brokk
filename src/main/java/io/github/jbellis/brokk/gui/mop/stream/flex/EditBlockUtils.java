@@ -110,11 +110,10 @@ public final class EditBlockUtils {
      * @param currentPath fallback filename if nothing better is found
      * @return best filename guess based on context
      */
-    @Nullable
-    public static String findFileNameNearby(String[] lines,
-                                            int headIndex,
-                                            Set<ProjectFile> projectFiles,
-                                            @Nullable String currentPath)
+    public static @Nullable String findFileNameNearby(String[] lines,
+                                                    int headIndex,
+                                                    Set<ProjectFile> projectFiles,
+                                                    @Nullable String currentPath)
     {
         // Guard against empty arrays
         if (lines.length == 0 || headIndex < 0) {
@@ -168,7 +167,6 @@ public final class EditBlockUtils {
         }
 
         // 4) Fallback to the first raw candidate
-        if (candidates.isEmpty()) return currentPath; // Redundant check but safe
-        return candidates.getFirst();
+        return candidates.isEmpty() ? currentPath : candidates.getFirst();
     }
 }

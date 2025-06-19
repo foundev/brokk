@@ -137,8 +137,7 @@ public class GitRepo implements Closeable, IGitRepo {
                 if (Files.exists(commondirFile)) {
                     String commonDirContent = Files.readString(commondirFile, StandardCharsets.UTF_8).trim();
                     Path commonDir = gitDir.resolve(commonDirContent).normalize();
-                    Path parentOfCommonDir = commonDir.getParent();
-                    this.gitTopLevel = Objects.requireNonNull(parentOfCommonDir, "Parent of git common-dir should not be null: " + commonDir).normalize();
+                    this.gitTopLevel = commonDir.getParent().normalize(); // Parent of common dir will not be null
                 } else {
                     // Fallback: try to parse the gitdir file in the working tree
                     Path gitFile = repository.getWorkTree().toPath().resolve(".git");
@@ -151,8 +150,7 @@ public class GitRepo implements Closeable, IGitRepo {
                             if (Files.exists(commondirFile2)) {
                                 String commonDirContent2 = Files.readString(commondirFile2, StandardCharsets.UTF_8).trim();
                                 Path commonDir2 = worktreeGitDir.resolve(commonDirContent2).normalize();
-                                Path parentOfCommonDir2 = commonDir2.getParent();
-                                this.gitTopLevel = Objects.requireNonNull(parentOfCommonDir2, "Parent of git common-dir (fallback) should not be null: " + commonDir2).normalize();
+                                this.gitTopLevel = commonDir2.getParent().normalize(); // Parent of common dir will not be null
                             } else {
                                 // Ultimate fallback
                                 this.gitTopLevel = repository.getDirectory().getParentFile().toPath().normalize();
@@ -1625,6 +1623,9 @@ public class GitRepo implements Closeable, IGitRepo {
      * Computes the merge base of two commits.
      */
     private @Nullable ObjectId computeMergeBase(ObjectId firstId, ObjectId secondId) throws GitAPIException {
+        if (firstId == null || secondId == null) {
+            return null;
+        }
         try (RevWalk walk = new RevWalk(repository)) {
             RevCommit firstCommit = walk.parseCommit(firstId);
             RevCommit secondCommit = walk.parseCommit(secondId);
@@ -1644,11 +1645,11 @@ public class GitRepo implements Closeable, IGitRepo {
      * Returns the SHA-1 of the merge base between the two rev-specs (or null
      * if none exists).  revA and revB may be branch names, tags, commit IDs, etc.
      */
-    public @Nullable String getMergeBase(String revA, String revB) throws GitAPIException {
+    public String getMergeBase(String revA, String revB) throws GitAPIException {
         var idA = resolve(revA);
         var idB = resolve(revB);
         var mb = computeMergeBase(idA, idB);
-        return mb == null ? null : mb.getName();
+        return mb.getName();
     }
 
     /**
@@ -1670,43 +1671,43 @@ public class GitRepo implements Closeable, IGitRepo {
                 if (line.startsWith("worktree ")) {
                     // Finalize previous entry if data is present
                     if (currentPath != null) {
-                        worktrees.add(new WorktreeInfo(currentPath,
-                                                       currentBranch != null ? currentBranch : "",
-                                                       currentHead != null ? currentHead : ""));
-                        currentHead = null;
-                        currentBranch = null;
+                            worktrees.add(new WorktreeInfo(currentPath,
+                                                           currentBranch != null ? currentBranch : "",
+                                                           currentHead != null ? currentHead : ""));
+                            currentHead = null;
+                            currentBranch = null;
+                        }
+                        try {
+                            currentPath = Path.of(line.substring("worktree ".length())).toRealPath();
+                        } catch (IOException e) {
+                            throw new GitRepoException("Failed to resolve worktree path: " + line.substring("worktree ".length()), e);
+                        }
+                    } else if (line.startsWith("HEAD ")) {
+                        currentHead = line.substring("HEAD ".length());
+                    } else if (line.startsWith("branch ")) {
+                        var branchRef = line.substring("branch ".length());
+                        if (branchRef.startsWith("refs/heads/")) {
+                            currentBranch = branchRef.substring("refs/heads/".length());
+                        } else {
+                            currentBranch = branchRef; // Should not happen with porcelain but good to be defensive
+                        }
+                    } else if (line.equals("detached")) {
+                        currentBranch = ""; // Detached HEAD, no branch name
                     }
-                    try {
-                        currentPath = Path.of(line.substring("worktree ".length())).toRealPath();
-                    } catch (IOException e) {
-                        throw new GitRepoException("Failed to resolve worktree path: " + line.substring("worktree ".length()), e);
-                    }
-                } else if (line.startsWith("HEAD ")) {
-                    currentHead = line.substring("HEAD ".length());
-                } else if (line.startsWith("branch ")) {
-                    var branchRef = line.substring("branch ".length());
-                    if (branchRef.startsWith("refs/heads/")) {
-                        currentBranch = branchRef.substring("refs/heads/".length());
-                    } else {
-                        currentBranch = branchRef; // Should not happen with porcelain but good to be defensive
-                    }
-                } else if (line.equals("detached")) {
-                    currentBranch = null; // Or a special string like "(detached HEAD)" if preferred
                 }
+                // Add the last parsed worktree
+                if (currentPath != null) {
+                    worktrees.add(new WorktreeInfo(currentPath,
+                                                   currentBranch != null ? currentBranch : "",
+                                                   currentHead != null ? currentHead : ""));
+                }
+                return worktrees;
+            } catch (Environment.SubprocessException e) {
+                throw new GitRepoException("Failed to list worktrees: " + e.getOutput(), e);
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+                throw new GitRepoException("Listing worktrees was interrupted", e);
             }
-            // Add the last parsed worktree
-            if (currentPath != null) {
-                worktrees.add(new WorktreeInfo(currentPath,
-                                               currentBranch != null ? currentBranch : "",
-                                               currentHead != null ? currentHead : ""));
-            }
-            return worktrees;
-        } catch (Environment.SubprocessException e) {
-            throw new GitRepoException("Failed to list worktrees: " + e.getOutput(), e);
-        } catch (InterruptedException e) {
-            Thread.currentThread().interrupt();
-            throw new GitRepoException("Listing worktrees was interrupted", e);
-        }
     }
 
     /**

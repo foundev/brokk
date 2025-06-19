@@ -39,9 +39,9 @@ public class EditBlockParser extends AbstractBlockParser {
     private final BasedSequence openingMarker;
     private final BasedSequence searchKeyword;
 
-    private BasedSequence divider = BasedSequence.NULL;
-    private BasedSequence replaceKeyword = BasedSequence.NULL;
-    private BasedSequence closingMarker = BasedSequence.NULL;
+    private @Nullable BasedSequence divider;
+    private @Nullable BasedSequence replaceKeyword;
+    private @Nullable BasedSequence closingMarker;
 
     // Parser state
     private Phase phase = Phase.SEARCH;
@@ -49,7 +49,7 @@ public class EditBlockParser extends AbstractBlockParser {
     private StringBuilder replaceContent = new StringBuilder();
     private boolean parsingFenced = false;
     private boolean sawHeadLine = false;
-    private @Nullable String currentFilename = null;
+    private @Nullable String currentFilename;
 
     EditBlockParser(BasedSequence openingMarker, BasedSequence searchKeyword, BasedSequence initialLine, boolean isFenced, @Nullable String filename) {
         this.openingMarker = openingMarker;
@@ -145,8 +145,8 @@ public class EditBlockParser extends AbstractBlockParser {
                     this.closingMarker = line;
                     replaceKeyword = BasedSequence.of("REPLACE");
 
-                    var beforeText = stripQuotedWrapping(searchContent.toString(), Objects.toString(currentFilename, ""));
-                    var afterText = stripQuotedWrapping(replaceContent.toString(), Objects.toString(currentFilename, ""));
+                    var beforeText = stripQuotedWrapping(searchContent.toString(), currentFilename);
+                    var afterText = stripQuotedWrapping(replaceContent.toString(), currentFilename);
 
                     block.setSegments(openingMarker, searchKeyword,
                                       BasedSequence.of(beforeText),
@@ -186,8 +186,8 @@ public class EditBlockParser extends AbstractBlockParser {
     public void closeBlock(ParserState state) {
         // If we haven't already set segments, do it now
         if (block.getOpeningMarker() == null) {
-            var beforeText = stripQuotedWrapping(searchContent.toString(), Objects.toString(currentFilename, ""));
-            var afterText = stripQuotedWrapping(replaceContent.toString(), Objects.toString(currentFilename, ""));
+            var beforeText = stripQuotedWrapping(searchContent.toString(), currentFilename);
+            var afterText = stripQuotedWrapping(replaceContent.toString(), currentFilename);
 
             block.setSegments(openingMarker, searchKeyword,
                               BasedSequence.of(beforeText),
@@ -341,12 +341,12 @@ public class EditBlockParser extends AbstractBlockParser {
 
         @Override
         public Set<Class<?>> getAfterDependents() {
-            return Collections.emptySet();
+            return null;
         }
 
         @Override
         public Set<Class<?>> getBeforeDependents() {
-            return Collections.emptySet();
+            return null;
         }
     }
 }

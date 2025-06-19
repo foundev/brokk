@@ -119,11 +119,11 @@ public class EditBlockConflictsParser extends EditBlockParser {
     private static final Pattern REPLACE = Pattern.compile("^\\s*>{5,9} REPLACE\\s*(\\S+?)\\s*$", Pattern.MULTILINE);
 
     public EditBlock.ExtendedParseResult parse(String content) {
-        return parse(content, java.util.Collections.emptySet());
+        return parse(content, null);
     }
 
     @Override
-    public EditBlock.ExtendedParseResult parse(String content, Set<ProjectFile> unused) {
+    public EditBlock.ExtendedParseResult parse(String content, @Nullable Set<ProjectFile> unused) {
         var outputBlocks = new ArrayList<EditBlock.OutputBlock>();
         var parseErrors = new StringBuilder();
         var leftoverText = new StringBuilder();
@@ -286,8 +286,8 @@ public class EditBlockConflictsParser extends EditBlockParser {
         // After processing all lines, flush leftover text
         flushLeftoverText(leftoverText, outputBlocks);
 
-        String errorText = parseErrors.toString();
-        return new EditBlock.ExtendedParseResult(outputBlocks, errorText.isEmpty() ? "" : errorText);
+        String errorText = parseErrors.isEmpty() ? null : parseErrors.toString();
+        return new EditBlock.ExtendedParseResult(outputBlocks, errorText);
     }
 
     /**

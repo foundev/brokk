@@ -19,10 +19,11 @@ public final class ScrollingUtils {
 
     /**
      * Finds the parent JScrollPane of a component.
+     * @return the parent JScrollPane, or null if not found
      */
     @Nullable
     public static JScrollPane findParentScrollPane(Component component) {
-        Container parent = component.getParent();
+        var parent = component.getParent();
         while (parent != null) {
             if (parent instanceof JScrollPane) {
                 return (JScrollPane) parent;
@@ -37,8 +38,9 @@ public final class ScrollingUtils {
 
     /**
      * Finds the parent JViewport of a component.
+     * @return the parent JViewport, or null if not found
      */
-    @Nullable
+    @Nullable 
     public static JViewport findParentViewport(Component component) {
         JScrollPane scrollPane = findParentScrollPane(component);
         return scrollPane != null ? scrollPane.getViewport() : null;
@@ -48,11 +50,6 @@ public final class ScrollingUtils {
      * Scrolls a component into view with a specified position ratio.
      */
     public static void scrollToComponent(JComponent component, double positionRatio) {
-        if (component == null) {
-            logger.trace("scrollToComponent called with null component.");
-            return;
-        }
-
         SwingUtilities.invokeLater(() -> {
             JScrollPane scrollPane = findParentScrollPane(component);
 
@@ -66,7 +63,7 @@ public final class ScrollingUtils {
                     if (positionRatio == 0.0) {
                         desiredY = Math.max(0, bounds.y);
                     } else {
-                        desiredY = Math.max(0, bounds.y - (int)(viewRect.height * positionRatio));
+                        desiredY = Math.max(0, bounds.y - (int) (viewRect.height * positionRatio));
                     }
                     viewport.setViewPosition(new Point(viewRect.x, desiredY));
                 } else {

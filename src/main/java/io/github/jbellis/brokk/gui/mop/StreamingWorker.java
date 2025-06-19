@@ -25,6 +25,8 @@ import java.util.concurrent.atomic.*;
  * 2. UI updates always on EDT via SwingUtilities.invokeLater
  * 3. Epoch tracking to prevent stale results from being applied
  * 4. Memory-bounded operation by clearing chunks after snapshot
+ * 5. Atomic variables ensure safe cross-thread access
+ * 6. Single-threaded executor guarantees sequential processing
  */
 final class StreamingWorker {
     private static final Logger logger = LogManager.getLogger(StreamingWorker.class);
@@ -42,8 +44,9 @@ final class StreamingWorker {
     private final AtomicBoolean updatePending = new AtomicBoolean(false);
     private final AtomicInteger epochGen = new AtomicInteger();
     private final AtomicInteger lastApplied = new AtomicInteger();
+    @Nullable
     private final AtomicReference<CompletableFuture<Void>> inFlight = 
-            new AtomicReference<>(CompletableFuture.completedFuture(null));
+            new AtomicReference<>();
 
     private final IncrementalBlockRenderer renderer;
 
@@ -71,19 +74,18 @@ final class StreamingWorker {
     void flush() {
         assert !SwingUtilities.isEventDispatchThread() : "StreamingWorker.flush() must not be called on EDT";
         // Make sure anything still in chunks becomes a task
-        appendChunk("");
-        var future = inFlight.get();
-        if (future == null) {
-            return;
-        }
+        var future = flushAsync();
         
         // Safe to block on a background thread
         try {
-            future.join();
+            if (future != null) {
+                future.join();
+            }
         } catch (CompletionException e) {
-            if (e.getCause() instanceof InterruptedException) {
+            Throwable cause = e.getCause();
+            if (cause instanceof InterruptedException) {
                 Thread.currentThread().interrupt();
-                logger.trace("Flush interrupted while waiting for rendering", e.getCause());
+                logger.trace("Flush interrupted while waiting for rendering", cause);
             } else {
                 logger.trace("Error waiting for rendering to complete during flush", e);
             }
@@ -95,12 +97,10 @@ final class StreamingWorker {
     /**
      * Returns a future that completes when the current batch of rendering is finished on the EDT.
      * This method does not block.
-     *
-     * @return a CompletableFuture that will be completed on the EDT.
+     * @return the active parse future if one exists and is incomplete, otherwise null
      */
-    @Nullable
     CompletableFuture<Void> flushAsync() {
-        appendChunk(""); // Ensure any pending data is scheduled for processing
+        appendChunk(""); // Ensure pending content gets parsed
         return inFlight.get();
     }
 
@@ -116,7 +116,7 @@ final class StreamingWorker {
             // if no parse is running and no content added, nothing to do.
             // This prevents scheduling empty parses if appendChunk("") is called multiple times by flush when idle.
             var currentInFlight = inFlight.get();
-            if (currentInFlight != null && !currentInFlight.isDone()) { // If there's an active future (e.g. from a previous flush), let it complete.
+            if (currentInFlight != null && !currentInFlight.isDone()) { // If there's an active future (e.g. from a previous flush), let it complete
                 return;
             }
         }
@@ -153,11 +153,16 @@ final class StreamingWorker {
         }
     }
 
+    /**
+     * Parses markdown and renders components in background thread,
+     * then schedules UI update on EDT with epoch validation.
+     */
     private void parseAndRender(CharSequence markdownContent, int myEpoch, CompletableFuture<Void> done) {
         try {
-            // Heavy work off EDT: parse markdown to HTML and build component data
-            // The markdownContent is a CharSequence (our StringBuilder instance)
+            // Heavy work off EDT: parse markdown to HTML
             String html = renderer.createHtml(markdownContent);
+            
+            // Build component data from HTML
             List<ComponentData> components = renderer.buildComponentData(html);
             
             // Queue UI update on EDT with epoch check
@@ -202,14 +207,17 @@ final class StreamingWorker {
         }
     }
 
+    /**
+     * Shuts down the worker, cancelling any pending operations and releasing resources.
+     * Safe to call multiple times.
+     */
     void shutdown() {
-        // Complete any waiting futures before shutting down
-        var currentInFlight = inFlight.get();
-        if (currentInFlight != null) {
-            currentInFlight.completeExceptionally(new CancellationException("Worker shutdown"));
+        var future = inFlight.get();
+        if (future != null) {
+            future.completeExceptionally(new CancellationException("Worker shutdown"));
         }
         exec.shutdownNow();
-        fullText.setLength(0);
-        fullText.trimToSize(); // Release memory held by the StringBuilder
+        fullText.setLength(0); // Clear accumulated content
+        fullText.trimToSize(); // Release buffer memory
     }
 }

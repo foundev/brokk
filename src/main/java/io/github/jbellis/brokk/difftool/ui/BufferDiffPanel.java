@@ -23,7 +23,6 @@ import io.github.jbellis.brokk.gui.ThemeAware;
 import io.github.jbellis.brokk.gui.util.KeyboardShortcutUtil;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
-import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
 
@@ -61,7 +60,7 @@ public class BufferDiffPanel extends AbstractContentPanel implements ThemeAware
         }
     }
 
-    private final BrokkDiffPanel mainPanel;
+    private final  BrokkDiffPanel mainPanel;
     private GuiTheme guiTheme;
 
     // Instead of JMRevision:
@@ -71,10 +70,8 @@ public class BufferDiffPanel extends AbstractContentPanel implements ThemeAware
     private AbstractDelta<String> selectedDelta;
 
     private int selectedLine;
-    @Nullable
-    private GenericSearchBar leftSearchBar;
-    @Nullable
-    private GenericSearchBar rightSearchBar;
+    private @Nullable GenericSearchBar leftSearchBar;
+    private @Nullable GenericSearchBar rightSearchBar;
 
     // The left & right "file panels" using type-safe enum map
     private final EnumMap<PanelSide, FilePanel> filePanels = new EnumMap<>(PanelSide.class);
@@ -85,14 +82,12 @@ public class BufferDiffPanel extends AbstractContentPanel implements ThemeAware
     private ScrollSynchronizer scrollSynchronizer;
     private JSplitPane splitPane;
 
-    public BufferDiffPanel(BrokkDiffPanel mainPanel, GuiTheme theme)
+    public BufferDiffPanel( BrokkDiffPanel mainPanel,  GuiTheme theme)
     {
         this.mainPanel = mainPanel;
         this.guiTheme = theme;
-
         // Let the mainPanel keep a reference to us for toolbar/undo/redo interplay
         mainPanel.setBufferDiffPanel(this);
-
         init();
         setFocusable(true);
     }
@@ -243,11 +238,11 @@ public class BufferDiffPanel extends AbstractContentPanel implements ThemeAware
         var barContainer = new JPanel(layout);
 
         // Create GenericSearchBar instances using the FilePanel's SearchableComponent adapters
-        var leftFilePanel = getFilePanel(PanelSide.LEFT);
-        var rightFilePanel = getFilePanel(PanelSide.RIGHT);
-        if (leftFilePanel != null && rightFilePanel != null) {
-            leftSearchBar = new GenericSearchBar(leftFilePanel.createSearchableComponent());
-            rightSearchBar = new GenericSearchBar(rightFilePanel.createSearchableComponent());
+        var leftPanel = getFilePanel(PanelSide.LEFT);
+        var rightPanel = getFilePanel(PanelSide.RIGHT);
+        if (leftPanel != null && rightPanel != null) {
+            leftSearchBar = new GenericSearchBar(leftPanel.createSearchableComponent());
+            rightSearchBar = new GenericSearchBar(rightPanel.createSearchableComponent());
         }
 
         // Add search bars aligned with the text areas below
@@ -360,7 +355,7 @@ public class BufferDiffPanel extends AbstractContentPanel implements ThemeAware
      * @return the FilePanel for the specified side
      * @throws IllegalStateException if the panel is not initialized
      */
-    @NotNull
+    
     public FilePanel requireFilePanel(PanelSide side)
     {
         var panel = filePanels.get(side);
@@ -516,9 +511,8 @@ public class BufferDiffPanel extends AbstractContentPanel implements ThemeAware
             }
 
             // Remove this delta so we can't click it again
-            if (patch != null) {
-                patch.getDeltas().remove(delta);
-            }
+            assert patch != null; // Should not be null here if we selected a delta
+            patch.getDeltas().remove(delta);
 
             setSelectedDelta(null);
             setSelectedLine(sourceChunk.getPosition());
@@ -560,9 +554,8 @@ public class BufferDiffPanel extends AbstractContentPanel implements ThemeAware
         toEditor.replaceSelection("");
 
         // Remove the just-used delta
-        if (patch != null) {
-            patch.getDeltas().remove(delta);
-        }
+        assert patch != null; // Should not be null here if we selected a delta
+        patch.getDeltas().remove(delta);
 
         setSelectedDelta(null);
         setSelectedLine(chunk.getPosition());
@@ -590,16 +583,7 @@ public class BufferDiffPanel extends AbstractContentPanel implements ThemeAware
                                                   "Problem writing file", JOptionPane.ERROR_MESSAGE);
                 }
             } else {
-                // Log or handle the case where a file panel has a null document but is marked as changed.
-                // This shouldn't ideally happen.
-                String panelName = "UnknownPanelSide";
-                for (var entry : filePanels.entrySet()) {
-                    if (entry.getValue() == fp) {
-                        panelName = entry.getKey().getDocumentType();
-                        break;
-                    }
-                }
-                logger.warn("FilePanel {} marked as changed but has a null document. Skipping save.", panelName);
+                throw new IllegalStateException("FilePanel has null document but is marked changed");
             }
         }
     }
@@ -713,36 +697,25 @@ public class BufferDiffPanel extends AbstractContentPanel implements ThemeAware
         // Cmd+F / Ctrl+F focuses the search field using utility method
         KeyboardShortcutUtil.registerSearchFocusShortcut(this, this::focusActiveSearchField);
 
-        // Register Esc key for both search bars to clear highlights
-        // Note: We only register Esc, not Cmd+F, to avoid conflicts with our custom handler
-        if (leftSearchBar != null) {
-            KeyboardShortcutUtil.registerSearchEscapeShortcut(leftSearchBar.getSearchField(), () -> {
-                if (leftSearchBar != null) { // Double check for safety within lambda
-                    leftSearchBar.clearHighlights();
-                }
-                var leftPanel = getFilePanel(PanelSide.LEFT);
-                if (leftPanel != null) {
-                    leftPanel.getEditor().requestFocusInWindow();
-                }
-            });
-        }
-        if (rightSearchBar != null) {
-            KeyboardShortcutUtil.registerSearchEscapeShortcut(rightSearchBar.getSearchField(), () -> {
-                if (rightSearchBar != null) { // Double check for safety within lambda
-                    rightSearchBar.clearHighlights();
-                }
-                var rightPanel = getFilePanel(PanelSide.RIGHT);
-                if (rightPanel != null) {
-                    rightPanel.getEditor().requestFocusInWindow();
-                }
-            });
-        }
+        registerSearchBarShortcut(leftSearchBar, PanelSide.LEFT);
+        registerSearchBarShortcut(rightSearchBar, PanelSide.RIGHT);
     }
 
     /**
      * Focuses the search field corresponding to the currently active file panel.
      * Uses real-time focus detection to determine which search bar to focus.
      */
+    private void registerSearchBarShortcut(@Nullable GenericSearchBar searchBar, PanelSide side) {
+        if (searchBar != null) {
+            KeyboardShortcutUtil.registerSearchEscapeShortcut(
+                searchBar.getSearchField(),
+                () -> {
+                    searchBar.clearHighlights();
+                    requireFilePanel(side).getEditor().requestFocusInWindow();
+                });
+        }
+    }
+
     private void focusActiveSearchField() {
         // Real-time focus detection: check which editor currently has focus
         var focusOwner = KeyboardFocusManager.getCurrentKeyboardFocusManager().getFocusOwner();

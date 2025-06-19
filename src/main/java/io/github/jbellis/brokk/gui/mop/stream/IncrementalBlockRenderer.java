@@ -31,7 +31,6 @@ import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 
 import static java.util.regex.Pattern.*;
-import static org.checkerframework.checker.nullness.util.NullnessUtil.castNonNull;
 
 /**
  * Renders markdown content incrementally, reusing existing components when possible to minimize flickering

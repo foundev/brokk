@@ -190,7 +190,7 @@ public class WorkspacePanel extends JPanel {
             actions.add(WorkspaceAction.COPY.createFragmentsAction(panel, List.of(fragment)));
 
             var dropAction = WorkspaceAction.DROP.createFragmentsAction(panel, List.of(fragment));
-            if (!panel.workspaceCurrentlyEditable || 
+            if (!panel.workspaceCurrentlyEditable ||
                 !java.util.Objects.equals(panel.contextManager.selectedContext(), panel.contextManager.topContext())) {
                 dropAction.setEnabled(false);
                 dropAction.putValue(Action.SHORT_DESCRIPTION, READ_ONLY_TIP);
@@ -225,7 +225,7 @@ public class WorkspacePanel extends JPanel {
             actions.add(WorkspaceAction.COPY.createFragmentsAction(panel, fragments));
 
             var dropAction = WorkspaceAction.DROP.createFragmentsAction(panel, fragments);
-            if (!panel.workspaceCurrentlyEditable || 
+            if (!panel.workspaceCurrentlyEditable ||
                 !java.util.Objects.equals(panel.contextManager.selectedContext(), panel.contextManager.topContext())) {
                 dropAction.setEnabled(false);
                 dropAction.putValue(Action.SHORT_DESCRIPTION, READ_ONLY_TIP);
@@ -330,22 +330,6 @@ public class WorkspacePanel extends JPanel {
                         panel.performContextActionAsync(contextAction, List.of(fragment));
                     } else {
                         panel.chrome.toolError("Cannot " + label.toLowerCase(Locale.ROOT) + ": " + fileRef.getFullPath() + " - no ProjectFile available");
-                    }
-                    
-                    // Apply edit restrictions
-                    if (WorkspaceAction.this == EDIT_FILE) {
-                        var project = panel.contextManager.getProject();
-                        var repoFile = fileRef.getRepoFile();
-                        if (!panel.hasGit()) {
-                            setEnabled(false);
-                            putValue(Action.SHORT_DESCRIPTION, "Editing not available without Git");
-                        } else if (repoFile == null) {
-                            setEnabled(false);
-                            putValue(Action.SHORT_DESCRIPTION, "Editing not available for external files");
-                        } else if (!project.getRepo().getTrackedFiles().contains(repoFile)) {
-                            setEnabled(false);
-                            putValue(Action.SHORT_DESCRIPTION, "Cannot edit untracked file: " + fileRef.getFullPath());
-                        }
                     }
                 }
             };
@@ -787,21 +771,25 @@ public class WorkspacePanel extends JPanel {
                                 || !Arrays.stream(contextTable.getSelectedRows()).anyMatch(r -> r == row)) {
                     contextTable.setRowSelectionInterval(row, row);
                 }
-                JMenuItem copyItem = new JMenuItem("Copy to Active Workspace");
-                copyItem.addActionListener(ev -> {
-                    var fragsToCopy = getSelectedFragments();
-                    // currentContext is @Nullable, but addFilteredToContextAsync expects @NonNull Context.
-                    // We should ensure currentContext is non-null before calling or that addFilteredToContextAsync can handle null.
-                    // Given the logic in populateContextTable, currentContext should reflect contextManager.selectedContext().
-                    // Let's use contextManager.selectedContext() which is also @Nullable.
-                    Context sourceCtx = contextManager.selectedContext();
-                    if (sourceCtx != null) {
-                        contextManager.addFilteredToContextAsync(sourceCtx, fragsToCopy);
-                    } else {
-                        chrome.toolError("Cannot copy to active workspace: current context to copy from is null.", "Context Error");
-                    }
-                });
-                contextMenu.removeAll();
+                if (contextTable.getSelectedRowCount() == 0
+                                || !Arrays.stream(contextTable.getSelectedRows()).anyMatch(r -> r == row)) {
+                            contextTable.setRowSelectionInterval(row, row);
+                        }
+                        JMenuItem copyItem = new JMenuItem("Copy to Active Workspace");
+                        copyItem.addActionListener(ev -> {
+                            var fragsToCopy = getSelectedFragments();
+                            // currentContext is @Nullable, but addFilteredToContextAsync expects @NonNull Context.
+                            // We should ensure currentContext is non-null before calling or that addFilteredToContextAsync can handle null.
+                            // Given the logic in populateContextTable, currentContext should reflect contextManager.selectedContext().
+                            // Let's use contextManager.selectedContext() which is also @Nullable.
+                            Context sourceCtx = contextManager.selectedContext();
+                            if (sourceCtx != null) {
+                                contextManager.addFilteredToContextAsync(sourceCtx, fragsToCopy);
+                            } else {
+                                chrome.toolError("Cannot copy to active workspace: current context to copy from is null.", "Context Error");
+                            }
+                        });
+                        contextMenu.removeAll();
                         contextMenu.add(copyItem);
                         if (chrome.themeManager != null) {
                             chrome.themeManager.registerPopupMenu(contextMenu);
@@ -1366,13 +1354,7 @@ public class WorkspacePanel extends JPanel {
                 if (dialog == null || !dialog.isConfirmed()) { // Check confirmed state
                     chrome.systemOutput("No method selected.");
                 } else {
-                    var selectedMethod = dialog.getSelectedMethod();
-                    var callGraph = dialog.getCallGraph();
-                    if (selectedMethod != null && callGraph != null) {
-                        contextManager.addCallersForMethod(selectedMethod, dialog.getDepth(), callGraph);
-                    } else {
-                        chrome.systemOutput("Method selection incomplete or cancelled.");
-                    }
+                    contextManager.addCallersForMethod(dialog.getSelectedMethod(), dialog.getDepth(), dialog.getCallGraph());
                 }
             } catch (CancellationException cex) {
                 chrome.systemOutput("Method selection canceled.");
@@ -1401,13 +1383,7 @@ public class WorkspacePanel extends JPanel {
                 if (dialog == null || !dialog.isConfirmed()) {
                     chrome.systemOutput("No method selected.");
                 } else {
-                    var selectedMethod = dialog.getSelectedMethod();
-                    var callGraph = dialog.getCallGraph();
-                    if (selectedMethod != null && callGraph != null) {
-                        contextManager.calleesForMethod(selectedMethod, dialog.getDepth(), callGraph);
-                    } else {
-                        chrome.systemOutput("Method selection incomplete or cancelled.");
-                    }
+                    contextManager.calleesForMethod(dialog.getSelectedMethod(), dialog.getDepth(), dialog.getCallGraph());
                 }
             } catch (CancellationException cex) {
                 chrome.systemOutput("Method selection canceled.");
@@ -1419,7 +1395,7 @@ public class WorkspacePanel extends JPanel {
     /**
      * Show the symbol selection dialog with a type filter
      */
-    private @Nullable String showSymbolSelectionDialog(String title, Set<CodeUnitType> typeFilter) {
+    private String showSymbolSelectionDialog(String title, Set<CodeUnitType> typeFilter) {
         var analyzer = contextManager.getAnalyzerUninterrupted();
         var dialogRef = new AtomicReference<SymbolSelectionDialog>();
         SwingUtil.runOnEdt(() -> {
@@ -1446,7 +1422,7 @@ public class WorkspacePanel extends JPanel {
     /**
      * Show the call graph dialog for configuring method and depth
      */
-    private @Nullable CallGraphDialog showCallGraphDialog(String title, boolean isCallerGraph) {
+    private CallGraphDialog showCallGraphDialog(String title, boolean isCallerGraph) {
         var analyzer = contextManager.getAnalyzerUninterrupted();
         var dialogRef = new AtomicReference<CallGraphDialog>();
         SwingUtil.runOnEdt(() -> {
@@ -1825,7 +1801,7 @@ public class WorkspacePanel extends JPanel {
      * @param modes              Set of selection modes (FILES, CLASSES) to enable.
      * @return The Selection record containing lists of files and/or classes, or null if cancelled.
      */
-    private @Nullable MultiFileSelectionDialog.Selection showMultiSourceSelectionDialog(String title, boolean allowExternalFiles, Future<Set<ProjectFile>> projectCompletionsFuture, Set<SelectionMode> modes) {
+    private MultiFileSelectionDialog.Selection showMultiSourceSelectionDialog(String title, boolean allowExternalFiles, Future<Set<ProjectFile>> projectCompletionsFuture, Set<SelectionMode> modes) {
         var dialogRef = new AtomicReference<MultiFileSelectionDialog>();
         SwingUtil.runOnEdt(() -> {
             var dialog = new MultiFileSelectionDialog(chrome.getFrame(), contextManager, title, allowExternalFiles, projectCompletionsFuture, modes);

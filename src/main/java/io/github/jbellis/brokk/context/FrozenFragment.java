@@ -94,37 +94,35 @@ public final class FrozenFragment extends ContextFragment.VirtualFragment {
 
     @Override
     public String shortDescription() {
-        return Objects.toString(shortDescriptionContent, "");
+        return Objects.requireNonNullElse(shortDescriptionContent, "");
     }
 
     @Override
     public String description() {
-        return Objects.toString(descriptionContent, "");
+        return Objects.requireNonNullElse(descriptionContent, "");
     }
 
     @Override
-    public String text() { // Must be @NonNull
+    @Nullable
+    public String text() {
         if (isTextFragment) {
-            return Objects.toString(textContent, ""); // Default to empty string if null
+            return textContent;
         } else {
             return "[Image content]";
         }
     }
 
     @Override
-    public Image image() { // Must be @NonNull if !isTextFragment
+    @Nullable
+    public Image image() {
         if (isTextFragment) {
             throw new UnsupportedOperationException("This fragment does not contain image content");
         }
-        // imageBytesContent being null means this FrozenFragment might represent an image that couldn't be loaded/persisted.
-        // Returning a placeholder is a valid way to fulfill the @NonNull contract if an actual image isn't available.
         if (imageBytesContent == null) {
-            return new BufferedImage(1, 1, BufferedImage.TYPE_INT_ARGB); // Placeholder
+            return null;
         }
         try {
-            Image img = bytesToImage(imageBytesContent);
-            // If bytesToImage returns null (e.g., ImageIO.read failed), return placeholder.
-            return Objects.requireNonNullElseGet(img, () -> new BufferedImage(1, 1, BufferedImage.TYPE_INT_ARGB));
+            return bytesToImage(imageBytesContent);
         } catch (IOException e) {
             throw new UncheckedIOException(e);
         }
@@ -153,8 +151,8 @@ public final class FrozenFragment extends ContextFragment.VirtualFragment {
     }
 
     @Override
-    public String syntaxStyle() { // Must be @NonNull
-        return Objects.toString(syntaxStyle, SyntaxConstants.SYNTAX_STYLE_NONE);
+    public String syntaxStyle() {
+        return Objects.requireNonNullElse(syntaxStyle, SyntaxConstants.SYNTAX_STYLE_NONE);
     }
 
     /**
@@ -448,7 +446,12 @@ public final class FrozenFragment extends ContextFragment.VirtualFragment {
      * @return PNG bytes, or null if image is null
      * @throws IOException If conversion fails
      */
-    public static byte[] imageToBytes(Image image) throws IOException {
+    @Nullable
+    public static byte[] imageToBytes(@Nullable Image image) throws IOException {
+        if (image == null) {
+            return null;
+        }
+        
         BufferedImage bufferedImage;
         if (image instanceof BufferedImage bi) {
             bufferedImage = bi;
@@ -476,7 +479,11 @@ public final class FrozenFragment extends ContextFragment.VirtualFragment {
      * @return The converted image, or null if bytes is null
      * @throws IOException If conversion fails
      */
-    public static Image bytesToImage(byte[] bytes) throws IOException {
+    @Nullable
+    public static Image bytesToImage(@Nullable byte[] bytes) throws IOException {
+        if (bytes == null) {
+            return null;
+        }
         try (var bais = new ByteArrayInputStream(bytes)) {
             return ImageIO.read(bais);
         }

@@ -1289,8 +1289,11 @@ public class GitPullRequestsTab extends JPanel implements SettingsChangeListener
         logger.info("Starting checkout of PR #{} as a new local branch", prNumber);
         contextManager.submitUserTask("Checking out PR #" + prNumber, () -> {
             try {
-                var remoteUrl = getRepo().getRemoteUrl(); // Can be null
-                GitUiUtil.OwnerRepo ownerRepo = GitUiUtil.parseOwnerRepoFromUrl(Objects.requireNonNullElse(remoteUrl, ""));
+                var remoteUrl = getRepo().getRemoteUrl();
+                if (remoteUrl == null) {
+                    throw new IOException("Repository has no remote URL configured");
+                }
+                GitUiUtil.OwnerRepo ownerRepo = GitUiUtil.parseOwnerRepoFromUrl(remoteUrl);
                 if (ownerRepo == null) {
                     throw new IOException("Could not parse 'owner/repo' from remote: " + remoteUrl);
                 }

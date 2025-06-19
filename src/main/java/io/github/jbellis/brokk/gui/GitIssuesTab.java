@@ -58,8 +58,7 @@ public class GitIssuesTab extends JPanel implements SettingsChangeListener {
     private JButton captureButton;
 
     private FilterBox statusFilter;
-    @Nullable
-    private FilterBox resolutionFilter; // Initialized conditionally
+    private FilterBox resolutionFilter;
     private FilterBox authorFilter;
     private FilterBox labelFilter;
     private FilterBox assigneeFilter;
@@ -770,7 +769,7 @@ public class GitIssuesTab extends JPanel implements SettingsChangeListener {
     }
 
     private List<String> generateFilterOptionsFromIssues(List<IssueHeader> issueHeaders, String filterType) {
-        if (issueHeaders == null || issueHeaders.isEmpty()) { // Added null check
+        if (issueHeaders.isEmpty()) {
             return List.of();
         }
 
@@ -786,22 +785,18 @@ public class GitIssuesTab extends JPanel implements SettingsChangeListener {
             }
             case "label" -> {
                 for (var header : issueHeaders) {
-                    if (header.labels() != null) { // Added null check
-                        for (String label : header.labels()) {
-                            if (!label.isBlank()) {
-                                counts.merge(label, 1, Integer::sum);
-                            }
+                    for (String label : header.labels()) {
+                        if (!label.isBlank()) {
+                            counts.merge(label, 1, Integer::sum);
                         }
                     }
                 }
             }
             case "assignee" -> {
                 for (var header : issueHeaders) {
-                    if (header.assignees() != null) { // Added null check
-                        for (String assignee : header.assignees()) {
-                            if (assignee != null && !assignee.isBlank() && !"N/A".equalsIgnoreCase(assignee)) {
-                                counts.merge(assignee, 1, Integer::sum);
-                            }
+                    for (String assignee : header.assignees()) {
+                        if (!assignee.isBlank() && !"N/A".equalsIgnoreCase(assignee)) {
+                            counts.merge(assignee, 1, Integer::sum);
                         }
                     }
                 }
@@ -821,8 +816,7 @@ public class GitIssuesTab extends JPanel implements SettingsChangeListener {
         return options;
     }
 
-    @Nullable
-    private String getBaseFilterValue(@Nullable String displayOptionWithCount) {
+    private String getBaseFilterValue(String displayOptionWithCount) {
         if (displayOptionWithCount == null) {
             return null; // This is the "All" case (FilterBox name shown)
         }

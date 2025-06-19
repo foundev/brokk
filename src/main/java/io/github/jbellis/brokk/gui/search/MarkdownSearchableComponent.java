@@ -21,13 +21,13 @@ import java.util.concurrent.atomic.AtomicInteger;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import org.jetbrains.annotations.Nullable;
-import org.jetbrains.annotations.Nullable;
 
 /**
  * SearchableComponent adapter for MarkdownOutputPanel(s).
  * This bridges the SearchableComponent interface with MarkdownPanelSearchCallback functionality,
  * supporting search in both Markdown text and code blocks (RSyntaxTextArea).
  */
+
 public class MarkdownSearchableComponent extends BaseSearchableComponent {
     private static final Logger logger = LogManager.getLogger(MarkdownSearchableComponent.class);
 
@@ -44,9 +44,8 @@ public class MarkdownSearchableComponent extends BaseSearchableComponent {
     private final List<SearchMatch> allMatches = new ArrayList<>();
     private int currentMatchIndex = -1;
     @Nullable
-    private SearchMatch previousMatch = null;
+    private SearchMatch previousMatch;
     private final List<RTextAreaSearchableComponent> codeSearchComponents = new ArrayList<>();
-
 
     public MarkdownSearchableComponent(List<MarkdownOutputPanel> panels) {
         this.panels = panels;
@@ -62,10 +61,9 @@ public class MarkdownSearchableComponent extends BaseSearchableComponent {
 
     @Override
     public String getText() {
-        String result = panels.stream()
-                .map(p -> p.getText() != null ? p.getText() : "")
+        return panels.stream()
+                .map(MarkdownOutputPanel::getText)
                 .reduce("", (a, b) -> a.isEmpty() ? b : a + "\n\n" + b);
-        return result != null ? result : "";
     }
 
     @Override
@@ -74,7 +72,7 @@ public class MarkdownSearchableComponent extends BaseSearchableComponent {
                 .map(MarkdownOutputPanel::getSelectedText)
                 .filter(text -> text != null && !text.isEmpty())
                 .findFirst()
-                .orElse("");
+                .orElse(null);
     }
 
     @Override
@@ -459,7 +457,7 @@ public class MarkdownSearchableComponent extends BaseSearchableComponent {
             collectMarkdownMatches(label, renderer, panelIdx, rendererIdx, compVisOrder, subComponentCounter, tempMatches);
         } else if (comp instanceof RSyntaxTextArea textArea) {
             // Code matches
-            RTextAreaSearchableComponent rsc = codeSearchComponents.stream()
+            @Nullable RTextAreaSearchableComponent rsc = codeSearchComponents.stream()
                 .filter(cs -> cs.getComponent() == textArea)
                 .findFirst().orElse(null);
 
@@ -503,7 +501,7 @@ public class MarkdownSearchableComponent extends BaseSearchableComponent {
                     // Temporarily set a null callback to prevent RTextAreaSearchableComponent from calling back to GenericSearchBar
                     // as we will consolidate results in handleSearchComplete.
                     SearchableComponent.SearchCompleteCallback originalCallback = rsc.getSearchCompleteCallback();
-                    rsc.setSearchCompleteCallback(SearchableComponent.SearchCompleteCallback.NONE);
+                    rsc.setSearchCompleteCallback(null);
                     rsc.highlightAll(currentSearchTerm, currentCaseSensitive);
                     rsc.setSearchCompleteCallback(originalCallback); // Restore original if any
                 }

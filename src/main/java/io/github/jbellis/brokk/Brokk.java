@@ -35,7 +35,6 @@ import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.function.Consumer;
 import java.util.stream.Collectors;
 
-import static org.checkerframework.checker.nullness.util.NullnessUtil.castNonNull;
 
 
 public class Brokk {
@@ -46,15 +45,15 @@ public class Brokk {
     private static final ConcurrentHashMap<Path, Chrome> openProjectWindows = new ConcurrentHashMap<>();
     private static final ConcurrentHashMap<IProject, List<Chrome>> mainToWorktreeChromes = new ConcurrentHashMap<>();
     private static final Set<Path> reOpeningProjects = ConcurrentHashMap.newKeySet();
-    public static final CompletableFuture<AbstractModel> embeddingModelFuture;
+    public static final CompletableFuture<@Nullable AbstractModel> embeddingModelFuture;
 
     public static final String ICON_RESOURCE = "/brokk-icon.png";
 
     // Helper record for argument parsing result
-    private record ParsedArgs(boolean noProjectFlag, boolean noKeyFlag, @Nullable String projectPathArg) { }
+    private record ParsedArgs(boolean noProjectFlag, boolean noKeyFlag, @Nullable String projectPathArg) {}
 
     // Helper record for key validation result
-    private record KeyValidationResult(boolean isValid, @Nullable Path dialogProjectPath) { }
+    private record KeyValidationResult(boolean isValid, @Nullable Path dialogProjectPath) {}
 
     static {
         // Register Bouncy Castle provider for JGit SSH operations if not already present.
@@ -242,18 +241,18 @@ public class Brokk {
                     return false;
                 }));
 
-        List<Path> mainRepoPaths = castNonNull(partitionedProjects.get(false));
-        List<Path> worktreePaths = castNonNull(partitionedProjects.get(true));
+        List<Path> mainRepoPaths = partitionedProjects.get(false);
+        List<Path> worktreePaths = partitionedProjects.get(true);
 
         boolean successfulOpenOccurred = false;
 
-            for (Path mainPath : mainRepoPaths) {
-                try {
-                    if (new OpenProjectBuilder(mainPath).open().get()) {
-                        successfulOpenOccurred = true;
-                    }
-                } catch (Exception e) {
-                    logger.error("Failed to open main project {}: {}", mainPath, e.getMessage(), e);
+        for (Path mainPath : mainRepoPaths) {
+            try {
+                if (new OpenProjectBuilder(mainPath).open().get()) {
+                    successfulOpenOccurred = true;
+                }
+            } catch (Exception e) {
+                logger.error("Failed to open main project {}: {}", mainPath, e.getMessage(), e);
             }
         }
 
@@ -265,8 +264,8 @@ public class Brokk {
                     parentProject = (MainProject) findOpenProjectByPath(gitTopLevel);
                     if (parentProject == null) {
                         logger.warn("During startup, could not find an already open parent project for worktree {} (expected at {}). " +
-                                            "Worktree will attempt to find/open its parent or open standalone if necessary.",
-                                    worktreePath.getFileName(), gitTopLevel.getFileName());
+                                        "Worktree will attempt to find/open its parent or open standalone if necessary.",
+                                worktreePath.getFileName(), gitTopLevel.getFileName());
                     }
                 } catch (Exception e) {
                     logger.warn("Error determining parent for worktree {} during startup: {}. Proceeding without explicit parent.", worktreePath.getFileName(), e.getMessage());
@@ -306,7 +305,7 @@ public class Brokk {
         List<Path> projectsToAttemptOpen = determineInitialProjectsToOpen(parsedArgs, initialDialogPath);
         Path currentDialogContextPath = initialDialogPath; // Path to suggest to StartupDialog if needed
 
-        boolean successfulOpenOccurred;
+        boolean successfulOpenOccurred = false;
         while (true) {
             if (projectsToAttemptOpen.isEmpty()) {
                 SwingUtil.runOnEdt(Brokk::hideSplashScreen); // Hide splash before project selection dialog
@@ -450,8 +449,7 @@ public class Brokk {
      * @param projectPath The project path to search for
      * @return The Chrome window for the project, or null if not found
      */
-    @Nullable
-    public static Chrome findOpenProjectWindow(@Nullable Path projectPath) {
+    public static @Nullable Chrome findOpenProjectWindow(@Nullable Path projectPath) {
         if (projectPath == null) {
             return null;
         }
@@ -483,8 +481,7 @@ public class Brokk {
         return null;
     }
 
-    @Nullable
-    public static IProject findOpenProjectByPath(Path path) {
+    public static @Nullable IProject findOpenProjectByPath(Path path) {
         Path normalizedPath = path.toAbsolutePath().normalize();
         Chrome chrome = openProjectWindows.get(normalizedPath); // Check direct path first
         if (chrome != null && chrome.getContextManager() != null) {
@@ -510,12 +507,9 @@ public class Brokk {
      */
     public static class OpenProjectBuilder {
         private final Path path;
-        @Nullable
-        private MainProject parent;
-        @Nullable
-        private Consumer<Chrome> initialTask;
-        @Nullable
-        private Context sourceContextForSession;
+        private @Nullable MainProject parent;
+        private @Nullable Consumer<Chrome> initialTask;
+        private @Nullable Context sourceContextForSession;
 
         public OpenProjectBuilder(Path path) {
             this.path = path;
@@ -741,8 +735,7 @@ public class Brokk {
         }
     }
 
-    private static CompletableFuture<Optional<ContextManager>> initializeProjectAndContextManager(OpenProjectBuilder builder)
-    {
+    private static CompletableFuture<Optional<ContextManager>> initializeProjectAndContextManager(OpenProjectBuilder builder) {
         Path projectPath = builder.path;
         MainProject parent = builder.parent;
 
@@ -763,16 +756,15 @@ public class Brokk {
             }
 
             if (!project.hasGit()) {
-                int response = castNonNull(SwingUtil.runOnEdt(() -> {
-                    return JOptionPane.showConfirmDialog(null,
-                                                         """
-                                                         This project is not under Git version control. Would you like to initialize a new Git repository here?
-                                                         
-                                                         Without Git, the project will be read-only, and some features may be limited.""",
-                                                         "Initialize Git Repository?",
-                                                         JOptionPane.YES_NO_OPTION,
-                                                         JOptionPane.QUESTION_MESSAGE);
-                }, JOptionPane.NO_OPTION));
+                int response = SwingUtil.runOnEdt(() -> JOptionPane.showConfirmDialog(
+                        null,
+                        """
+                        This project is not under Git version control. Would you like to initialize a new Git repository here?
+
+                        Without Git, the project will be read-only, and some features may be limited.""",
+                        "Initialize Git Repository?",
+                        JOptionPane.YES_NO_OPTION,
+                        JOptionPane.QUESTION_MESSAGE), JOptionPane.NO_OPTION);
 
                 if (response == JOptionPane.YES_OPTION) {
                     try {
@@ -834,7 +826,7 @@ public class Brokk {
             // Mark as re-opening, the windowClosed listener will do the rest
             reOpeningProjects.add(projectPath);
             // Programatically close the window
-            var frame = existingWindow.getFrame();
+            var frame = openProjectWindows.get(projectPath).getFrame();
             frame.dispatchEvent(new WindowEvent(frame, WindowEvent.WINDOW_CLOSING));
         } else {
             // If not open, just open it directly.

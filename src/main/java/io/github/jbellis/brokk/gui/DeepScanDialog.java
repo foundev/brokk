@@ -74,16 +74,12 @@ class DeepScanDialog {
             var agent = new ValidationAgent(contextManager);
             var relevantTestResults = agent.execute(goal);
             var ctx = contextManager.topContext();
-            Set<BrokkFile> filesInWorkspace;
-            if (ctx != null) {
-                filesInWorkspace = Streams.concat(ctx.editableFiles(), ctx.readonlyFiles())
-                        .filter(ContextFragment.PathFragment.class::isInstance)
-                        .map(ContextFragment.PathFragment.class::cast)
-                        .map(ContextFragment.PathFragment::file)
-                        .collect(Collectors.toSet());
-            } else {
-                filesInWorkspace = Collections.emptySet();
-            }
+            assert ctx != null;
+            var filesInWorkspace = Streams.concat(ctx.editableFiles(), ctx.readonlyFiles())
+                    .filter(ContextFragment.PathFragment.class::isInstance)
+                    .map(ContextFragment.PathFragment.class::cast)
+                    .map(ContextFragment.PathFragment::file)
+                    .collect(Collectors.toSet());
             var validationOnlyFiles = relevantTestResults.stream()
                     .filter(f -> !filesInWorkspace.contains(f))
                     .distinct()
@@ -101,35 +97,23 @@ class DeepScanDialog {
                     contextResult = contextFuture.get();
                     validationFiles = validationFuture.get();
                 } catch (ExecutionException ee) {
-                    Throwable cause = ee.getCause();
-                    if (cause instanceof InterruptedException ie) {
+                    if (ee.getCause() instanceof InterruptedException ie) {
                         throw ie;
-                    } else {
-                        // Handles non-InterruptedException causes of ExecutionException
-                        // Log the error, using 'cause' if available, otherwise the ExecutionException 'ee' itself
-                        logger.error("Error during Deep Scan agent execution", cause != null ? cause : ee);
-
-                        // Prepare and show the user-friendly error message (using nullaway's style)
-                        // Uses cause.getMessage() if cause is not null, otherwise ee.getMessage()
-                        String toolErrorMessage = Objects.toString(
-                            (cause != null ? cause.getMessage() : ee.getMessage()),
-                            "Unknown error"
-                        );
-                        SwingUtilities.invokeLater(() -> chrome.toolError("Error during Deep Scan execution: " + toolErrorMessage));
-
-                        // Complete the future exceptionally, using 'cause' if available
-                        analysisDoneFuture.completeExceptionally(cause != null ? cause : ee);
-                        return; // Exit the task
                     }
+                    // For other execution exceptions, log, notify user, and complete future exceptionally.
+                    logger.error("Error during Deep Scan agent execution", ee.getCause());
+                    SwingUtilities.invokeLater(() -> chrome.toolError("Error during Deep Scan execution: " + ee.getCause().getMessage()));
+                    analysisDoneFuture.completeExceptionally(ee.getCause());
+                    return; // Exit the task
                 }
 
                 var contextFragments = contextResult.fragments();
-            var reasoning = contextResult.reasoning();
+                var reasoning = contextResult.reasoning();
 
-            // Convert validation files to ProjectPathFragments
-            var validationFragments = validationFiles.stream()
-                    .map(pf -> new ContextFragment.ProjectPathFragment(pf, contextManager)) // Pass contextManager
-                    .toList();
+                // Convert validation files to ProjectPathFragments
+                var validationFragments = validationFiles.stream()
+                        .map(pf -> new ContextFragment.ProjectPathFragment(pf, contextManager)) // Pass contextManager
+                        .toList();
 
                 // Combine context agent fragments and validation agent fragments
                 // Group by primary file to handle potential overlaps (e.g., agent suggests summary, validation suggests file)
@@ -154,8 +138,7 @@ class DeepScanDialog {
                 logger.debug("Deep Scan finished. Proposing {} unique fragments.", allSuggestedFragments.size());
 
                 if (allSuggestedFragments.isEmpty()) {
-                    var topCtx = contextManager.topContext();
-                    if (topCtx != null && topCtx.allFragments().findAny().isPresent()) {
+                    if (contextManager.topContext().allFragments().findAny().isPresent()) {
                         chrome.systemOutput("Deep Scan complete with no additional recommendations");
                     } else {
                         chrome.systemOutput("Deep Scan complete with no recommendations");
@@ -220,8 +203,7 @@ class DeepScanDialog {
         var contextManager = chrome.getContextManager();
         var project = contextManager.getProject(); // Keep project reference
         boolean hasGit = project != null && project.hasGit();
-        var repo = project != null ? project.getRepo() : null;
-
+        var repo = project.getRepo();
 
         JDialog dialog = new JDialog(chrome.getFrame(), "Deep Scan Results", true); // Modal dialog
         dialog.setDefaultCloseOperation(JDialog.DISPOSE_ON_CLOSE);
@@ -282,7 +264,7 @@ class DeepScanDialog {
                 comboBox.setSelectedItem(SUMMARIZE);
             } else if (fragment.getType() == ContextFragment.FragmentType.PROJECT_PATH) {
                 // EDIT if the file is in git, otherwise READ
-                var edit = hasGit && repo != null && repo.getTrackedFiles().contains(fragmentFileMap.get(fragment));
+                var edit = hasGit && repo.getTrackedFiles().contains(fragmentFileMap.get(fragment));
                 comboBox.setSelectedItem(edit ? EDIT : READ_ONLY);
             } else {
                 logger.error("Unexpected fragment {} returned to DeepScanDialog", fragment);

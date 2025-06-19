@@ -73,6 +73,8 @@ public class AnalyzerUtil {
     }
 
     public static List<CodeUnit> combinedPagerankFor(IAnalyzer analyzer, Map<String, Double> weightedSeeds) {
+        Objects.requireNonNull(analyzer, "analyzer cannot be null");
+        Objects.requireNonNull(weightedSeeds, "weightedSeeds cannot be null");
         logger.trace("Computing pagerank for {}", weightedSeeds);
 
         // do forward and reverse pagerank passes
@@ -95,8 +97,7 @@ public class AnalyzerUtil {
         return result;
     }
 
-    public static Set<CodeUnit> coalesceInnerClasses(Set<CodeUnit> classes)
-    {
+    public static Set<CodeUnit> coalesceInnerClasses(Set<CodeUnit> classes) {
         return classes.stream()
                 .filter(cu -> {
                     var name = cu.fqName();
@@ -108,6 +109,7 @@ public class AnalyzerUtil {
     }
 
     public static Map<CodeUnit, String> getSkeletonStrings(IAnalyzer analyzer, Set<CodeUnit> classes) {
+        
         var coalescedUnits = coalesceInnerClasses(classes);
         return coalescedUnits.stream().parallel()
                 .map(cu -> Map.entry(cu, analyzer.getSkeleton(cu.fqName())))
@@ -116,6 +118,8 @@ public class AnalyzerUtil {
     }
 
     public static List<String> testFilesToFQCNs(IAnalyzer analyzer, Collection<ProjectFile> files) {
+        Objects.requireNonNull(analyzer, "analyzer cannot be null");
+        Objects.requireNonNull(files, "files cannot be null");
         if (analyzer instanceof JavaAnalyzer) {
             // TODO remove this hack when we can get Joern to process the damn test files
             return files.stream()
@@ -169,6 +173,8 @@ public class AnalyzerUtil {
                                          String rootMethodName,
                                          boolean isCallerGraph)
     {
+        Objects.requireNonNull(callgraph, "callgraph cannot be null");
+        Objects.requireNonNull(rootMethodName, "rootMethodName cannot be null");
         var result = new StringBuilder();
         String arrow = isCallerGraph ? "<-" : "->";
 
@@ -209,8 +215,10 @@ public class AnalyzerUtil {
      * @return A map of CodeUnit to its skeleton string. Returns an empty map if no skeletons are found.
      */
     public static Map<CodeUnit, String> getClassSkeletonsData(IAnalyzer analyzer, List<String> classNames) {
+        Objects.requireNonNull(analyzer, "analyzer cannot be null");
+        Objects.requireNonNull(classNames, "classNames cannot be null");
         assert analyzer.isCpg() : "CPG Analyzer is not available.";
-        if (classNames == null || classNames.isEmpty()) {
+        if (classNames.isEmpty()) {
             return Map.of();
         }
 
@@ -234,8 +242,10 @@ public class AnalyzerUtil {
      * @return A map of method name to its source code string. Returns an empty map if no sources are found.
      */
     public static Map<String, String> getMethodSourcesData(IAnalyzer analyzer, List<String> methodNames) {
+        Objects.requireNonNull(analyzer, "analyzer cannot be null");
+        Objects.requireNonNull(methodNames, "methodNames cannot be null");
         assert analyzer.isCpg() : "CPG Analyzer is not available for getMethodSourcesData.";
-        if (methodNames == null || methodNames.isEmpty()) {
+        if (methodNames.isEmpty()) {
             return Map.of();
         }
 
@@ -283,8 +293,10 @@ public class AnalyzerUtil {
      * @return A map of class name to its formatted source code string (with header). Returns an empty map if no sources are found.
      */
     public static Map<String, String> getClassSourcesData(IAnalyzer analyzer, List<String> classNames) {
+        Objects.requireNonNull(analyzer, "analyzer cannot be null");
+        Objects.requireNonNull(classNames, "classNames cannot be null");
         assert analyzer.isCpg() : "CPG Analyzer is not available for getClassSourcesData.";
-        if (classNames == null || classNames.isEmpty()) {
+        if (classNames.isEmpty()) {
             return Map.of();
         }
 

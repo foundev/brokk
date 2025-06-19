@@ -7,23 +7,38 @@ import org.fife.ui.autocomplete.Completion;
 import org.fife.ui.autocomplete.ShorthandCompletion;
 import org.jetbrains.annotations.Nullable;
 
-import javax.swing.*;
-import javax.swing.text.JTextComponent;
+// Java AWT
 import java.awt.event.ActionEvent;
 import java.awt.event.InputEvent;
 import java.awt.event.KeyEvent;
-import java.util.List;
 
+// Java Util
+import java.util.List;
+import java.util.Objects;
+
+// Java Swing
+import javax.swing.*;
+import javax.swing.text.JTextComponent;
+
+/**
+ * Utility class for managing autocomplete functionality in the Brokk GUI.
+ * Handles popup sizing, key bindings, and completion descriptions.
+ */
 public class AutoCompleteUtil {
     private static final Logger logger = LogManager.getLogger(AutoCompleteUtil.class);
 
+    // Popup sizing constants
     private static final int MAX_POPUP_WIDTH = 800;
     private static final int MAX_POPUP_HEIGHT = 400;
     private static final int MAX_VISIBLE_ROWS = 15; // Limit rows shown without scrolling
+    
+    // Padding and spacing constants
     private static final int HORIZONTAL_PADDING = 40;
     private static final int VERTICAL_PADDING = 20;
     private static final int ROW_PADDING = 2;
-    private static final double DESC_WIDTH_FACTOR = 1.2; // Hack for monospaced desc font
+    
+    // Font adjustment factor
+    private static final double DESC_WIDTH_FACTOR = 1.2; // Adjustment for monospaced font in description
 
     /**
      * Binds Ctrl+Enter to accept the current autocomplete suggestion if the popup is visible;
@@ -32,9 +47,12 @@ public class AutoCompleteUtil {
      * @param autoCompletion The AutoCompletion instance managing the autocomplete popup.
      * @param textComponent The text component that the autocomplete is attached to.
      */
-    public static void bindCtrlEnter(AutoCompletion autoCompletion, JTextComponent textComponent)
-    {
-        KeyStroke ctrlEnter = KeyStroke.getKeyStroke(KeyEvent.VK_ENTER, InputEvent.CTRL_DOWN_MASK);
+    public static void bindCtrlEnter(@Nullable AutoCompletion autoCompletion, @Nullable JTextComponent textComponent) {
+        Objects.requireNonNull(autoCompletion, "autoCompletion");
+        Objects.requireNonNull(textComponent, "textComponent");
+        var ctrlEnter = Objects.requireNonNull(
+            KeyStroke.getKeyStroke(KeyEvent.VK_ENTER, InputEvent.CTRL_DOWN_MASK),
+            "Failed to create KeyStroke for Ctrl+Enter");
 
         textComponent.getInputMap(JComponent.WHEN_FOCUSED)
                 .put(ctrlEnter, "ctrlEnterAction");
@@ -56,18 +74,22 @@ public class AutoCompleteUtil {
                                         e.getModifiers() // Use original event modifiers
                                 ));
                             } else {
-                                logger.error("Enter action not found");
+                                logger.error("Could not find Enter action in text component's action map");
                             }
                         }
                         else {
                             // Otherwise, "click" the default button on the current root pane
                             var rootPane = SwingUtilities.getRootPane(textComponent);
-                            if (rootPane != null) {
-                                var defaultButton = rootPane.getDefaultButton();
-                                if (defaultButton != null) {
-                                    defaultButton.doClick();
-                                }
+                            if (rootPane == null) {
+                                logger.debug("No root pane found for text component");
+                                return;
                             }
+                            var defaultButton = rootPane.getDefaultButton();
+                            if (defaultButton == null) {
+                                logger.debug("No default button found on root pane");
+                                return;
+                            }
+                            defaultButton.doClick();
                         }
                     }
                 });
@@ -81,12 +103,10 @@ public class AutoCompleteUtil {
      * @param textComponent The text component the AutoCompletion is attached to (used for font metrics).
      * @param completions   The list of completions to display.
      */
-    public static void sizePopupWindows(AutoCompletion autoCompletion, JTextComponent textComponent, List<ShorthandCompletion> completions) {
-        // Nothing works, autocomplete is just broken.  stick with the defaults
-        if (true) {
-            autoCompletion.setShowDescWindow(false);
-            return;
-        }
+    public static void sizePopupWindows(@Nullable AutoCompletion autoCompletion, @Nullable JTextComponent textComponent, @Nullable List<ShorthandCompletion> completions) {
+        Objects.requireNonNull(autoCompletion, "autoCompletion");
+        Objects.requireNonNull(textComponent, "textComponent");
+        Objects.requireNonNull(completions, "completions");
 
         var defaultFontMetrics = textComponent.getFontMetrics(textComponent.getFont());
         int rowHeight = defaultFontMetrics.getHeight() + ROW_PADDING;
@@ -103,17 +123,14 @@ public class AutoCompleteUtil {
 
         // Calculate Description window width and show it
         var ttFontMetrics = textComponent.getFontMetrics(UIManager.getFont("ToolTip.font"));
-        boolean hasDescriptions = completions.stream().anyMatch(c -> {
-            String desc = getCompletionDescription(c);
-            return desc != null && !desc.isEmpty();
-        });
+        boolean hasDescriptions = completions.stream()
+                .anyMatch(c -> getCompletionDescription(c) != null && !getCompletionDescription(c).isEmpty());
         // disabled for https://github.com/bobbylight/AutoComplete/issues/97
         if (hasDescriptions) {
             int maxDescWidth = completions.stream()
-                    .mapToInt(c -> {
-                        String desc = getCompletionDescription(c);
-                        return desc != null ? ttFontMetrics.stringWidth(desc) : 0;
-                    })
+                    .map(AutoCompleteUtil::getCompletionDescription)
+                    .filter(Objects::nonNull)
+                    .mapToInt(ttFontMetrics::stringWidth)
                     .max().orElse(300); // Default width
             // Apply hack factor for potentially monospaced font in description
             int descWidth = Math.min(MAX_POPUP_WIDTH, (int) (DESC_WIDTH_FACTOR * maxDescWidth) + HORIZONTAL_PADDING);
@@ -128,12 +145,9 @@ public class AutoCompleteUtil {
     /**
      * Helper to get the description text, handling ShorthandCompletion.
      */
-    private static @Nullable String getCompletionDescription(Completion c) {
-        if (c instanceof ShorthandCompletion sc) {
-            // ShorthandCompletion often uses replacement text as the primary description
-            return sc.getReplacementText();
-        }
-        // Fallback to tooltip text if available, otherwise null
-        return c.getToolTipText();
+    private static @Nullable String getCompletionDescription(@Nullable Completion c) {
+        return c == null ? null
+             : c instanceof ShorthandCompletion sc ? sc.getReplacementText()
+             : c.getToolTipText();
     }
 }

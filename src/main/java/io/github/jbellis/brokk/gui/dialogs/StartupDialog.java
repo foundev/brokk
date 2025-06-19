@@ -22,11 +22,11 @@ public class StartupDialog extends JDialog {
 
     private JFileChooser projectChooser;
     private JTextField keyField;
-    private @Nullable Path selectedProjectPath = null;
-    private boolean keyInitiallyValid;
-    private @Nullable String initialKey;
-    private DialogMode dialogMode;
-    private @Nullable Path initialProjectPath; // Used when mode is REQUIRE_KEY_ONLY
+    private @Nullable Path selectedProjectPath;
+    private final boolean keyInitiallyValid;
+    private final @Nullable String initialKey;
+    private final DialogMode dialogMode;
+    private final @Nullable Path initialProjectPath;
 
     public enum DialogMode {
         REQUIRE_KEY_ONLY,      // Valid project exists, need key
@@ -41,6 +41,7 @@ public class StartupDialog extends JDialog {
         this.keyInitiallyValid = keyInitiallyValid;
         this.initialProjectPath = initialProjectPath;
         this.dialogMode = mode;
+        this.selectedProjectPath = null; // Will be set exactly once in handleOpenProject()
 
         setDefaultCloseOperation(JDialog.DO_NOTHING_ON_CLOSE);
         addWindowListener(new WindowAdapter() {
@@ -201,8 +202,6 @@ public class StartupDialog extends JDialog {
                 try {
                     Service.validateKey(currentKeyText);
                     finalKeyToUse = currentKeyText;
-                    this.initialKey = currentKeyText; // Update internal state
-                    this.keyInitiallyValid = true;    // Mark as now valid
                 } catch (IllegalArgumentException ex) {
                     logger.warn("Invalid Brokk Key entered: {}", ex.getMessage());
                     JOptionPane.showMessageDialog(this, "Invalid Brokk Key: " + ex.getMessage(), "Invalid Key", JOptionPane.ERROR_MESSAGE);
@@ -225,10 +224,7 @@ public class StartupDialog extends JDialog {
         }
 
         assert finalKeyToUse != null : "finalKeyToUse should have been set if no errors occurred.";
-        // It's okay for finalKeyToUse to be null here if we're just setting it to something previously validated,
-        // but setBrokkKey should handle null if it's possible (e.g. user clears field).
-        // However, current logic ensures finalKeyToUse is non-null or an error is shown.
-        MainProject.setBrokkKey(Objects.requireNonNull(finalKeyToUse));
+        MainProject.setBrokkKey(finalKeyToUse);
 
 
         // --- Determine the Project Path ---
@@ -248,11 +244,6 @@ public class StartupDialog extends JDialog {
             finalProjectPathToUse = selectedFile.toPath();
         } else { // dialogMode == DialogMode.REQUIRE_KEY_ONLY
             assert this.initialProjectPath != null : "Invalid state for REQUIRE_KEY_ONLY mode: initialProjectPath must be set.";
-            if (this.initialProjectPath == null) { // Defensive check, should be caught by assert
-                logger.error("StartupDialog in REQUIRE_KEY_ONLY mode but initialProjectPath is null. This should not happen.");
-                JOptionPane.showMessageDialog(this, "Internal error: Project path missing. Please restart.", "Error", JOptionPane.ERROR_MESSAGE);
-                return; // Critical error
-            }
             finalProjectPathToUse = this.initialProjectPath;
         }
 
@@ -262,11 +253,10 @@ public class StartupDialog extends JDialog {
     }
 
     private void handleExit() {
-        selectedProjectPath = null;
         dispose();
     }
 
-    public static @Nullable Path showDialog(@Nullable Frame owner, @Nullable String initialKey, boolean keyInitiallyValid, @Nullable Path initialProjectPath, DialogMode mode) {
+    public static @Nullable Path showDialog(Frame owner, @Nullable String initialKey, boolean keyInitiallyValid, @Nullable Path initialProjectPath, DialogMode mode) {
         var dialog = new StartupDialog(owner, initialKey, keyInitiallyValid, initialProjectPath, mode);
         dialog.setVisible(true); // Blocks until dispose() is called
         return dialog.selectedProjectPath;

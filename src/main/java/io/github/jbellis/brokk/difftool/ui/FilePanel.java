@@ -104,7 +104,7 @@ public class FilePanel implements BufferDocumentChangeListenerIF, ThemeAware {
         timer.setRepeats(false);
         // Apply syntax theme but don't trigger reDisplay yet (no diff data available)
         GuiTheme.loadRSyntaxTheme(diffPanel.isDarkTheme()).ifPresent(theme ->
-                theme.apply(editor)
+                                                                             theme.apply(editor)
         );
 
     }
@@ -291,22 +291,22 @@ public class FilePanel implements BufferDocumentChangeListenerIF, ThemeAware {
             var painter = switch (type) {
                 case INSERT ->
                         isEmpty
-                                ? new JMHighlightPainter.JMHighlightLinePainter(Colors.getAdded(isDark))
-                                : isEndAndNewline
-                                ? new JMHighlightPainter.JMHighlightNewLinePainter(Colors.getAdded(isDark))
-                                : new JMHighlightPainter(Colors.getAdded(isDark));
+                        ? new JMHighlightPainter.JMHighlightLinePainter(Colors.getAdded(isDark))
+                        : isEndAndNewline
+                          ? new JMHighlightPainter.JMHighlightNewLinePainter(Colors.getAdded(isDark))
+                          : new JMHighlightPainter(Colors.getAdded(isDark));
 
                 case DELETE ->
                         isEmpty
-                                ? new JMHighlightPainter.JMHighlightLinePainter(Colors.getDeleted(isDark))
-                                : isEndAndNewline
-                                ? new JMHighlightPainter.JMHighlightNewLinePainter(Colors.getDeleted(isDark))
-                                : new JMHighlightPainter(Colors.getDeleted(isDark));
+                        ? new JMHighlightPainter.JMHighlightLinePainter(Colors.getDeleted(isDark))
+                        : isEndAndNewline
+                          ? new JMHighlightPainter.JMHighlightNewLinePainter(Colors.getDeleted(isDark))
+                          : new JMHighlightPainter(Colors.getDeleted(isDark));
 
                 case CHANGE ->
                         isEndAndNewline
-                                ? new JMHighlightPainter.JMHighlightNewLinePainter(Colors.getChanged(isDark))
-                                : new JMHighlightPainter(Colors.getChanged(isDark));
+                        ? new JMHighlightPainter.JMHighlightNewLinePainter(Colors.getChanged(isDark))
+                        : new JMHighlightPainter(Colors.getChanged(isDark));
                 case EQUAL -> throw new IllegalStateException();
             };
             setHighlight(fromOffset, toOffset, painter);
@@ -721,10 +721,6 @@ public class FilePanel implements BufferDocumentChangeListenerIF, ThemeAware {
 
 
     SearchHits getSearchHits() {
-        // Ensure searchHits is never null if the method is @NonNull
-        // If searchHits can legitimately be null (e.g., before first search),
-        // then the return type of this method should be @Nullable SearchHits.
-        // Assuming for now it should always return a valid (possibly empty) SearchHits.
         return Objects.requireNonNullElseGet(searchHits, SearchHits::new);
     }
 
@@ -736,7 +732,7 @@ public class FilePanel implements BufferDocumentChangeListenerIF, ThemeAware {
             setHighlight(JMHighlighter.LAYER2, sh.getFromOffset(),
                          sh.getToOffset(),
                          searchHits.isCurrent(sh)
-                                 ? JMHighlightPainter.CURRENT_SEARCH : JMHighlightPainter.SEARCH);
+                         ? JMHighlightPainter.CURRENT_SEARCH : JMHighlightPainter.SEARCH);
         }
     }
 

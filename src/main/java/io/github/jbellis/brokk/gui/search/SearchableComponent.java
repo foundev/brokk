@@ -78,6 +78,7 @@ public interface SearchableComponent {
             @Override
             public void onSearchComplete(int totalMatches, int currentMatchIndex) {}
         };
+
     }
 
     /**
@@ -109,7 +110,6 @@ public interface SearchableComponent {
      *
      * @return the current callback, or null if none is set
      */
-    @Nullable
     default SearchCompleteCallback getSearchCompleteCallback() {
         return SearchCompleteCallback.NONE; // Default implementation that never returns null
     }

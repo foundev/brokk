@@ -8,7 +8,6 @@ import dev.langchain4j.data.message.AiMessage;
 import io.github.jbellis.brokk.ContextManager; // Added import
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
-
 import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Method;
 import java.lang.reflect.Modifier;
@@ -27,7 +26,6 @@ public class ToolRegistry {
 
     // Maps tool name to its invocation target (method + instance)
     private final Map<String, ToolInvocationTarget> toolMap = new ConcurrentHashMap<>();
-    // private final ContextManager contextManager; // Unused field removed
 
     // Internal record to hold method and the instance it belongs to
     private record ToolInvocationTarget(Method method, Object instance) {}
@@ -36,7 +34,6 @@ public class ToolRegistry {
      * Creates a new ToolRegistry and self-registers internal tools.
      */
     public ToolRegistry(ContextManager contextManagerIgnored) {
-        // this.contextManager = contextManager; // contextManager field removed
         register(this);
     }
 
@@ -86,7 +83,7 @@ public class ToolRegistry {
                 .filter(tool -> !toolMap.containsKey(tool))
                 .toList();
         if (!missingTools.isEmpty()) {
-            logger.error("Missing tools: '{}'", missingTools); // let it throw NPE below
+            logger.error("Missing tools: '{}'", missingTools);
         }
         return toolNames.stream()
                 .map(toolMap::get)

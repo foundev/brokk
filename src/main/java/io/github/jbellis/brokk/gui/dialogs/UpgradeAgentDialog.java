@@ -6,6 +6,7 @@ import io.github.jbellis.brokk.analyzer.Language;
 import io.github.jbellis.brokk.analyzer.ProjectFile;
 import io.github.jbellis.brokk.gui.Chrome;
 import io.github.jbellis.brokk.context.Context;
+import org.jspecify.annotations.Nullable;
 
 import javax.swing.*;
 import java.awt.*;
@@ -15,7 +16,7 @@ import java.util.Objects;
 import java.util.stream.Collectors;
 
 public class UpgradeAgentDialog extends JDialog {
-    private final Chrome chrome;
+    private final @Nullable Chrome chrome;
     private JTextArea instructionsArea;
     private JComboBox<Service.FavoriteModel> modelComboBox;
     private JComboBox<String> languageComboBox;
@@ -169,13 +170,13 @@ public class UpgradeAgentDialog extends JDialog {
     private void onOK() {
         String instructions = instructionsArea.getText().trim();
         if (instructions.isEmpty()) {
-            JOptionPane.showMessageDialog(this, "Instructions cannot be empty.", "Input Error", JOptionPane.ERROR_MESSAGE);
+            chrome.toolError("Instructions cannot be empty", "Input Error");
             return;
         }
 
         Service.FavoriteModel selectedFavorite = (Service.FavoriteModel) modelComboBox.getSelectedItem();
         if (selectedFavorite == null) {
-            JOptionPane.showMessageDialog(this, "Please select a model.", "Input Error", JOptionPane.ERROR_MESSAGE);
+            chrome.toolError("Please select a model", "Input Error");
             return;
         }
 
@@ -194,18 +195,11 @@ public class UpgradeAgentDialog extends JDialog {
                 });
             }
         } else { // Workspace Files
-            Context topCtx = chrome.getContextManager().topContext();
-            if (topCtx != null) {
-                var workspaceFiles = topCtx.allFragments()
-                        .filter(f -> f.getType().isPathFragment() && "PROJECT_PATH".equals(f.getType().toString()))
-                        .flatMap(f -> f.files().stream())
-                        .collect(Collectors.toSet());
-                filesToProcess = filesToProcess.filter(f -> workspaceFiles.contains(f));
-            } else {
-                // Handle case where topContext is null, perhaps log or inform user
-                JOptionPane.showMessageDialog(this, "Cannot determine workspace files: current context is not available.", "Error", JOptionPane.ERROR_MESSAGE);
-                return; // Exit if context is not available
-            }
+            var workspaceFiles = chrome.getContextManager().topContext().allFragments()
+                    .filter(f -> f.getType().isPathFragment() && "PROJECT_PATH".equals(f.getType().toString()))
+                    .flatMap(f -> f.files().stream())
+                    .collect(Collectors.toSet());
+            filesToProcess = filesToProcess.filter(workspaceFiles::contains);
         }
 
         List<ProjectFile> filesToProcessList = filesToProcess.collect(Collectors.toList());
@@ -219,7 +213,13 @@ public class UpgradeAgentDialog extends JDialog {
             } else {
                 message = "No text files found in the workspace to process.";
             }
-            JOptionPane.showMessageDialog(this, message, "No Files", JOptionPane.INFORMATION_MESSAGE);
+            chrome.systemNotify(message.replace(".", ""), 
+                isEntireProjectScope 
+                    ? (ALL_LANGUAGES_OPTION.equals(languageComboBox.getSelectedItem()) 
+                        ? "No Files Found" 
+                        : "No Files for Language")
+                    : "No Workspace Files", 
+                JOptionPane.INFORMATION_MESSAGE);
             return;
         }
 

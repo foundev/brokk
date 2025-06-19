@@ -47,8 +47,7 @@ public class GitCommitTab extends JPanel {
     private JTextArea commitMessageArea;
     private JButton commitButton;
     private JButton stashButton;
-    @Nullable
-    private ProjectFile rightClickedFile = null; // Store the file that was right-clicked
+    private @Nullable ProjectFile rightClickedFile; // Store the file that was right-clicked
 
     public GitCommitTab(Chrome chrome, ContextManager contextManager, GitPanel gitPanel) {
         super(new BorderLayout());
@@ -142,8 +141,10 @@ public class GitCommitTab extends JPanel {
 
         // Context menu actions:
         viewDiffItem.addActionListener(e -> {
-            // Use the stored right-clicked file as priority
-            openDiffForAllUncommittedFiles(rightClickedFile);
+            // Use the stored right-clicked file if available, otherwise selected files
+            ProjectFile fileToDiff = rightClickedFile != null ? rightClickedFile 
+                : getSelectedFilesFromTable().stream().findFirst().orElse(null);
+            openDiffForAllUncommittedFiles(fileToDiff);
             rightClickedFile = null; // Clear after use
         });
 
@@ -161,17 +162,8 @@ public class GitCommitTab extends JPanel {
 
         // Add action listener for the view history item
         viewHistoryItem.addActionListener(e -> {
-            // int row = uncommittedFilesTable.getSelectedRow(); // Using rightClickedFile instead
-            if (rightClickedFile != null) {
-                gitPanel.addFileHistoryTab(rightClickedFile);
-            } else { // Fallback to selection if rightClickedFile is somehow null
-                int row = uncommittedFilesTable.getSelectedRow();
-                if (row >= 0) {
-                    var projectFile = (ProjectFile) uncommittedFilesTable.getModel().getValueAt(row, 2);
-                    gitPanel.addFileHistoryTab(projectFile);
-                }
-            }
-            rightClickedFile = null; // Clear after use
+            Objects.requireNonNull(rightClickedFile, "rightClickedFile should be non-null here");
+            gitPanel.addFileHistoryTab(rightClickedFile);
         });
 
         // Add action listener for the rollback changes item
@@ -214,13 +206,8 @@ public class GitCommitTab extends JPanel {
                 try {
                     String suggestedMessage = suggestionFuture.get();
                     setCommitMessageText(suggestedMessage);
-                } catch (InterruptedException ex) {
-                    Thread.currentThread().interrupt(); // Preserve interrupt status
-                    logger.warn("Suggest message task interrupted", ex);
-                    // Optionally, notify user or handle differently
-                } catch (ExecutionException ex) {
-                    logger.error("Error suggesting commit message", ex.getCause());
-                    // Optionally, notify user
+                } catch (InterruptedException | ExecutionException ex) {
+                    throw new RuntimeException(ex);
                 }
             });
         });
@@ -239,18 +226,14 @@ public class GitCommitTab extends JPanel {
                     try {
                         Future<String> suggestionFuture = suggestMessageAsync(selectedFiles);
                         String suggestedMessage = suggestionFuture.get(); // Wait for suggestion
-                        if (suggestedMessage.isBlank()) { // suggestedMessage is guaranteed non-null
-                            logger.warn("No suggested commit message found");
+                        if (suggestedMessage.isBlank()) {
                             suggestedMessage = "Stash created by Brokk"; // Fallback
                         }
                         String finalStashDescription = suggestedMessage;
                         // Perform stash with suggested message
                         performStash(selectedFiles, finalStashDescription);
-                    } catch (GitAPIException ex) {
-                        logger.error("Error stashing changes:", ex);
-                        SwingUtilities.invokeLater(() -> chrome.toolError("Error stashing changes: " + ex.getMessage()));
-                    } catch (ExecutionException | InterruptedException ex) {
-                        throw new RuntimeException(ex);
+                    } catch (GitAPIException | ExecutionException | InterruptedException ex) {
+                        throw new RuntimeException("Error stashing changes", ex);
                     }
                 });
             } else {
@@ -263,8 +246,7 @@ public class GitCommitTab extends JPanel {
                     try {
                         performStash(selectedFiles, stashDescription.isEmpty() ? "Stash created by Brokk" : stashDescription);
                     } catch (GitAPIException ex) {
-                        logger.error("Error stashing changes:", ex);
-                        SwingUtilities.invokeLater(() -> chrome.toolError("Error stashing changes: " + ex.getMessage()));
+                        throw new RuntimeException("Error stashing changes", ex);
                     }
                 });
             }
@@ -397,32 +379,32 @@ public class GitCommitTab extends JPanel {
                     // This also populates the statusMap within FileStatusTable
                     fileStatusPane.setFiles(uncommittedFilesList);
 
-        if (uncommittedFilesList.isEmpty()) {
-            logger.trace("No uncommitted files found");
-            suggestMessageButton.setEnabled(false);
-            commitButton.setEnabled(false);
-            stashButton.setEnabled(false);
-        } else {
-            logger.trace("Found {} uncommitted files to display", uncommittedFilesList.size());
+                    if (uncommittedFilesList.isEmpty()) {
+                        logger.trace("No uncommitted files found");
+                        suggestMessageButton.setEnabled(false);
+                        commitButton.setEnabled(false);
+                        stashButton.setEnabled(false);
+                    } else {
+                        logger.trace("Found {} uncommitted files to display", uncommittedFilesList.size());
 
-            // Restore selection for any rows that were previously selected
-            for (int i = 0; i < uncommittedFilesList.size(); i++) {
-                var pf = uncommittedFilesList.get(i).file();
-                if (previouslySelectedFiles.contains(pf)) {
-                    uncommittedFilesTable.addRowSelectionInterval(i, i);
-                }
-            }
+                        // Restore selection for any rows that were previously selected
+                        for (int i = 0; i < uncommittedFilesList.size(); i++) {
+                            var pf = uncommittedFilesList.get(i).file();
+                            if (previouslySelectedFiles.contains(pf)) {
+                                uncommittedFilesTable.addRowSelectionInterval(i, i);
+                            }
+                        }
 
-            suggestMessageButton.setEnabled(true);
+                        suggestMessageButton.setEnabled(true);
 
-            var text = commitMessageArea.getText().trim();
-            var hasNonCommentText = Arrays.stream(text.split("\n"))
-                    .anyMatch(line -> !line.trim().isEmpty()
-                            && !line.trim().startsWith("#"));
-            commitButton.setEnabled(hasNonCommentText);
-            stashButton.setEnabled(true);
-        }
-        updateCommitButtonText();
+                        var text = commitMessageArea.getText().trim();
+                        var hasNonCommentText = Arrays.stream(text.split("\n"))
+                                .anyMatch(line -> !line.trim().isEmpty()
+                                        && !line.trim().startsWith("#"));
+                        commitButton.setEnabled(hasNonCommentText);
+                        stashButton.setEnabled(true);
+                    }
+                    updateCommitButtonText();
                 });
             } catch (Exception e) {
                 logger.error("Error fetching uncommitted files:", e);
@@ -562,6 +544,7 @@ public class GitCommitTab extends JPanel {
         if (allFiles.isEmpty()) {
             return; // nothing to diff
         }
+        // priorityFile can be null when called from viewDiffItem with no selection
 
         // Reorder files based on priority
         var orderedFiles = new ArrayList<ProjectFile>();
@@ -761,26 +744,11 @@ public class GitCommitTab extends JPanel {
             throw new RuntimeException(e);
         }
         if (result.error() != null) {
-            var error = result.error(); // error is non-null here
-            String errorMessage = error.getMessage() != null ? error.getMessage() : "Unknown LLM error";
-            SwingUtilities.invokeLater(() -> chrome.systemOutput("LLM error during commit message suggestion: " + errorMessage));
-            logger.warn("LLM error during commit message suggestion: {}", errorMessage);
-            return "";
-        }
-        var chatResponse = result.chatResponse();
-        if (chatResponse == null) {
-            SwingUtilities.invokeLater(() -> chrome.systemOutput("LLM did not provide a response."));
-            return "";
-        }
-        var aiMessage = chatResponse.aiMessage();
-        if (aiMessage == null) {
-            SwingUtilities.invokeLater(() -> chrome.systemOutput("LLM did not provide an AI message."));
-            return "";
+            throw new RuntimeException("LLM error during commit message suggestion: " + result.error().getMessage());
         }
 
-        String commitMsg = aiMessage.text();
-
-        if (commitMsg == null || commitMsg.isBlank()) {
+        String commitMsg = result.chatResponse().aiMessage().text();
+        if (commitMsg.isBlank()) {
             SwingUtilities.invokeLater(() -> chrome.systemOutput("LLM did not provide a commit message."));
             return "";
         }

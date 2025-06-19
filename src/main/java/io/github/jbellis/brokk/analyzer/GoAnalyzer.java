@@ -81,19 +81,7 @@ public final class GoAnalyzer extends TreeSitterAnalyzer {
     @Override
     protected String determinePackageName(ProjectFile file, TSNode definitionNode, TSNode rootNode, String src) {
         TSQuery currentPackageQuery;
-        if (this.packageQuery != null) { // Check if GoAnalyzer constructor has initialized the ThreadLocal field
-            currentPackageQuery = this.packageQuery.get();
-        } else {
-            // This block executes if determinePackageName is called during TreeSitterAnalyzer's constructor,
-            // before this.packageQuery (ThreadLocal) is initialized in GoAnalyzer's constructor.
-            log.trace("GoAnalyzer.determinePackageName: packageQuery ThreadLocal is null, creating temporary query for file {}", file);
-            try {
-                currentPackageQuery = new TSQuery(getTSLanguage(), "(package_clause (package_identifier) @name)");
-            } catch (RuntimeException e) {
-                log.error("Failed to compile temporary package query for GoAnalyzer in determinePackageName for file {}: {}", file, e.getMessage(), e);
-                return ""; // Cannot proceed without the query
-            }
-        }
+        currentPackageQuery = this.packageQuery.get();
 
         if (currentPackageQuery == null) {
              log.error("GoAnalyzer.packageQuery (currentPackageQuery) is unexpectedly null for file {}. Cannot determine package name.", file);
@@ -183,9 +171,9 @@ public final class GoAnalyzer extends TreeSitterAnalyzer {
                 yield CodeUnit.fn(file, packageName, methodShortName);
             }
             default -> {
-                log.warn("Unhandled capture name in GoAnalyzer.createCodeUnit: '{}' for simple name '{}' in file '{}'. Returning null.",
+                log.warn("Unhandled capture name in GoAnalyzer.createCodeUnit: '{}' for simple name '{}' in file '{}'",
                          captureName, simpleName, file.getFileName());
-                yield null; // Explicitly yield null for unhandled cases
+                yield null;
             }
         };
     }

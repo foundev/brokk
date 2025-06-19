@@ -165,12 +165,10 @@ public class GitCommitBrowserPanel extends JPanel {
         createPrButton.setEnabled(false);
         createPrButton.addActionListener(e -> {
             String branch = currentBranchOrContextName;
-            if (branch != null && (branch.startsWith("Search:") || "stashes".equals(branch))) { // Also disable for remote branches
+            if (branch.startsWith("Search:") || "stashes".equals(branch)) { // Also disable for remote branches
                 chrome.toolError("Select a branch before creating a PR.");
                 return;
             }
-            // If branch is null here, CreatePullRequestDialog.show will handle it or it might be an issue,
-            // but the immediate NullAway error is fixed. The PR button logic might disable it if branch is null anyway.
             CreatePullRequestDialog.show(chrome.getFrame(), chrome, contextManager, branch);
         });
 
@@ -597,11 +595,9 @@ public class GitCommitBrowserPanel extends JPanel {
                     rollbackFilesItem.setEnabled(hasFileSelection && isSingleCommit);
                     viewFileAtRevisionItem.setEnabled(singleFileSelected && isSingleCommit);
                     viewDiffItem.setEnabled(singleFileSelected && isSingleCommit);
-        compareFileWithLocalItem.setEnabled(singleFileSelected && isSingleCommit);
-        comparePrevWithLocalItem.setEnabled(singleFileSelected && isSingleCommit);
-        if (changesTree.getRowForLocation(e.getX(), e.getY()) >=0) { // Ensure a node is actually under the cursor
-            changesContextMenu.show(changesTree, e.getX(), e.getY());
-        }
+                    compareFileWithLocalItem.setEnabled(singleFileSelected && isSingleCommit);
+                    comparePrevWithLocalItem.setEnabled(singleFileSelected && isSingleCommit);
+                    changesContextMenu.show(changesTree, e.getX(), e.getY());
                 }
             }
         });
@@ -627,12 +623,8 @@ public class GitCommitBrowserPanel extends JPanel {
         viewFileAtRevisionItem.addActionListener(e -> handleSingleFileSingleCommitAction((cid, fp) -> GitUiUtil.viewFileAtRevision(contextManager, chrome, cid, fp)));
         viewDiffItem.addActionListener(e -> handleSingleFileSingleCommitAction((cid, fp) -> GitUiUtil.showFileHistoryDiff(contextManager, chrome, cid, contextManager.toFile(fp))));
         
-        viewHistoryItem.addActionListener(e -> {
-            var gitPanel = chrome.getGitPanel();
-            if (gitPanel != null) {
-                getSelectedFilePathsFromTree().forEach(fp -> gitPanel.addFileHistoryTab(contextManager.toFile(fp)));
-            }
-        });
+        viewHistoryItem.addActionListener(e -> 
+            getSelectedFilePathsFromTree().forEach(fp -> chrome.getGitPanel().addFileHistoryTab(contextManager.toFile(fp))));
         editFileItem.addActionListener(e -> getSelectedFilePathsFromTree().forEach(fp -> GitUiUtil.editFile(contextManager, fp)));
         rollbackFilesItem.addActionListener(e -> {
             TreePath[] paths = changesTree.getSelectionPaths();
@@ -700,12 +692,10 @@ public class GitCommitBrowserPanel extends JPanel {
                     sortedDirs.sort(Comparator.comparing(Path::toString));
                     for (var dirPath : sortedDirs) {
                         var files = filesByDir.get(dirPath);
-                        if (files != null) { // files can be null if dirPath was removed concurrently, though unlikely here
-                            files.sort(String::compareTo);
-                            var dirNode = dirPath.equals(Path.of("")) ? changesRootNode : new DefaultMutableTreeNode(dirPath);
-                            if (dirNode != changesRootNode) changesRootNode.add(dirNode);
-                            for (var f : files) dirNode.add(new DefaultMutableTreeNode(f));
-                        }
+                        files.sort(String::compareTo);
+                        var dirNode = dirPath.equals(Path.of("")) ? changesRootNode : new DefaultMutableTreeNode(dirPath);
+                        if (dirNode != changesRootNode) changesRootNode.add(dirNode);
+                        for (var f : files) dirNode.add(new DefaultMutableTreeNode(f));
                     }
                     changesTreeModel.reload();
                     expandAllNodes(changesTree, 0, changesTree.getRowCount());
@@ -802,9 +792,7 @@ public class GitCommitBrowserPanel extends JPanel {
                         chrome.systemOutput("Pulled " + branchName);
                         refreshCurrentViewAfterGitOp();
                         var gitPanel = chrome.getGitPanel();
-                        if (gitPanel != null) {
-                            gitPanel.updateCommitPanel(); // For uncommitted changes
-                        }
+                        chrome.getGitPanel().updateCommitPanel(); // For uncommitted changes
                     });
                 } catch (GitAPIException e) {
                     logger.error("Error pulling {}: {}", branchName, e.getMessage());
@@ -962,8 +950,7 @@ public class GitCommitBrowserPanel extends JPanel {
         var commitRows = new ArrayList<Object[]>();
         var today = java.time.LocalDate.now(java.time.ZoneId.systemDefault());
         for (ICommitInfo commit : commits) {
-            var commitDate = commit.date();
-            String formattedDate = (commitDate == null) ? "N/A" : GitLogTab.formatCommitDate(commitDate, today);
+            String formattedDate = GitLogTab.formatCommitDate(commit.date(), today);
             commitRows.add(new Object[]{
                     commit.message(), commit.author(), formattedDate,
                     commit.id(), unpushedCommitIds.contains(commit.id()), commit
@@ -996,9 +983,10 @@ public class GitCommitBrowserPanel extends JPanel {
                         : null;
                 configureButton(pullButton, pullEnabled, pullTooltip, pullListener);
 
-                var pushTooltip = canPush 
-                ? (unpushedCommitIds.isEmpty() ? "Push upstream for " + activeBranchOrContextName : "Push " + unpushedCommitIds.size() + " commit(s) for " + activeBranchOrContextName)
-                : "Nothing to push for " + activeBranchOrContextName;
+                var pushTooltip = canPush
+                        ? (unpushedCommitIds.isEmpty() ? "Push upstream for " + activeBranchOrContextName 
+                                                       : "Push " + unpushedCommitIds.size() + " commit(s) for " + activeBranchOrContextName)
+                        : "Nothing to push for " + activeBranchOrContextName;
                 
                 
                 boolean pushEnabled = canPush && !isStashView && !isSearchView && !isRemoteBranchView;
@@ -1076,11 +1064,8 @@ public class GitCommitBrowserPanel extends JPanel {
     }
 
     // Helper record for TreePath analysis
-    private record TreeNodeInfo(@Nullable DefaultMutableTreeNode node, DefaultMutableTreeNode rootNode, boolean isFile, @Nullable String filePath) {
-        public static TreeNodeInfo fromPath(@Nullable TreePath path, DefaultMutableTreeNode rootNode) {
-            if (path == null) {
-                return new TreeNodeInfo(null, rootNode, false, null);
-            }
+    private record TreeNodeInfo(DefaultMutableTreeNode node, DefaultMutableTreeNode rootNode, boolean isFile, String filePath) {
+        public static TreeNodeInfo fromPath(TreePath path, DefaultMutableTreeNode rootNode) {
             var node = (DefaultMutableTreeNode) path.getLastPathComponent();
 
             // A node is a file if (and only if) it is a leaf and not the synthetic root
@@ -1144,17 +1129,15 @@ public class GitCommitBrowserPanel extends JPanel {
         return groups;
     }
 
-    private void configureButton(JButton button, boolean enabled, String tooltip, @Nullable java.awt.event.ActionListener listener) {
+    private void configureButton(JButton button, boolean enabled, String tooltip, java.awt.event.ActionListener listener) {
         button.setEnabled(enabled);
         // Visibility is now controlled at a higher level (when adding to panel)
         // and should not be changed here if options.showPushPullButtons or options.showCreatePrButton is true.
         button.setToolTipText(tooltip);
-        // Only modify listeners if a new one is provided (e.g., for dynamic behavior, not used by createPrButton here)
+        // Only modify listeners if a new one is provided
         if (listener != null) {
-            for (var l : button.getActionListeners()) {
-                button.removeActionListener(l);
-            }
-            if (enabled) { // Only add listener if enabled AND listener is provided
+            Arrays.stream(button.getActionListeners()).forEach(button::removeActionListener);
+            if (enabled) {
                 button.addActionListener(listener);
             }
         }

@@ -40,8 +40,6 @@ public class FileComparison extends SwingWorker<String, Object> {
         this.rightSource = Objects.requireNonNull(builder.rightSource);
         this.theme = theme;
         this.contextManager = contextManager;
-        this.diffNode = null; // Initialize @Nullable fields
-        this.panel = null;
     }
 
     // Static Builder class
@@ -58,8 +56,6 @@ public class FileComparison extends SwingWorker<String, Object> {
             this.mainPanel = mainPanel;
             this.theme = theme;
             this.contextManager = contextManager;
-            this.leftSource = null; // Initialize @Nullable fields
-            this.rightSource = null;
         }
 
         public FileComparisonBuilder withSources(BufferSource left, BufferSource right) {
@@ -91,11 +87,7 @@ public class FileComparison extends SwingWorker<String, Object> {
         if (diffNode == null) {
             diffNode = createDiffNode(leftSource, rightSource);
         }
-        if (diffNode != null) { // createDiffNode can return null if sources are problematic though current logic implies non-null
-            diffNode.diff();
-        } else {
-            return "Failed to create diff node from sources.";
-        }
+        diffNode.diff();
         return null;
     }
 
@@ -167,6 +159,36 @@ public class FileComparison extends SwingWorker<String, Object> {
         return node;
     }
 
+    private void addTabToPane(BufferDiffPanel panel, @Nullable ImageIcon icon) {
+        if (mainPanel == null) {
+            return;
+        }
+        var tabbedPane = mainPanel.getTabbedPane();
+        if (tabbedPane == null) {
+            return;
+        }
+        if (icon != null) {
+            tabbedPane.addTab(panel.getTitle(), icon, panel);
+        } else {
+            tabbedPane.addTab(panel.getTitle(), panel);
+        }
+        tabbedPane.setSelectedComponent(panel);
+    }
+
+    private void createAndShowDiffPanel() {
+        if (mainPanel == null) {
+            return;
+        }
+        panel = new BufferDiffPanel(mainPanel, theme);
+        Objects.requireNonNull(panel); // Ensure panel creation succeeded
+        if (diffNode != null) {
+            panel.setDiffNode(diffNode);
+        }
+        ImageIcon resizedIcon = getScaledIcon();
+        addTabToPane(panel, resizedIcon);
+        SwingUtilities.invokeLater(() -> panel.applyTheme(theme));
+    }
+
     private static @Nullable ImageIcon getScaledIcon() {
         try {
             BufferedImage originalImage = ImageIO.read(Objects.requireNonNull(FileComparison.class.getResource("/images/compare.png")));
@@ -182,26 +204,19 @@ public class FileComparison extends SwingWorker<String, Object> {
     protected void done() {
         try {
             String result = get();
-            if (result != null) {
-                JOptionPane.showMessageDialog(mainPanel, result, "Error opening file", JOptionPane.ERROR_MESSAGE);
-            } else {
-                panel = new BufferDiffPanel(mainPanel, theme);
-                panel.setDiffNode(diffNode);
-                ImageIcon resizedIcon = getScaledIcon();
-                mainPanel.getTabbedPane().addTab(panel.getTitle(), resizedIcon, panel);
-                mainPanel.getTabbedPane().setSelectedComponent(panel);
-
-                // Apply theme after the panel is added to the UI hierarchy
-                // Ensure panel is not null before calling applyTheme
-                if (this.panel != null) {
-                    BufferDiffPanel panelRef = this.panel; // Assign to a local variable for lambda capture
-                    SwingUtilities.invokeLater(() -> panelRef.applyTheme(theme));
+            if (mainPanel != null) {
+                if (result != null) {
+                    JOptionPane.showMessageDialog(mainPanel, result, "Error opening file", JOptionPane.ERROR_MESSAGE);
+                } else {
+                    createAndShowDiffPanel();
                 }
             }
         } catch (Exception ex) {
             // Handle exceptions during the 'done' phase, e.g., from get()
             System.err.println("Error completing file comparison task: " + ex.getMessage());
-            JOptionPane.showMessageDialog(mainPanel, "Error finalizing comparison: " + ex.getMessage(), "Error", JOptionPane.ERROR_MESSAGE);
+            if (mainPanel != null && !ex.getMessage().contains("Task cancelled") && mainPanel.isDisplayable()) {
+                JOptionPane.showMessageDialog(mainPanel, "Error finalizing comparison: " + ex.getMessage(), "Error", JOptionPane.ERROR_MESSAGE);
+            }
         }
     }
 }

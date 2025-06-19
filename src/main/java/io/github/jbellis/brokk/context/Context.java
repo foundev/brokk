@@ -36,10 +36,10 @@ public class Context {
     private static final String WELCOME_ACTION = "Welcome to Brokk";
     public static final String SUMMARIZING = "(Summarizing)";
 
-    private final transient IContextManager contextManager;
-    final List<ContextFragment> editableFiles; // Can hold PathFragment or FrozenFragment
-    final List<ContextFragment> readonlyFiles; // Can hold PathFragment or FrozenFragment
-    final List<ContextFragment.VirtualFragment> virtualFragments;
+    private final transient  IContextManager contextManager;
+    final  List<ContextFragment> editableFiles; // Can hold PathFragment or FrozenFragment
+    final  List<ContextFragment> readonlyFiles; // Can hold PathFragment or FrozenFragment
+    final  List<ContextFragment.VirtualFragment> virtualFragments;
 
     /** Task history list. Each entry represents a user request and the subsequent conversation */
     final List<TaskEntry> taskHistory;
@@ -55,12 +55,12 @@ public class Context {
      * Constructor for initial empty context
      */
     public Context(IContextManager contextManager, String initialOutputText) {
-        this(Objects.requireNonNull(contextManager, "contextManager cannot be null"),
+        this(contextManager,
              List.of(),
              List.of(),
              List.of(),
              new ArrayList<>(),
-             getWelcomeOutput(contextManager, initialOutputText), // Pass contextManager here
+             getWelcomeOutput(contextManager, initialOutputText),
              CompletableFuture.completedFuture(WELCOME_ACTION));
     }
 
@@ -77,19 +77,13 @@ public class Context {
             @Nullable ContextFragment.TaskFragment parsedOutput,
             Future<String> action)
     {
-        // contextManager is asserted non-null by the caller or public constructor
-        assert editableFiles != null;
-        assert readonlyFiles != null;
-        assert virtualFragments != null;
-        assert taskHistory != null;
-        assert action != null;
-        this.contextManager = Objects.requireNonNull(contextManager, "contextManager cannot be null in private constructor");
+        this.contextManager = contextManager;
         this.editableFiles = List.copyOf(editableFiles);
         this.readonlyFiles = List.copyOf(readonlyFiles);
         this.virtualFragments = List.copyOf(virtualFragments);
         this.taskHistory = List.copyOf(taskHistory); // Ensure immutability
-        this.parsedOutput = parsedOutput;
         this.action = action;
+        this.parsedOutput = parsedOutput;
     }
 
     /**

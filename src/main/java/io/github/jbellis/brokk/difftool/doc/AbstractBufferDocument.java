@@ -13,19 +13,17 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
 
-import org.apache.logging.log4j.LogManager;
-import org.apache.logging.log4j.Logger;
-import org.jetbrains.annotations.Nullable;
 import java.util.Objects;
+import java.util.stream.Collectors;
 
 public abstract class AbstractBufferDocument implements BufferDocumentIF, DocumentListener {
-    private static final Logger log = LogManager.getLogger(AbstractBufferDocument.class);
-    @Nullable private String name;
-    @Nullable private String shortName;
-    @Nullable private Line[] lineArray;
-    @Nullable private int[] lineOffsetArray;
-    @Nullable private PlainDocument document;
-    @Nullable private MyGapContent content;
+    private String name = "";
+    private String shortName = "";
+    // These fields are initialized in initializeAndRead and are non-null afterwards
+    private Line[] lineArray;
+    private int[] lineOffsetArray;
+    private PlainDocument document;
+    private MyGapContent content;
     private final List<BufferDocumentChangeListenerIF> listeners;
 
     private boolean changed;
@@ -43,20 +41,10 @@ public abstract class AbstractBufferDocument implements BufferDocumentIF, Docume
         }
         content = new MyGapContent(getBufferSize() + 500);
         document = new PlainDocument(content);
-        // Ensure reader is available before reading
-        try (Reader reader = getReader()) {
-            if (reader != null) { // Check if reader could be created
-                new DefaultEditorKit().read(reader, document, 0);
-            } else {
-                // Handle case where reader couldn't be obtained (e.g., file not found)
-                // Initialize with empty content or log an error
-                System.err.println("Warning: Could not obtain reader for " + getName() + ", initializing empty document.");
-            }
+        try {
+            new DefaultEditorKit().read(getReader(), document, 0);
         } catch (Exception readEx) {
-            // Handle exceptions during the read process specifically
-            System.err.println("Error reading content for " + getName() + ": " + readEx.getMessage());
-            // Potentially fall back to an empty document state
-            document = new PlainDocument(new MyGapContent(10)); // Re-init empty
+            throw new RuntimeException("Failed to read content for " + getName(), readEx);
         }
         document.addDocumentListener(this);
         resetLineCache();
@@ -86,27 +74,23 @@ public abstract class AbstractBufferDocument implements BufferDocumentIF, Docume
     }
 
     @Override
-    public String getName() { // Must be @NonNull to match BufferDocumentIF
-        return Objects.toString(name, "");
+    public String getName() {
+        return name;
     }
 
-    protected void setShortName(@Nullable String shortName) {
+    protected void setShortName(String shortName) {
         this.shortName = shortName;
     }
 
     @Override
-    public String getShortName() { // Must be @NonNull to match BufferDocumentIF
-        return Objects.toString(shortName, Objects.toString(name, "")); // Default to name if shortName is null
+    public String getShortName() {
+        return shortName.isEmpty() ? name : shortName;
     }
 
     @Override
-    public PlainDocument getDocument() { // Must be @NonNull to match BufferDocumentIF
-        // Document should be initialized by initializeAndRead()
-        if (document == null) {
-            // This indicates a severe issue if called before init or if init failed.
-            // Throwing an ISE is better than returning null if contract is @NonNull.
-            throw new IllegalStateException("Document accessed before initialization or after failed initialization for " + getName());
-        }
+    public PlainDocument getDocument() {
+        // Document is initialized by initializeAndRead() before any calls to this
+        assert document != null : "Document accessed before initialization for " + getName();
         return document;
     }
 
@@ -116,10 +100,9 @@ public abstract class AbstractBufferDocument implements BufferDocumentIF, Docume
     }
 
     @Override
-    public Line[] getLines() { // This method ensures lineArray is non-null
+    public Line[] getLines() {
         initLines();
-        // After initLines, lineArray is guaranteed to be non-null (even if empty).
-        return Objects.requireNonNull(lineArray, "lineArray should be initialized by initLines()");
+        return lineArray;
     }
 
     @Override
@@ -147,11 +130,7 @@ public abstract class AbstractBufferDocument implements BufferDocumentIF, Docume
         if (offset < 0) {
             return 0; 
         }
-        initLines(); // Ensures document, lineArray and lineOffsetArray are initialized
-        Objects.requireNonNull(document, "Document should be initialized by initLines");
-        Objects.requireNonNull(lineArray, "lineArray should be initialized by initLines");
-        Objects.requireNonNull(lineOffsetArray, "lineOffsetArray should be initialized by initLines");
-
+        initLines(); // Ensures lines are initialized and document exists
         if (lineOffsetArray.length == 0) {
             return 0;
         }
@@ -163,14 +142,9 @@ public abstract class AbstractBufferDocument implements BufferDocumentIF, Docume
         int searchIndex = Arrays.binarySearch(lineOffsetArray, offset);
 
         if (searchIndex >= 0) {
-            // Exact match: the offset is the start of line `searchIndex`
             return searchIndex;
         } else {
-            // Not an exact match. insertionPoint = (-searchIndex) - 1.
-            // The offset falls within the line *before* the insertion point.
             int insertionPoint = -searchIndex - 1;
-            // If insertionPoint is 0, it's before the first line's start (so line 0)
-            // Otherwise, it belongs to the line `insertionPoint - 1`
             return Math.max(0, insertionPoint - 1);
         }
     }
@@ -179,13 +153,8 @@ public abstract class AbstractBufferDocument implements BufferDocumentIF, Docume
         if (lineArray != null) {
             return;
         }
-        // Ensure document is initialized before accessing elements
-        if (document == null) {
-            System.err.println("Attempted to initLines before document was initialized for " + getName());
-            lineArray = new Line[0];
-            lineOffsetArray = new int[0];
-            return;
-        }
+        // document and content must be non-null here due to initializeAndRead() contract
+        assert document != null;
         Element paragraph = document.getDefaultRootElement();
         int size = paragraph.getElementCount();
         lineArray = new Line[size];
@@ -200,8 +169,8 @@ public abstract class AbstractBufferDocument implements BufferDocumentIF, Docume
     }
 
     protected void resetLineCache() {
-        lineArray = null; // Field is @Nullable
-        lineOffsetArray = null; // Field is @Nullable
+        lineArray = null;
+        lineOffsetArray = null;
     }
 
     @Override
@@ -286,8 +255,6 @@ public abstract class AbstractBufferDocument implements BufferDocumentIF, Docume
         }
 
         public int getDigest() {
-            // Ensure document is available
-            if (AbstractBufferDocument.this.document == null) return 0;
             return hashCode(0, AbstractBufferDocument.this.document.getLength());
         }
     }
@@ -299,8 +266,9 @@ public abstract class AbstractBufferDocument implements BufferDocumentIF, Docume
             this.element = element;
         }
 
-        @Nullable MyGapContent getContent() {
-            // Content can be null if initializeAndRead fails.
+        MyGapContent getContent() {
+            // Content should be initialized by initializeAndRead()
+            assert content != null : "Line accessed before content was initialized";
             return content;
         }
 
@@ -326,24 +294,14 @@ public abstract class AbstractBufferDocument implements BufferDocumentIF, Docume
             if ((end1 - start1) != (end2 - start2)) {
                 return false;
             }
-            MyGapContent thisContent = this.getContent();
-            MyGapContent otherContent = otherLine.getContent();
-            if (thisContent == null || otherContent == null) {
-                return thisContent == otherContent; // Both null is equal, one null is not
-            }
-            return thisContent.equals(
-                    otherContent,
-                    start1, end1, start2
-            );
+            // getContent() is asserted non-null
+            return this.getContent().equals(otherLine.getContent(), start1, end1, start2);
         }
 
         @Override
         public int hashCode() {
-            MyGapContent currentContent = this.getContent();
-            if (currentContent == null) {
-                return Objects.hash(element); // Fallback hash if content is null
-            }
-            return currentContent.hashCode(getStartOffset(), getEndOffset());
+            // getContent() is asserted non-null
+            return this.getContent().hashCode(getStartOffset(), getEndOffset());
         }
 
         /**
@@ -356,42 +314,52 @@ public abstract class AbstractBufferDocument implements BufferDocumentIF, Docume
             try {
                 int start = getStartOffset();
                 int end = getEndOffset();
-                if (document == null || content == null) return "<DOCUMENT_NOT_INITIALIZED>";
-            int docLen = document.getLength();
+                int docLen = document.getLength(); // document is asserted non-null
 
-            if (start < 0 || end < 0 || start > docLen) {
-                return "<INVALID RANGE>";
-            }
+                if (start < 0 || end < 0 || start > docLen) {
+                    return "<INVALID RANGE>";
+                }
 
-            // If end is docLen+1, that usually indicates a final trailing newline in PlainDocument
-            if (end > docLen) {
-                if (end == docLen + 1 && docLen > 0 && content.charAtOffset(docLen -1) == '\n') {
-                    // This is the common case of the last line having a newline that PlainDocument counts beyond length.
-                    // Return the content up to docLen, including the newline.
-                    return content.getString(start, docLen - start);
-                } else if (end == docLen && start == docLen) { // empty last line
+                // If end is docLen+1, that usually indicates a final trailing newline in PlainDocument
+                if (end > docLen) {
+                    if (end == docLen + 1) {
+                        // We'll clamp substring to docLen, then manually re-append "\n" if needed
+                        int length = Math.max(0, docLen - start);
+                        if (length == 0) {
+                            // Possibly just the very last trailing newline
+                            if (docLen > 0) {
+                                char lastChar = getContent().charAtOffset(docLen - 1);
+                                if (lastChar == '\n') {
+                                    return "\n";
+                                }
+                            }
+                            return "";
+                        }
+                        // Otherwise substring from [start..docLen], then if last char is newline, append it
+                        String text = getContent().getString(start, length);
+                        if (docLen > 0) {
+                            char lastChar = getContent().charAtOffset(docLen - 1);
+                            if (lastChar == '\n') {
+                                text += "\n";
+                            }
+                        }
+                        return text;
+                    } else {
+                        // More than one past docLen => genuinely invalid
+                        return "<INVALID RANGE>";
+                    }
+                }
+
+                // Normal case: offsets are within [0..docLen]
+                int length = end - start;
+                if (length <= 0) {
                     return "";
                 }
-                // Other cases of end > docLen are unexpected or represent empty trailing lines.
-                // For simplicity, clamp to docLen. If it's truly just the newline char for last line,
-                // it will be included if start < docLen.
-                // An empty string for an "empty" last line is usually fine.
-                log.warn("Line end offset {} > docLen {}. Clamping. Start={}, Doc: {}", end, docLen, start, name);
-                end = docLen;
-            }
+                return getContent().getString(start, length);
 
-            int length = end - start;
-            if (length <= 0) {
-                return "";
+            } catch (BadLocationException ex) {
+                throw new RuntimeException(ex);
             }
-            return content.getString(start, length);
-
-        } catch (BadLocationException ex) {
-            throw new RuntimeException(ex);
-        } catch (NullPointerException npe) { // Catch NPE if getContent() returns null
-            log.error("NPE in Line.toString() for doc {}, likely content not initialized.", name, npe);
-            return "<CONTENT_ERROR>";
-        }
         }
 
         @Override
@@ -416,8 +384,8 @@ public abstract class AbstractBufferDocument implements BufferDocumentIF, Docume
     }
 
     private void initDigest() {
-        originalLength = (document != null) ? document.getLength() : 0;
-        digest = (content != null) ? content.getDigest() : 0;
+        originalLength = document.getLength();
+        digest = content.getDigest();
         changed = false;
     }
 
@@ -430,10 +398,7 @@ public abstract class AbstractBufferDocument implements BufferDocumentIF, Docume
         jmde.setStartLine(startLine);
 
         boolean newChanged;
-        if (document == null || content == null) { // Should not happen if event is fired
-            newChanged = true; // Assume changed if state is invalid
-            log.warn("Document/content is null during documentChanged event for {}", name);
-        } else if (document.getLength() != originalLength) {
+        if (document.getLength() != originalLength) {
             newChanged = true;
         } else {
             int newDigest = content.getDigest();
@@ -480,14 +445,9 @@ public abstract class AbstractBufferDocument implements BufferDocumentIF, Docume
     @Override
     public List<String> getLineList() {
         initLines();
-        if (lineArray == null) {
-            return List.of();
-        }
-        List<String> result = new ArrayList<>(lineArray.length);
-        for (Line line : lineArray) {
-            result.add(line.toString());
-        }
-        return result;
+        return Arrays.stream(lineArray)
+                    .map(Line::toString)
+                    .collect(Collectors.toList());
     }
 
     @Override

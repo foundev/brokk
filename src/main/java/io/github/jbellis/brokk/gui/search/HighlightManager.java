@@ -28,13 +28,13 @@ public class HighlightManager {
 
     public void clearHighlights() {
         Highlighter highlighter = textComponent.getHighlighter();
-        if (highlighter != null) {
-            for (Highlighter.Highlight highlight : searchHighlights) {
-                highlighter.removeHighlight(highlight);
-            }
-            searchHighlights.clear();
-            currentHighlight = null;
+        assert highlighter != null : "Text component must have a highlighter";
+        
+        for (Highlighter.Highlight highlight : searchHighlights) {
+            highlighter.removeHighlight(highlight);
         }
+        searchHighlights.clear();
+        currentHighlight = null;
     }
 
     /**
@@ -42,9 +42,7 @@ public class HighlightManager {
      */
     public Highlighter.Highlight addHighlight(int start, int end, boolean isCurrent) {
         Highlighter highlighter = textComponent.getHighlighter();
-        if (highlighter == null) {
-            throw new IllegalStateException("No highlighter available");
-        }
+        assert highlighter != null : "Text component must have a highlighter";
 
         try {
             Highlighter.HighlightPainter painter = isCurrent
@@ -59,7 +57,7 @@ public class HighlightManager {
             return highlight;
         } catch (BadLocationException e) {
             logger.warn("Failed to add highlight at {}-{}", start, end, e);
-            throw new IllegalArgumentException("Invalid highlight location: " + e.getMessage(), e);
+            return null; // Original behavior
         }
     }
 
@@ -68,9 +66,7 @@ public class HighlightManager {
      */
     public void updateHighlight(int start, int end, boolean isCurrent) {
         Highlighter highlighter = textComponent.getHighlighter();
-        if (highlighter == null) {
-            return;
-        }
+        assert highlighter != null : "Text component must have a highlighter";
 
         // Find and remove the existing highlight
         Highlighter.Highlight[] highlights = highlighter.getHighlights();
@@ -86,8 +82,8 @@ public class HighlightManager {
             }
         }
 
-        // Add the updated highlight
-        addHighlight(start, end, isCurrent);
+        // Add the updated highlight (ignore null returns)
+        var ignored = addHighlight(start, end, isCurrent);
     }
 
     /**
@@ -99,7 +95,7 @@ public class HighlightManager {
         for (int i = 0; i < matches.size(); i++) {
             int[] match = matches.get(i);
             boolean isCurrent = (i == currentMatchIndex);
-            addHighlight(match[0], match[1], isCurrent);
+            var ignored = addHighlight(match[0], match[1], isCurrent);
         }
     }
 

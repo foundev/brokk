@@ -33,7 +33,7 @@ public class MiniParser {
     private final IdProvider idProvider; // Made final and initialized in constructor
     private Map<Integer, int[]> ordinalByAnchor = new HashMap<>();
 
-    public MiniParser(IdProvider idProvider) { // Constructor to initialize idProvider
+    public MiniParser(IdProvider idProvider) {
         this.idProvider = idProvider;
     }
 
@@ -47,7 +47,7 @@ public class MiniParser {
      */
     public List<ComponentData> parse(Element topLevel,
                                     MarkdownFactory mdFactory,
-                                    Map<String, ComponentDataFactory> factories) { // idProvider removed from parameters
+                                    Map<String, ComponentDataFactory> factories) {
         
         this.ordinalByAnchor = new HashMap<>(); // Reset for each parse operation
         

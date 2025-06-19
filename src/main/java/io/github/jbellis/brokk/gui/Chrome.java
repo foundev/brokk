@@ -76,7 +76,7 @@ public class Chrome implements AutoCloseable, IConsoleIO, IContextManager.Contex
     private final GlobalCopyAction globalCopyAction;
     private final GlobalPasteAction globalPasteAction;
     // necessary for undo/redo because clicking on menubar takes focus from whatever had it
-    @Nullable private Component lastRelevantFocusOwner = null;
+    private @Nullable Component lastRelevantFocusOwner;
 
     // Swing components:
     final JFrame frame;
@@ -87,7 +87,7 @@ public class Chrome implements AutoCloseable, IConsoleIO, IContextManager.Contex
 
     private JSplitPane mainHorizontalSplitPane;
     private JSplitPane leftVerticalSplitPane;
-    @Nullable private JSplitPane rightVerticalSplitPane; // Can be null if no git
+    private @Nullable JSplitPane rightVerticalSplitPane; // Can be null if no git
     private HistoryOutputPanel historyOutputPanel;
 
     // Panels:
@@ -106,7 +106,7 @@ public class Chrome implements AutoCloseable, IConsoleIO, IContextManager.Contex
     public Chrome(ContextManager contextManager) {
         assert contextManager != null;
         this.contextManager = contextManager;
-        this.activeContext = Context.EMPTY; // Initialize activeContext
+        this.activeContext = Context.EMPTY;
 
         // Initialize fields that are part of buildMainPanel or buildStatusLabels
         this.instructionsPanel = new InstructionsPanel(this);
@@ -190,15 +190,11 @@ public class Chrome implements AutoCloseable, IConsoleIO, IContextManager.Contex
         KeyboardFocusManager.getCurrentKeyboardFocusManager().addPropertyChangeListener("focusOwner", evt -> {
             Component newFocusOwner = (Component) evt.getNewValue();
             // Update lastRelevantFocusOwner only if the new focus owner is one of our primary targets
-            if (newFocusOwner != null && instructionsPanel != null && historyOutputPanel.getLlmStreamArea() != null && historyOutputPanel.getHistoryTable() != null) {
-                if (newFocusOwner == instructionsPanel.getInstructionsArea()
-                        || SwingUtilities.isDescendingFrom(newFocusOwner, workspacePanel)
-                        || SwingUtilities.isDescendingFrom(newFocusOwner, historyOutputPanel.getHistoryTable())
-                        || SwingUtilities.isDescendingFrom(newFocusOwner, historyOutputPanel.getLlmStreamArea())) // Check for LLM area
-                {
-                    this.lastRelevantFocusOwner = newFocusOwner;
-                }
-                // else: lastRelevantFocusOwner remains unchanged if focus moves to a menu or irrelevant component
+            if (newFocusOwner == instructionsPanel.getInstructionsArea()
+                    || SwingUtilities.isDescendingFrom(newFocusOwner, workspacePanel)
+                    || SwingUtilities.isDescendingFrom(newFocusOwner, historyOutputPanel.getHistoryTable())
+                    || SwingUtilities.isDescendingFrom(newFocusOwner, historyOutputPanel.getLlmStreamArea())) {
+                this.lastRelevantFocusOwner = newFocusOwner;
             }
 
             globalUndoAction.updateEnabledState();
@@ -249,8 +245,7 @@ public class Chrome implements AutoCloseable, IConsoleIO, IContextManager.Contex
      */
     public void notifyActionComplete(String notification) {
         SwingUtilities.invokeLater(() -> {
-            // 'frame' is the JFrame member of Chrome
-            if (frame != null && frame.isShowing() && !frame.isActive()) {
+            if (frame.isShowing() && !frame.isActive()) {
                 Environment.instance.sendNotificationAsync(notification);
             }
         });
@@ -350,7 +345,6 @@ public class Chrome implements AutoCloseable, IConsoleIO, IContextManager.Contex
         // JMHighlightPainter.initializePainters(); // Removed: Painters are now created dynamically with theme colors
         // Initialize theme manager now that all components are created
         // and contextManager should be properly set
-        // historyOutputPanel.getLlmScrollPane() is now @NotNull
         themeManager = new GuiTheme(frame, historyOutputPanel.getLlmScrollPane(), this);
 
         // Apply current theme based on project settings
@@ -642,29 +636,21 @@ public class Chrome implements AutoCloseable, IConsoleIO, IContextManager.Contex
     @Override
     public void close() {
         logger.info("Closing Chrome UI");
-        if (contextManager != null) {
-            contextManager.close();
-        }
-        if (frame != null) {
-            frame.dispose();
-        }
+        contextManager.close();
+        frame.dispose();
     }
 
     @Override
     public void contextChanged(Context newCtx) {
         SwingUtilities.invokeLater(() -> {
-            // This method is called by ContextManager when its history might have changed
-            // (e.g., after an undo/redo operation affecting context or any pushContext).
-            // We need to ensure the global action states are updated even if focus didn't change.
-            if (globalUndoAction != null) globalUndoAction.updateEnabledState();
-            if (globalRedoAction != null) globalRedoAction.updateEnabledState();
-            if (globalCopyAction != null) globalCopyAction.updateEnabledState();
-            if (globalPasteAction != null) globalPasteAction.updateEnabledState();
+            globalUndoAction.updateEnabledState();
+            globalRedoAction.updateEnabledState();
+            globalCopyAction.updateEnabledState();
+            globalPasteAction.updateEnabledState();
 
-            // Also update HistoryOutputPanel's local buttons
             historyOutputPanel.updateUndoRedoButtonStates();
-            setContext(newCtx); // Handles contextPanel update and historyOutputPanel.resetLlmOutput
-            updateContextHistoryTable(newCtx); // Handles historyOutputPanel.updateHistoryTable
+            setContext(newCtx);
+            updateContextHistoryTable(newCtx);
         });
     }
 
@@ -755,9 +741,9 @@ public class Chrome implements AutoCloseable, IConsoleIO, IContextManager.Contex
     public void showPreviewFrame(ContextManager contextManager, String title, JComponent contentComponent) {
         JFrame previewFrame = newFrame(title);
         previewFrame.setContentPane(contentComponent);
-        previewFrame.setBackground(themeManager != null && themeManager.isDarkTheme()
-                                        ? UIManager.getColor("chat_background")
-                                        : Color.WHITE);
+        previewFrame.setBackground(themeManager.isDarkTheme()
+                                ? UIManager.getColor("chat_background") 
+                                : Color.WHITE);
 
         var project = contextManager.getProject();
         assert project != null;
@@ -893,9 +879,9 @@ public class Chrome implements AutoCloseable, IConsoleIO, IContextManager.Contex
                 var outputFragment = (ContextFragment.OutputFragment) workingFragment;
                 JPanel messagesContainer = new JPanel();
                 messagesContainer.setLayout(new BoxLayout(messagesContainer, BoxLayout.Y_AXIS));
-                messagesContainer.setBackground(themeManager != null && themeManager.isDarkTheme()
-                                                ? UIManager.getColor("Panel.background")
-                                                : Color.WHITE);
+                messagesContainer.setBackground(themeManager.isDarkTheme()
+                                            ? UIManager.getColor("Panel.background") 
+                                            : Color.WHITE);
 
                 var scrollPane = new JScrollPane(messagesContainer);
                 scrollPane.setBorder(BorderFactory.createEmptyBorder(10, 10, 10, 10));
@@ -1125,7 +1111,7 @@ public class Chrome implements AutoCloseable, IConsoleIO, IContextManager.Contex
 
                 rightVerticalSplitPane.addPropertyChangeListener(JSplitPane.DIVIDER_LOCATION_PROPERTY, e -> {
                     // Add null check before dereferencing
-                    if (rightVerticalSplitPane != null && rightVerticalSplitPane.isShowing()) {
+                    if (rightVerticalSplitPane.isShowing()) {
                         var newPos = rightVerticalSplitPane.getDividerLocation();
                         if (newPos > 0) {
                             project.saveRightVerticalSplitPosition(newPos);
@@ -1138,13 +1124,12 @@ public class Chrome implements AutoCloseable, IConsoleIO, IContextManager.Contex
 
     @Override
     public void updateContextHistoryTable() {
-        Context selectedContext = contextManager.selectedContext(); // Can be null
-        updateContextHistoryTable(selectedContext);
+        updateContextHistoryTable(contextManager.selectedContext());
     }
 
     @Override
-    public void updateContextHistoryTable(@Nullable Context contextToSelect) { // contextToSelect can be null
-            historyOutputPanel.updateHistoryTable(contextToSelect);
+    public void updateContextHistoryTable(Context contextToSelect) {
+        historyOutputPanel.updateHistoryTable(contextToSelect);
     }
 
     public boolean isPositionOnScreen(int x, int y) {
@@ -1267,7 +1252,7 @@ public class Chrome implements AutoCloseable, IConsoleIO, IContextManager.Contex
         // Check if focus is within ContextPanel or HistoryOutputPanel's historyTable
         boolean inContextPanel = SwingUtilities.isDescendingFrom(focusOwner, workspacePanel);
         boolean inHistoryTable = historyOutputPanel.getHistoryTable() != null &&
-                                 SwingUtilities.isDescendingFrom(focusOwner, historyOutputPanel.getHistoryTable());
+               SwingUtilities.isDescendingFrom(focusOwner, historyOutputPanel.getHistoryTable());
         return inContextPanel || inHistoryTable;
     }
 

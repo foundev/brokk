@@ -24,7 +24,7 @@ public class EditBlockNode extends Block {
      * Get the filename if specified or empty sequence if not.
      */
     public BasedSequence getFilename() {
-        return filename != null ? BasedSequence.of(filename) : BasedSequence.NULL;
+        return filename == null ? BasedSequence.NULL : BasedSequence.of(filename);
     }
     
     /**
@@ -38,20 +38,16 @@ public class EditBlockNode extends Block {
      * Get the number of added lines in the edit block.
      */
     public int getAdds() {
-        if (replaceText == null) return 0;
         String content = replaceText.toString().trim();
-        if (content.isEmpty()) return 0;
-        return (int)content.lines().count();
+        return content.isEmpty() ? 0 : (int)content.lines().count();
     }
     
     /**
      * Get the number of deleted lines in the edit block.
      */
     public int getDels() {
-        if (searchText == null) return 0;
         String content = searchText.toString().trim();
-        if (content.isEmpty()) return 0;
-        return (int)content.lines().count();
+        return content.isEmpty() ? 0 : (int)content.lines().count();
     }
     
     /**
@@ -82,12 +78,12 @@ public class EditBlockNode extends Block {
     /**
      * Set segments of this node based on parsed sequences.
      */
-    public void setSegments(BasedSequence openingMarker, 
+    public void setSegments(BasedSequence openingMarker,
                            BasedSequence searchKeyword,
                            BasedSequence searchText,
                            BasedSequence divider,
                            BasedSequence replaceKeyword,
-                           BasedSequence replaceText, 
+                           BasedSequence replaceText,
                            BasedSequence closingMarker) {
         this.openingMarker = openingMarker;
         this.searchKeyword = searchKeyword;

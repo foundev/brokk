@@ -2,9 +2,9 @@ package io.github.jbellis.brokk.util;
 
 import io.github.jbellis.brokk.analyzer.ProjectFile;
 import io.github.jbellis.brokk.context.ContextFragment;
+import org.jetbrains.annotations.Nullable;
 
 import java.nio.charset.StandardCharsets;
-import org.jetbrains.annotations.Nullable;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.util.Arrays;
@@ -20,16 +20,12 @@ public final class FragmentUtils {
         // Private constructor to prevent instantiation
     }
 
-    private static void updateDigest(MessageDigest md, @Nullable String data) {
-        if (data != null) {
-            md.update(data.getBytes(StandardCharsets.UTF_8));
-        }
+    private static void updateDigest(MessageDigest md, String data) {
+        md.update(data.getBytes(StandardCharsets.UTF_8));
     }
 
-    private static void updateDigest(MessageDigest md, @Nullable byte[] data) {
-        if (data != null) {
-            md.update(data);
-        }
+    private static void updateDigest(MessageDigest md, byte[] data) {
+        md.update(data);
     }
 
     private static void updateDigest(MessageDigest md, boolean data) {
@@ -37,15 +33,15 @@ public final class FragmentUtils {
     }
 
     private static String calculateHashInternal(ContextFragment.FragmentType type,
-                                                String description,
-                                                @Nullable String shortDescription,
-                                                @Nullable String textContent,
-                                                @Nullable byte[] imageBytesContent,
-                                                boolean isTextFragment,
-                                                String syntaxStyle,
-                                                @Nullable Set<ProjectFile> files,
-                                                String originalClassName,
-                                                @Nullable Map<String, String> meta)
+                                              String description,
+                                              @Nullable String shortDescription,
+                                              @Nullable String textContent,
+                                              @Nullable byte[] imageBytesContent,
+                                              boolean isTextFragment,
+                                              String syntaxStyle,
+                                              @Nullable Set<ProjectFile> files,
+                                               String originalClassName,
+                                               @Nullable Map<String, String> meta)
     {
         try {
             MessageDigest md = MessageDigest.getInstance("SHA-256");
@@ -55,14 +51,21 @@ public final class FragmentUtils {
             if (shortDescription != null) { // Only include if provided
                 updateDigest(md, shortDescription);
             }
-            updateDigest(md, textContent); // updateDigest handles null
-            updateDigest(md, imageBytesContent); // updateDigest handles null
+            if (textContent != null) {
+                updateDigest(md, textContent);
+            }
+            if (imageBytesContent != null) {
+                updateDigest(md, imageBytesContent);
+            }
             updateDigest(md, isTextFragment);
             updateDigest(md, syntaxStyle);
 
+            // Per the intern's changes, files and meta can be null or empty so let's
+            // standardize on treating null and empty the same: ignore them.
+            // Also, there is no need for `files.stream().filter(Objects::nonNull)`
+            // since NullAway should ensure that the set does not contain nulls.
             if (files != null && !files.isEmpty()) {
                 String sortedFilesString = files.stream()
-                                                .filter(Objects::nonNull)
                                                 .map(pf -> pf.getRoot().toString() + "|" + pf.getRelPath().toString())
                                                 .sorted()
                                                 .collect(Collectors.joining(";"));
@@ -107,9 +110,9 @@ public final class FragmentUtils {
                                               @Nullable byte[] imageBytesContent,
                                               boolean isTextFragment,
                                               String syntaxStyle,
-                                              Set<ProjectFile> files,
-                                              String originalClassName,
-                                              Map<String, String> meta)
+                                              @Nullable Set<ProjectFile> files,
+                                              @Nullable String originalClassName,
+                                              @Nullable Map<String, String> meta)
     {
         return calculateHashInternal(type, description, null, textContent, imageBytesContent, isTextFragment, syntaxStyle, files, originalClassName, meta);
     }
@@ -125,9 +128,9 @@ public final class FragmentUtils {
                                               @Nullable byte[] imageBytesContent,
                                               boolean isTextFragment,
                                               String syntaxStyle,
-                                              Set<ProjectFile> files,
-                                              String originalClassName,
-                                              Map<String, String> meta) {
+                                              @Nullable Set<ProjectFile> files,
+                                              @Nullable String originalClassName,
+                                              @Nullable Map<String, String> meta) {
         return calculateHashInternal(type, description, shortDescription, textContent, imageBytesContent, isTextFragment, syntaxStyle, files, originalClassName, meta);
     }
 }

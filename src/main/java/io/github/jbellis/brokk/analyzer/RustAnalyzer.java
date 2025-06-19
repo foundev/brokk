@@ -71,7 +71,11 @@ public final class RustAnalyzer extends TreeSitterAnalyzer {
     protected String determinePackageName(ProjectFile file, TSNode defNode, TSNode rootNode, String src) {
         Path projectRoot = getProject().getRoot();
         Path absFilePath = file.absPath();
-        Path fileParentDir = absFilePath.getParent();
+        @Nullable Path fileParentDir = absFilePath.getParent();
+        if (fileParentDir == null) {
+            log.warn("File {} has no parent directory. Defaulting to empty package name.", absFilePath);
+            return "";
+        }
 
         // Determine the effective root for module path calculation (project_root/src/ or project_root/)
         Path srcDirectory = projectRoot.resolve("src");
@@ -81,7 +85,7 @@ public final class RustAnalyzer extends TreeSitterAnalyzer {
         String fileNameStr = absFilePath.getFileName().toString();
 
         // If the file is lib.rs or main.rs, and its parent directory is the effectiveModuleRoot,
-        // it's considered the crate root module (empty package path).
+        // it's considered the crate root module (empty package name).
         if ((fileNameStr.equals("lib.rs") || fileNameStr.equals("main.rs")) &&
             (fileParentDir != null && fileParentDir.equals(effectiveModuleRoot))) { // Add null check for fileParentDir
             return "";
@@ -138,10 +142,10 @@ public final class RustAnalyzer extends TreeSitterAnalyzer {
 
     @Override
     protected @Nullable CodeUnit createCodeUnit(ProjectFile file,
-                                                String captureName,
-                                                String simpleName,
-                                                String packageName,
-                                                String classChain) {
+                                               String captureName,
+                                               String simpleName,
+                                               String packageName,
+                                               String classChain) {
         log.trace("RustAnalyzer.createCodeUnit: File='{}', Capture='{}', SimpleName='{}', Package='{}', ClassChain='{}'",
                   file.getFileName(), captureName, simpleName, packageName, classChain);
         return switch (captureName) {

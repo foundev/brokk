@@ -78,11 +78,11 @@ public class ArchitectAgent {
                           String goal,
                           ArchitectOptions options)
     {
-        this.contextManager = Objects.requireNonNull(contextManager, "contextManager cannot be null");
-        this.model = Objects.requireNonNull(model, "model cannot be null");
-        this.toolRegistry = Objects.requireNonNull(toolRegistry, "toolRegistry cannot be null");
-        this.goal = Objects.requireNonNull(goal, "goal cannot be null");
-        this.options = Objects.requireNonNull(options, "options cannot be null");
+        this.contextManager = contextManager;
+        this.model = model;
+        this.toolRegistry = toolRegistry;
+        this.goal = goal;
+        this.options = options;
         this.io = contextManager.getIo();
     }
 
@@ -118,7 +118,7 @@ public class ArchitectAgent {
         return reason;
     }
 
-    private static class FatalLlmException extends RuntimeException { // Made static
+    private static class FatalLlmException extends RuntimeException {
         public FatalLlmException(String message) {
             super(message);
         }
@@ -151,9 +151,7 @@ public class ArchitectAgent {
 
         // TODO label this Architect
         io.llmOutput("Code Agent engaged: " + instructions, ChatMessageType.CUSTOM, true);
-        var agent = new CodeAgent(contextManager,
-                                  contextManager.getCodeModel());
-        var result = agent.runTask(instructions, true);
+        var result = new CodeAgent(contextManager, contextManager.getCodeModel()).runTask(instructions, true);
         var stopDetails = result.stopDetails();
         var reason = stopDetails.reason();
         var entry = contextManager.addToHistory(result, true);
@@ -305,11 +303,11 @@ public class ArchitectAgent {
             int workspaceTokenSize = Messages.getApproximateTokens(workspaceContentMessages);
 
             // Build the prompt messages, including history and conditional warnings
-            var messages = buildPrompt(workspaceTokenSize, minInputTokenLimit, workspaceContentMessages);
+            List<ChatMessage> messages = buildPrompt(workspaceTokenSize, minInputTokenLimit, workspaceContentMessages);
 
             // Figure out which tools are allowed in this step
             var toolSpecs = new ArrayList<ToolSpecification>();
-            var criticalWorkspaceSize = minInputTokenLimit < Integer.MAX_VALUE && workspaceTokenSize > (ArchitectPrompts.WORKSPACE_CRITICAL_THRESHOLD * minInputTokenLimit);
+            boolean criticalWorkspaceSize = minInputTokenLimit < Integer.MAX_VALUE && workspaceTokenSize > (ArchitectPrompts.WORKSPACE_CRITICAL_THRESHOLD * minInputTokenLimit);
 
             if (criticalWorkspaceSize) {
                 io.systemOutput(String.format("Workspace size (%,d tokens) is %.0f%% of limit %,d. Tool usage restricted to workspace modification.",
@@ -393,10 +391,7 @@ public class ArchitectAgent {
 
             var deduplicatedRequests = new LinkedHashSet<>(aiMessage.toolExecutionRequests());
             logger.debug("Unique tool requests are {}", deduplicatedRequests);
-            var toolNames = deduplicatedRequests.stream()
-                    .map(req -> "`" + req.name() + "`")
-                    .collect(Collectors.joining(", "));
-            io.llmOutput("\nTool call(s): %s".formatted(toolNames), ChatMessageType.AI);
+            io.llmOutput("\nTool call(s): %s".formatted(deduplicatedRequests.stream().map(req -> "`" + req.name() + "`").collect(Collectors.joining(", "))), ChatMessageType.AI);
 
             // execute tool calls in the following order:
             // 1. projectFinished
@@ -409,12 +404,16 @@ public class ArchitectAgent {
             var codeAgentReqs = new ArrayList<ToolExecutionRequest>();
             var otherReqs = new ArrayList<ToolExecutionRequest>();
             for (var req : deduplicatedRequests) {
-                switch (req.name()) {
-                    case "projectFinished" -> answerReq = req;
-                    case "abortProject" -> abortReq = req;
-                    case "callSearchAgent" -> searchAgentReqs.add(req);
-                    case "callCodeAgent" -> codeAgentReqs.add(req);
-                    default -> otherReqs.add(req);
+                if (req.name().equals("projectFinished")) {
+                    answerReq = req;
+                } else if (req.name().equals("abortProject")) {
+                    abortReq = req;
+                } else if (req.name().equals("callSearchAgent")) {
+                    searchAgentReqs.add(req);
+                } else if (req.name().equals("callCodeAgent")) {
+                    codeAgentReqs.add(req);
+                } else {
+                    otherReqs.add(req);
                 }
             }
 
@@ -487,7 +486,7 @@ public class ArchitectAgent {
                     interrupted = true;
                 } catch (ExecutionException e) {
                     var cause = e.getCause();
-                    var causeMessage = cause != null ? Objects.toString(cause.getMessage(), "Unknown cause") : "Unknown execution error";
+                    var causeMessage = Objects.toString(cause.getMessage(), "Unknown cause");
                     logger.warn("Error executing SearchAgent task '{}'", request.name(), cause);
                     if (cause instanceof FatalLlmException) {
                         var errorMessage = "Fatal LLM error executing Search Agent: %s".formatted(causeMessage);
@@ -543,10 +542,7 @@ public class ArchitectAgent {
      * This includes the standard system prompt, workspace contents, history, agent's session messages,
      * and the final user message with the goal and conditional workspace warnings.
      */
-    private List<ChatMessage> buildPrompt(int workspaceTokenSize,
-                                          int minInputTokenLimit,
-                                          List<ChatMessage> precomputedWorkspaceMessages)
-    {
+    private List<ChatMessage> buildPrompt(int workspaceTokenSize, int minInputTokenLimit, List<ChatMessage> precomputedWorkspaceMessages) {
         var messages = new ArrayList<ChatMessage>();
         // System message defines the agent's role and general instructions
         messages.add(ArchitectPrompts.instance.systemMessage(contextManager, CodePrompts.ARCHITECT_REMINDER));
@@ -557,10 +553,7 @@ public class ArchitectAgent {
         // This agent's own conversational history for the current goal
         messages.addAll(architectMessages);
         // Final user message with the goal and specific instructions for this turn, including workspace warnings
-        var finalInstructions = ArchitectPrompts.instance.getFinalInstructions(contextManager,
-                                                                                goal,
-                                                                                workspaceTokenSize,
-                                                                                minInputTokenLimit);
+        var finalInstructions = ArchitectPrompts.instance.getFinalInstructions(contextManager, goal, workspaceTokenSize, minInputTokenLimit);
         messages.add(new UserMessage(finalInstructions));
         return messages;
     }

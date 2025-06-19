@@ -309,14 +309,14 @@ public class FileSelectionTree extends JTree {
 
         @Override
         protected @Nullable TreePath doInBackground() {
-            logger.trace("[ExpansionWorker] Starting expansion for {}", targetPath);
+            logger.trace("Starting expansion for {}", targetPath);
             var rootNode = (DefaultMutableTreeNode) model.getRoot();
 
             // 1. Find the drive (root) node that contains targetPath
             var driveNode = findDriveNode(rootNode, targetPath);
             if (driveNode == null) {
-                logger.warn("[ExpansionWorker] Could not find matching root for path: {}", targetPath);
-                return null;
+                logger.warn("Could not find matching root for path: {}", targetPath);
+                return new TreePath(rootNode);
             }
 
             // 2. Initial TreePath includes the overall root + the drive node
@@ -324,7 +324,7 @@ public class FileSelectionTree extends JTree {
 
             // Ensure the drive node's children are loaded before proceeding
             if (!model.ensureChildrenLoadedSync(driveNode)) {
-                logger.warn("[ExpansionWorker] Failed to load children for drive node: {}", driveNode);
+                logger.warn("Failed to load children for drive node: {}", driveNode);
                 return currentTreePath;
             }
 
@@ -333,9 +333,9 @@ public class FileSelectionTree extends JTree {
             Path relativePath;
             try {
                 relativePath = drivePath.relativize(targetPath);
-                logger.trace("[ExpansionWorker] Relative path segments to traverse: {}", relativePath);
+                logger.trace("Relative path segments to traverse: {}", relativePath);
             } catch (IllegalArgumentException e) {
-                logger.warn("[ExpansionWorker] Could not relativize {} against {}: {}", targetPath, drivePath, e.getMessage());
+                logger.warn("Could not relativize {} against {}: {}", targetPath, drivePath, e.getMessage());
                 return currentTreePath;
             }
 
@@ -343,12 +343,12 @@ public class FileSelectionTree extends JTree {
             var currentNode = driveNode;
             for (var segment : relativePath) {
                 if (!model.ensureChildrenLoadedSync(currentNode)) {
-                    logger.warn("[ExpansionWorker] Failed to load children for node: {}", currentNode);
+                    logger.warn("Failed to load children for node: {}", currentNode);
                     break;
                 }
                 var nextNode = findChildNode(currentNode, segment);
                 if (nextNode == null) {
-                    logger.warn("[ExpansionWorker] Segment not found: {}", segment);
+                    logger.warn("Segment not found: {}", segment);
                     break;
                 }
                 currentNode = nextNode;
@@ -364,18 +364,18 @@ public class FileSelectionTree extends JTree {
             try {
                 var finalPath = get();
                 if (finalPath != null) {
-                    logger.trace("[ExpansionWorker] Expansion complete, selecting: {}", finalPath.getLastPathComponent());
+                    logger.trace("Expansion complete, selecting: {}", finalPath.getLastPathComponent());
                     tree.expandPath(finalPath);
                     tree.setSelectionPath(finalPath);
                     tree.scrollPathToVisible(finalPath);
-                } else {
-                    logger.warn("[ExpansionWorker] Expansion yielded no final path.");
                 }
             } catch (InterruptedException | CancellationException e) {
-                logger.warn("[ExpansionWorker] Expansion was interrupted or cancelled.", e);
+                logger.warn("Expansion was interrupted or cancelled.", e);
                 Thread.currentThread().interrupt();
             } catch (ExecutionException e) {
-                logger.error("[ExpansionWorker] Error expanding path.", e.getCause());
+                logger.error("Error expanding path.", e.getCause());
+            } catch (IllegalArgumentException e) {
+                logger.warn("Could not expand to path: {}", e.getMessage());
             }
         }
 
@@ -390,7 +390,7 @@ public class FileSelectionTree extends JTree {
                             return child;
                         }
                     } catch (InvalidPathException ex) {
-                        logger.warn("[ExpansionWorker] Invalid path comparison: {} vs {}", target, childPath, ex);
+                        logger.warn("Invalid path comparison: {} vs {}", target, childPath, ex);
                     }
                 }
             }

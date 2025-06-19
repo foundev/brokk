@@ -362,7 +362,7 @@ public class EditBlock {
     /**
      * If the search/replace has lines of "..." as placeholders, do naive partial replacements.
      */
-    public static @Nullable String tryDotdotdots(String whole, String target, String replace) throws NoMatchException {
+    public static String tryDotdotdots(String whole, String target, String replace) throws NoMatchException {
         // If there's no "..." in target or whole, skip
         if (!target.contains("...") && !whole.contains("...")) {
             return null;
@@ -405,9 +405,9 @@ public class EditBlock {
      * Throws AmbiguousMatchException if more than one match is found in either step,
      * or NoMatchException if no matches are found
      */
-    static @Nullable String perfectOrWhitespace(String[] originalLines,    // Static, as per original, but should be public for test access
-                                                String[] targetLines,
-                                                String[] replaceLines)
+    public static @Nullable String perfectOrWhitespace(String[] originalLines,
+                                                      String[] targetLines,
+                                                      String[] replaceLines)
     throws AmbiguousMatchException, NoMatchException
     {
         try {
@@ -422,9 +422,9 @@ public class EditBlock {
      * Throws AmbiguousMatchException if multiple exact matches are found.
      * Throws NoMatchException if no exact match is found.
      */
-    static @Nullable String perfectReplace(String[] originalLines, // Static, as per original, but should be public for test access
-                                           String[] targetLines,
-                                           String[] replaceLines)
+    public static @Nullable String perfectReplace(String[] originalLines,
+                                                 String[] targetLines,
+                                                 String[] replaceLines)
     throws AmbiguousMatchException, NoMatchException
     {
         // special-case replace entire file (empty target)
@@ -472,7 +472,7 @@ public class EditBlock {
      * Throws AmbiguousMatchException if multiple matches are found ignoring whitespace.
      * Throws NoMatchException if no match is found ignoring whitespace, or if the search block contained only whitespace.
      */
-    static @Nullable String replaceIgnoringWhitespace(String[] originalLines,
+    public static @Nullable String replaceIgnoringWhitespace(String[] originalLines,
                                                       String[] targetLines,
                                                       String[] replaceLines)
     throws AmbiguousMatchException, NoMatchException
@@ -589,7 +589,7 @@ public class EditBlock {
         return new ContentLines(content, linesList);
     }
 
-    private record ContentLines(String original, List<String> lines) { // Ensures this matches the list type
+    private record ContentLines(String original, List<String> lines) {
     }
 
     /**
@@ -605,8 +605,9 @@ public class EditBlock {
     static ProjectFile resolveProjectFile(IContextManager cm, @Nullable String filename)
     throws SymbolNotFoundException, SymbolAmbiguousException
     {
-        if (filename == null || filename.isBlank()) { // Handle null or blank filename early
-            throw new SymbolNotFoundException("Filename cannot be null or blank.");
+        Objects.requireNonNull(filename, "Filename cannot be null");
+        if (filename.isBlank()) {
+            throw new SymbolNotFoundException("Filename cannot be blank");
         }
         var file = cm.toFile(filename);
 

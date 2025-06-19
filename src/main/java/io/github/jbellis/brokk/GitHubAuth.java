@@ -83,17 +83,17 @@ public class GitHubAuth
         if (!usingOverride || (effectiveOwner == null || effectiveOwner.isBlank()) || (effectiveRepoName == null || effectiveRepoName.isBlank())) {
             var repo = (GitRepo) project.getRepo();
             if (repo == null) {
-                if (instance != null) { // Instance can be null
+                if (instance != null) {
                     logger.info("Git repository not available for project '{}' (when attempting to use git remote). Invalidating GitHubAuth instance for {}/{}.",
                                 project.getRoot().getFileName().toString(), instance.getOwner(), instance.getRepoName());
+                    instance = null;
                 }
-                instance = null; // Ensure instance is null if repo is null
                 throw new IOException("Git repository not available from project '" + project.getRoot().getFileName().toString() + "' for GitHubAuth (when attempting to use git remote).");
             }
 
             var remoteUrl = repo.getRemoteUrl();
             // Use GitUiUtil for parsing owner/repo from URL
-            var parsedOwnerRepoDetails = io.github.jbellis.brokk.gui.GitUiUtil.parseOwnerRepoFromUrl(Objects.requireNonNullElse(remoteUrl, ""));
+            var parsedOwnerRepoDetails = io.github.jbellis.brokk.gui.GitUiUtil.parseOwnerRepoFromUrl(remoteUrl);
 
             if (parsedOwnerRepoDetails != null) {
                 effectiveOwner = parsedOwnerRepoDetails.owner();
@@ -243,7 +243,7 @@ public class GitHubAuth
     public GHRepository getGhRepository() throws IOException
     {
         connect(); // Ensures ghRepository is initialized or throws
-        return Objects.requireNonNull(this.ghRepository, "ghRepository should be non-null after successful connect()");
+        return this.ghRepository;
     }
 
     /**
@@ -262,7 +262,7 @@ public class GitHubAuth
      */
     public GitHub getGitHub() throws IOException {
         connect();
-        return Objects.requireNonNull(this.githubClient, "githubClient should be non-null after successful connect()");
+        return this.githubClient;
     }
 
     /**

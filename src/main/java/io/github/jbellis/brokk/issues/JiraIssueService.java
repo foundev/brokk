@@ -27,16 +27,15 @@ public class JiraIssueService implements IssueService {
 
     private final JiraAuth jiraAuth;
     private final IProject project; // May be needed for project-specific Jira settings
-    @Nullable private List<String> availableStatusesCache;
+    private List<String> availableStatusesCache;
 
     public JiraIssueService(IProject project) {
         this.project = project;
         this.jiraAuth = new JiraAuth(project);
     }
 
-    @Nullable
-    private Date parseJiraDateTime(@Nullable String dateTimeStr) {
-        if (dateTimeStr == null || dateTimeStr.isBlank()) {
+    private @Nullable Date parseJiraDateTime(String dateTimeStr) {
+        if (dateTimeStr.isBlank()) {
             return null;
         }
 
@@ -153,7 +152,7 @@ public class JiraIssueService implements IssueService {
 
             if (issuesNode.isArray()) {
                 for (JsonNode issueNode : issuesNode) {
-                    String issueKey = issueNode.path("key").asText(null);
+                    String issueKey = issueNode.path("key").asText();
                     if (issueKey == null) {
                         logger.warn("Skipping issue with null key: {}", issueNode.toString());
                         continue;
@@ -162,7 +161,7 @@ public class JiraIssueService implements IssueService {
                     JsonNode fieldsNode = issueNode.path("fields");
                     String title = fieldsNode.path("summary").asText("No summary");
 
-                    String updatedStr = fieldsNode.path("updated").asText(null);
+                    String updatedStr = fieldsNode.path("updated").asText();
                     Date updatedAt = parseJiraDateTime(updatedStr);
 
                     String status = fieldsNode.path("status").path("name").asText("Unknown");
@@ -172,26 +171,14 @@ public class JiraIssueService implements IssueService {
                     List<String> labels = Collections.emptyList();
                     List<String> assignees = Collections.emptyList();
 
-                    URI htmlUrl = null;
+                    URI htmlUrl;
                     try {
                         htmlUrl = new URI(baseUrl + "/browse/" + issueKey);
                     } catch (URISyntaxException e) {
                         logger.warn("Could not construct htmlUrl for issue {}: {}", issueKey, baseUrl, e);
+                        htmlUrl = null; // Ensure htmlUrl is explicitly set to null on error
                     }
-                    // Provide default non-null values for fields that expect it
-                    Date finalUpdatedAt = Objects.requireNonNullElse(updatedAt, Date.from(Instant.EPOCH));
-
-                    URI nonNullHtmlUrl;
-                    try {
-                         nonNullHtmlUrl = Objects.requireNonNullElse(htmlUrl, new URI("urn:brokk:missing-uri"));
-                    } catch (URISyntaxException e) {
-                        // This path should ideally be impossible if the URN is valid.
-                        // If it can happen, we need a robust fallback.
-                        // Forcing a non-null value even in failure of fallback URI creation:
-                        try { nonNullHtmlUrl = new URI("urn:brokk:error-uri-fallback-failed"); }
-                        catch (URISyntaxException fatalE) { throw new AssertionError(fatalE); } // Should never happen
-                    }
-                    issueHeaders.add(new IssueHeader(issueKey, title, author, finalUpdatedAt, labels, assignees, status, nonNullHtmlUrl));
+                    issueHeaders.add(new IssueHeader(issueKey, title, author, updatedAt, labels, assignees, status, htmlUrl));
                 }
             } else {
                 logger.warn("Jira response 'issues' field is not an array or is missing.");
@@ -281,7 +268,7 @@ public class JiraIssueService implements IssueService {
             String title = fieldsNode.path("summary").asText("No summary");
             String author = fieldsNode.path("reporter").path("displayName").asText("Anonymous");
 
-            String updatedStr = fieldsNode.path("updated").asText(null);
+            String updatedStr = fieldsNode.path("updated").asText();
             Date updatedAt = parseJiraDateTime(updatedStr);
 
             List<String> labels = new ArrayList<>();
@@ -307,23 +294,7 @@ public class JiraIssueService implements IssueService {
                 logger.error("Could not construct htmlUrl for issue {}: {}", key, baseUrl, e);
                 throw new IOException("Could not construct htmlUrl for issue " + key, e);
             }
-            // Provide default non-null values
-            Date finalUpdatedAt = Objects.requireNonNullElse(updatedAt, Date.from(Instant.EPOCH));
-            URI finalHtmlUrl;
-            try {
-                finalHtmlUrl = htmlUrl != null ? htmlUrl : new URI("urn:brokk:missing-uri");
-            } catch (URISyntaxException e) {
-                logger.error("URISyntaxException for fallback URI for issue {}: {}", key, e.getMessage());
-                // Assign a "known good" URI or throw if this state is unacceptable
-                try {
-                    finalHtmlUrl = new URI("urn:brokk:error-uri-fallback-failed");
-                } catch (URISyntaxException fatalE) {
-                    throw new AssertionError("Fallback URI construction failed", fatalE);
-                }
-            }
-
-
-            IssueHeader header = new IssueHeader(key, title, author, finalUpdatedAt, labels, assignees, status, finalHtmlUrl);
+            IssueHeader header = new IssueHeader(key, title, author, updatedAt, labels, assignees, status, htmlUrl);
 
             // Extract renderedBody (HTML)
             String renderedDescription = rootNode.path("renderedFields").path("description").asText("");
@@ -343,12 +314,9 @@ public class JiraIssueService implements IssueService {
                     // If renderedBody is not available from htmlComment, bodyHtml will be empty.
                     // This follows the user's provided logic snippet.
 
-                    String createdStr = rawComment.path("created").asText(null); // ISO date from raw fields
+                    String createdStr = rawComment.path("created").asText();
                     Date createdDate = parseJiraDateTime(createdStr);
-                    // Provide default non-null value
-                    Date finalCreatedDate = Objects.requireNonNullElse(createdDate, Date.from(Instant.EPOCH));
-
-                    comments.add(new Comment(authorName, bodyHtml, finalCreatedDate));
+                    comments.add(new Comment(authorName, bodyHtml, createdDate));
                 }
                 logger.debug("Parsed {} comments for Jira issue {}", comments.size(), issueId);
             } else {
@@ -362,8 +330,8 @@ public class JiraIssueService implements IssueService {
                 for (JsonNode attachmentNode : attachmentsNode) {
                     String mimeType = attachmentNode.path("mimeType").asText("");
                     if (mimeType.startsWith("image/")) {
-                        String contentUrlStr = attachmentNode.path("content").asText(null);
-                        if (contentUrlStr != null && !contentUrlStr.isBlank()) {
+                        String contentUrlStr = attachmentNode.path("content").asText();
+                    if (!contentUrlStr.isBlank()) {
                             try {
                                 attachmentUrls.add(new URI(contentUrlStr));
                             } catch (URISyntaxException e) {
@@ -445,15 +413,15 @@ public class JiraIssueService implements IssueService {
             if (rootNode.isArray()) {
                 List<String> statusNames = new ArrayList<>();
                 for (JsonNode statusNode : rootNode) {
-                    String statusName = statusNode.path("name").asText(null);
-                    if (statusName != null && !statusName.isBlank()) {
+                    String statusName = statusNode.path("name").asText();
+                    if (!statusName.isBlank()) {
                         statusNames.add(statusName);
                     } else {
                         logger.warn("Found a status object without a 'name' or with a blank name: {}", statusNode.toString());
                     }
                 }
                 logger.info("Successfully fetched {} Jira statuses.", statusNames.size());
-                this.availableStatusesCache = Collections.unmodifiableList(new ArrayList<>(statusNames)); // Cache a copy
+                availableStatusesCache = Collections.unmodifiableList(new ArrayList<>(statusNames)); // Cache a copy
                 return this.availableStatusesCache;
             } else {
                 logger.error("Jira /status response is not a JSON array as expected. Body: {}", responseBodyString);

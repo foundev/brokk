@@ -1,9 +1,10 @@
 package io.github.jbellis.brokk;
 
+import org.jetbrains.annotations.Nullable;
+
 import com.fasterxml.jackson.core.JsonProcessingException;
 import io.github.jbellis.brokk.Service.ModelConfig;
 import io.github.jbellis.brokk.agents.BuildAgent;
-import org.jetbrains.annotations.Nullable;
 import io.github.jbellis.brokk.analyzer.Language;
 import io.github.jbellis.brokk.analyzer.ProjectFile;
 import io.github.jbellis.brokk.context.Context;

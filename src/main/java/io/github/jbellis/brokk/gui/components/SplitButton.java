@@ -42,7 +42,8 @@ public class SplitButton extends JButton {
             // Create menu on demand if not already created or if supplier changed
             var currentMenu = menuSupplier.get();
             if (currentMenu != null) {
-                popupMenu = currentMenu; // Update cached menu
+                popupMenu = currentMenu;
+                assert popupMenu != null : "SplitButton: menuSupplier.get() returned non-null currentMenu";
                 popupMenu.show(this, 0, getHeight());
             }
         }
@@ -215,12 +216,7 @@ public class SplitButton extends JButton {
     
         @Override
         public Dimension getPreferredSize(JComponent c) {
-            Dimension d = super.getPreferredSize(c);
-            if (d == null) {
-                // FlatButtonUI.getPreferredSize is @NotNull, so d should not be null.
-                // However, to satisfy NullAway if it thinks super can be null, return a default.
-                return new Dimension(0, 0);
-            }
+            var d = super.getPreferredSize(c); // FlatButtonUI.getPreferredSize is 
             if (c.isPreferredSizeSet()) {
                 return d;
             }
@@ -230,12 +226,7 @@ public class SplitButton extends JButton {
 
         @Override
         public Dimension getMinimumSize(JComponent c) {
-            Dimension d = super.getMinimumSize(c);
-            if (d == null) {
-                return new Dimension(0, 0);
-            }
-            // If minimum size is explicitly set, or if preferred size is set, use the superclass's calculation.
-            // Otherwise, add arrow width.
+            var d = super.getMinimumSize(c); // FlatButtonUI.getMinimumSize is 
             if (c.isMinimumSizeSet() || c.isPreferredSizeSet()) {
                 return d;
             }
@@ -245,12 +236,7 @@ public class SplitButton extends JButton {
 
         @Override
         public Dimension getMaximumSize(JComponent c) {
-            Dimension d = super.getMaximumSize(c);
-            if (d == null) {
-                return new Dimension(0, 0);
-            }
-            // If maximum size is explicitly set, or if preferred size is set, use the superclass's calculation.
-            // Otherwise, add arrow width.
+            var d = super.getMaximumSize(c); // FlatButtonUI.getMaximumSize is 
             if (c.isMaximumSizeSet() || c.isPreferredSizeSet()) {
                 return d;
             }

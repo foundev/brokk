@@ -7,11 +7,11 @@ import java.util.List;
 
 public class SearchHits {
     private final List<SearchHit> searchHits;
-    @Nullable
+    @Nullable 
     private SearchHit current;
 
     public SearchHits() {
-        searchHits = new ArrayList<SearchHit>();
+        searchHits = new ArrayList<>();
         current = null;
     }
 
@@ -27,8 +27,7 @@ public class SearchHits {
     }
 
     public boolean isCurrent(SearchHit sh) {
-        var currentHit = getCurrent();
-        return currentHit != null && currentHit.equals(sh);
+        return sh.equals(getCurrent());
     }
 
     @Nullable
@@ -41,32 +40,20 @@ public class SearchHits {
     }
 
     public void next() {
-        int index;
-
-        index = searchHits.indexOf(getCurrent());
-        index++;
-
-        if (index >= searchHits.size()) {
-            index = 0;
+        if (searchHits.isEmpty() || getCurrent() == null) {
+            return;
         }
-
-        if (index >= 0 && index < searchHits.size()) {
-            setCurrent(searchHits.get(index));
-        }
+        
+        int index = searchHits.indexOf(getCurrent());
+        setCurrent(searchHits.get((index + 1) % searchHits.size()));
     }
 
     public void previous() {
-        int index;
-
-        index = searchHits.indexOf(getCurrent());
-        index--;
-
-        if (index < 0) {
-            index = searchHits.size() - 1;
+        if (searchHits.isEmpty() || getCurrent() == null) {
+            return;
         }
-
-        if (index >= 0 && index < searchHits.size()) {
-            setCurrent(searchHits.get(index));
-        }
+        
+        int index = searchHits.indexOf(getCurrent());
+        setCurrent(searchHits.get((index - 1 + searchHits.size()) % searchHits.size()));
     }
 }

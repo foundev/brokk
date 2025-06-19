@@ -9,7 +9,6 @@ import javax.swing.border.Border;
 import java.awt.*;
 import io.github.jbellis.brokk.gui.mop.util.ComponentUtils;
 import org.jetbrains.annotations.Nullable;
-import org.jetbrains.annotations.Nullable;
 import java.util.List;
 
 /**
@@ -154,49 +153,43 @@ public record EditBlockComponentData(int id, int adds, int dels, int changed, St
         if (component instanceof JPanel panel) {
             boolean darkTheme = panel.getBackground().equals(ThemeColors.getColor(true, "code_block_background"));
             
-            // Find components by name
-            JLabel badgeLabel = findComponentByName(panel, JLabel.class, "badgeLabel");
-            JLabel filenameLabel = findComponentByName(panel, JLabel.class, "filenameLabel");
-              JLabel addsLabel = findComponentByName(panel, JLabel.class, "addsLabel");
-              JLabel delsLabel = findComponentByName(panel, JLabel.class, "delsLabel");
-              JLabel changedLabel = findComponentByName(panel, JLabel.class, "changedLabel");
+            // Find components by name - these must exist since we created them in createComponent()
+            var badgeLabel = findComponentByName(panel, JLabel.class, "badgeLabel");
+            assert badgeLabel != null;
+            var filenameLabel = findComponentByName(panel, JLabel.class, "filenameLabel");
+            assert filenameLabel != null;
+            var addsLabel = findComponentByName(panel, JLabel.class, "addsLabel");
+            assert addsLabel != null;
+            var delsLabel = findComponentByName(panel, JLabel.class, "delsLabel");
+            assert delsLabel != null;
+            var changedLabel = findComponentByName(panel, JLabel.class, "changedLabel");
+            assert changedLabel != null;
               
-              // Update badge
-              if (badgeLabel != null) {
-                badgeLabel.setText(symbolFor(status));
-                badgeLabel.setForeground(ThemeColors.getColor(darkTheme, colorKeyFor(status)));
-                badgeLabel.setToolTipText(status.name());
-            }
+            // Update badge
+            badgeLabel.setText(symbolFor(status));
+            badgeLabel.setForeground(ThemeColors.getColor(darkTheme, colorKeyFor(status)));
+            badgeLabel.setToolTipText(status.name());
             
             // Update filename
-            if (filenameLabel != null) {
-                filenameLabel.setText(file());
-                filenameLabel.setForeground(ThemeColors.getColor(darkTheme, "chat_text")); // Re-apply in case theme changed
-            }
+            filenameLabel.setText(file());
+            filenameLabel.setForeground(ThemeColors.getColor(darkTheme, "chat_text")); // Re-apply in case theme changed
             
             // Update stats
-            if (addsLabel != null) {
-                addsLabel.setText("+" + adds());
-                addsLabel.setForeground(ThemeColors.getColor(darkTheme, "git_status_added"));
-            }
-            if (delsLabel != null) {
-                  delsLabel.setText("-" + dels());
-                  delsLabel.setForeground(ThemeColors.getColor(darkTheme, "git_status_deleted"));
-                  delsLabel.setVisible(dels() > 0); // Hide if zero
-              }
-              if (changedLabel != null) {
-                  changedLabel.setText("~" + changed());
-                  changedLabel.setForeground(ThemeColors.getColor(darkTheme, "git_changed"));
-                  changedLabel.setVisible(changed() > 0); // Hide if zero
-              }
-              // Ensure addsLabel is also handled for visibility
-              if (addsLabel != null) {
-                  addsLabel.setVisible(adds() > 0);
-              }
+            addsLabel.setText("+" + adds());
+            addsLabel.setForeground(ThemeColors.getColor(darkTheme, "git_status_added"));
+            addsLabel.setVisible(adds() > 0); // Hide if zero
+            
+            delsLabel.setText("-" + dels());
+            delsLabel.setForeground(ThemeColors.getColor(darkTheme, "git_status_deleted"));
+            delsLabel.setVisible(dels() > 0); // Hide if zero
               
-              // Update background and border color if theme changed (simple check)
+            changedLabel.setText("~" + changed());
+            changedLabel.setForeground(ThemeColors.getColor(darkTheme, "git_changed"));
+            changedLabel.setVisible(changed() > 0); // Hide if zero
+
+            // Update background and border color if theme changed (simple check)
             Color expectedBgColor = darkTheme ? ThemeColors.getColor(true, "code_block_background") :
-                                               ThemeColors.getColor(false, "message_background");
+                                                ThemeColors.getColor(false, "message_background");
             if (!panel.getBackground().equals(expectedBgColor)) {
                 panel.setBackground(expectedBgColor);
                 // Update the border which now includes the background fill
@@ -207,14 +200,14 @@ public record EditBlockComponentData(int id, int adds, int dels, int changed, St
                 Border paddingBorder = BorderFactory.createEmptyBorder(5, 5, 5, 5); // Keep padding consistent
                 panel.setBorder(BorderFactory.createCompoundBorder(roundedBorder, paddingBorder));
             }
-            
+
             // Ensure layout is recalculated and component repainted after updates
             panel.revalidate();
             panel.repaint();
         }
     }
-    
-    
+
+
     /**
      * Finds the first component of a specific type and name within a container.
      */
@@ -224,7 +217,7 @@ public record EditBlockComponentData(int id, int adds, int dels, int changed, St
                 return type.cast(comp);
             }
             if (comp instanceof Container nestedContainer) {
-                T found = findComponentByName(nestedContainer, type, name);
+                @Nullable T found = findComponentByName(nestedContainer, type, name);
                 if (found != null) {
                     return found;
                 }

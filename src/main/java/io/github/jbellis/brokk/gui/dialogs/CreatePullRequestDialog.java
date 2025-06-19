@@ -27,14 +27,11 @@ import io.github.jbellis.brokk.prompts.SummarizerPrompts;
 import io.github.jbellis.brokk.GitHubAuth;
 import io.github.jbellis.brokk.gui.components.LoadingButton;
 import java.awt.Desktop;
-
-
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.ScheduledFuture;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
-import org.jetbrains.annotations.Nullable;
-
+import javax.annotation.Nullable;
 
 public class CreatePullRequestDialog extends JDialog {
     private static final Logger logger = LogManager.getLogger(CreatePullRequestDialog.class);
@@ -52,21 +49,23 @@ public class CreatePullRequestDialog extends JDialog {
     private LoadingButton createPrButton; // Field for the Create PR button
     private Runnable flowUpdater;
     private List<CommitInfo> currentCommits = Collections.emptyList();
-    @Nullable
-    private String mergeBaseCommit = null;
-    private boolean sourceBranchNeedsPush = false;
+    private @Nullable String mergeBaseCommit;
+    private boolean sourceBranchNeedsPush;
 
     /**
      * Optional branch name that should be pre-selected as the source branch
      * when the dialog opens.  May be {@code null}.
      */
-    @Nullable
-    private final String preselectedSourceBranch;
+    private final @Nullable String preselectedSourceBranch;
 
-    // Fields below are initialized by buildLayout() and its helpers, called by constructor.
-    // NullAway may not track this precisely, so we suppress the warning.
-    @SuppressWarnings("NullAway.Init")
-    public CreatePullRequestDialog(@Nullable Frame owner, Chrome chrome, ContextManager contextManager, @Nullable String preselectedSourceBranch) {
+    /**
+     * Full constructor allowing the caller to specify which branch should be
+     * selected as the source branch when the dialog opens.
+     */
+    public CreatePullRequestDialog(@Nullable Frame owner,
+                                 Chrome chrome,
+                                 ContextManager contextManager,
+                                 @Nullable String preselectedSourceBranch) {
         super(owner, "Create a Pull Request", false);
         this.chrome = chrome;
         this.contextManager = contextManager;
@@ -76,13 +75,9 @@ public class CreatePullRequestDialog extends JDialog {
         buildLayout();
     }
 
-    @Nullable
-    private PrDescriptionWorker currentDescriptionWorker;
-    @Nullable
-    private ContextManager.SummarizeWorker currentTitleWorker;
-
-    @Nullable
-    private ScheduledFuture<?> pendingDebounceTask;
+    private @Nullable PrDescriptionWorker currentDescriptionWorker;
+    private @Nullable ContextManager.SummarizeWorker currentTitleWorker;
+    private @Nullable ScheduledFuture<?> pendingDebounceTask;
 
     private final ScheduledExecutorService debounceExec = Executors.newSingleThreadScheduledExecutor(new java.util.concurrent.ThreadFactory() {
         private final AtomicInteger threadNumber = new AtomicInteger(1);
@@ -94,7 +89,6 @@ public class CreatePullRequestDialog extends JDialog {
             return t;
         }
     });
-    // private ScheduledFuture<?> pendingDebounceTask; // Removed duplicate
     private static final long DEBOUNCE_MS = 400;
 
     public CreatePullRequestDialog(Frame owner, Chrome chrome, ContextManager contextManager) {
@@ -380,21 +374,10 @@ public class CreatePullRequestDialog extends JDialog {
                     // Nothing to describe; stop any ongoing generation and clear fields.
                     cancelGenerationWorkersAndClearFields();
                 } else {
-                    if (this.mergeBaseCommit != null) {
-                        // Auto-generate title and description
-                        // This diff is for the LLM, not for display directly
-                        var diffText = gitRepo.showDiff(sourceBranch, this.mergeBaseCommit);
-                        debounceGenerate(diffText);
-                    } else {
-                        // No merge base, cannot generate diff for description.
-                        logger.warn("No merge base found between {} and {}, cannot generate PR description.", sourceBranch, targetBranch);
-                        cancelGenerationWorkersAndClearFields(); // Clear any pending/optimistic UI
-                        // Optionally, set a specific message in descriptionArea
-                        SwingUtilities.invokeLater(() -> {
-                            descriptionArea.setText("(Could not determine changes: no common merge base found)");
-                            titleField.setText(""); // Also clear title
-                        });
-                    }
+                    // Auto-generate title and description
+                    // This diff is for the LLM, not for display directly
+                    var diffText = gitRepo.showDiff(sourceBranch, this.mergeBaseCommit);
+                    debounceGenerate(diffText);
                 }
 
                 SwingUtilities.invokeLater(() -> updateCommitRelatedUI(branchDiffData.commits(),
@@ -576,10 +559,8 @@ public class CreatePullRequestDialog extends JDialog {
     /**
      * Convenience helper to open the dialog with a pre-selected source branch.
      */
-    public static void show(@Nullable Frame owner,
-                            Chrome chrome,
-                            ContextManager contextManager,
-                            @Nullable String sourceBranch) {
+    public static void show(@Nullable Frame owner, Chrome chrome, 
+                          ContextManager contextManager, @Nullable String sourceBranch) {
         CreatePullRequestDialog dialog =
                 new CreatePullRequestDialog(owner, chrome, contextManager, sourceBranch);
         dialog.setVisible(true);

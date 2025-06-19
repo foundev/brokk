@@ -313,16 +313,13 @@ public class GitLogTab extends JPanel {
      */
     public void update() {
         // Use invokeAndWait with a Runnable and an external holder for the result
-        var previouslySelectedBranch = SwingUtil.runOnEdt(() -> {
+        @Nullable String previouslySelectedBranch = SwingUtil.runOnEdt(() -> {
             int selectedRow = branchTable.getSelectedRow();
-            if (selectedRow != -1) {
-                // Ensure the row index is still valid before accessing model
-                if (selectedRow < branchTableModel.getRowCount()) {
-                    return (String) branchTableModel.getValueAt(selectedRow, 1);
-                }
+            if (selectedRow != -1 && selectedRow < branchTableModel.getRowCount()) {
+                return (String) branchTableModel.getValueAt(selectedRow, 1);
             }
-            return "";
-        }, "");
+            return null;
+        }, null);
 
 
         contextManager.submitBackgroundTask("Fetching git branches", () -> {
@@ -394,9 +391,9 @@ public class GitLogTab extends JPanel {
 
                 SwingUtilities.invokeLater(() -> {
                     // gitCommitBrowserPanel.clearCommitView(); // This will be handled by updateCommitsForBranch or if no branch selected
-                    // pushButton and pullButton visibility changes were part of the nullaway branch logic
-                    // related to UI elements that are now managed differently or within GitCommitBrowserPanel.
-                    // We retain HEAD's logic which does not directly manipulate these buttons here during branch update.
+                    if (gitCommitBrowserPanel != null) { // Ensure search field is cleared
+                        gitCommitBrowserPanel.clearSearchField();
+                    }
 
                     branchTableModel.setRowCount(0);
                     remoteBranchTableModel.setRowCount(0);
@@ -423,10 +420,7 @@ public class GitLogTab extends JPanel {
             } catch (Exception e) {
                 logger.error("Error fetching branches", e);
                 SwingUtilities.invokeLater(() -> {
-                    // commitsTableModel is no longer directly managed here.
-                    // GitCommitBrowserPanel will be cleared if it exists.
                     branchTableModel.setRowCount(0); // Clears local branches
-                    // Removed duplicate branchTableModel.setRowCount(0);
                     String errorMsg = Objects.toString(e.getMessage(), "Unknown error fetching branches");
                     branchTableModel.addRow(new Object[]{"", "Error fetching branches: " + errorMsg});
                     remoteBranchTableModel.setRowCount(0); // Clears remote branches
@@ -546,15 +540,15 @@ public class GitLogTab extends JPanel {
                             .collect(Collectors.joining("\n"));
                     chrome.toolError("Merge conflicts detected for branch '" + branchName + "'.\n" +
                                         "Please resolve conflicts manually and then commit.\n" +
-                                        "Conflicting files:\n" + conflictingFiles, "Merge Conflict");
+                                        "Conflicting files:\n" + conflictingFiles);
                 } else {
                     // For other non-successful statuses like FAILED, ABORTED etc.
-                    chrome.toolError("Merge of branch '" + branchName + "' failed with error: " + status, "Merge Error");
+                    chrome.toolError("Merge of branch '" + branchName + "' failed with error: " + status);
                 }
                 update(); // Refresh UI to reflect new state (merged, conflicting, or failed)
             } catch (GitAPIException e) {
                 logger.error("Error merging branch: {}", branchName, e);
-                chrome.toolError("Error merging branch '" + branchName + "': " + e.getMessage(), "Merge Error");
+                chrome.toolError("Error merging branch '" + branchName + "': " + Objects.toString(e.getMessage(), "Unknown error"));
                 update(); // Refresh UI to show current state after error
             }
         });
@@ -578,7 +572,7 @@ public class GitLogTab extends JPanel {
                     chrome.systemOutput("Created and checked out new branch '" + newName + "' from '" + sourceBranch + "'");
                 } catch (GitAPIException e) {
                     logger.error("Error creating new branch from {}: {}", sourceBranch, e);
-                    chrome.toolError("Error creating new branch: " + e.getMessage(), "Branch Error");
+                    chrome.toolError("Error creating new branch: " + Objects.toString(e.getMessage(), "Unknown error"));
                 }
             });
         }
@@ -605,7 +599,7 @@ public class GitLogTab extends JPanel {
                     chrome.systemOutput("Branch '" + branchName + "' renamed to '" + newName + "' successfully.");
                 } catch (GitAPIException e) {
                     logger.error("Error renaming branch: {}", branchName, e);
-                    chrome.toolError("Error renaming branch: " + e.getMessage());
+                    chrome.toolError("Error renaming branch: " + Objects.toString(e.getMessage(), "Unknown error"));
                 }
             });
         }
@@ -694,10 +688,6 @@ public class GitLogTab extends JPanel {
         });
     }
 
-    // Methods like updateChangesForCommits, softResetToCommit, pullBranch, revertCommit, pushBranch, and searchCommits
-    // were part of the nullaway branch's changes, tied to the old UI structure.
-    // Since HEAD refactored these functionalities into GitCommitBrowserPanel or made them obsolete
-    // in this class, they are not present in HEAD and are thus removed by this merge.
 
     // ==================================================================
     // Helper Methods
@@ -755,7 +745,7 @@ public class GitLogTab extends JPanel {
 
         // Check if the selected branch is the current branch
         boolean isCurrentBranch = false;
-        @Nullable String selectedBranchName = null; // Can be null if no selection
+        String selectedBranchName = null; // Can be null if no selection
         if (isAnyItemSelected) {
             // Ensure row is valid before accessing model
             if (selectedRow < branchTableModel.getRowCount()) {

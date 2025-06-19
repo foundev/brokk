@@ -1,7 +1,7 @@
 package io.github.jbellis.brokk.difftool.ui;
 
-import org.jetbrains.annotations.Nullable;
 
+import org.jetbrains.annotations.Nullable;
 import javax.swing.*;
 import javax.swing.event.UndoableEditEvent;
 import javax.swing.event.UndoableEditListener;
@@ -12,7 +12,7 @@ import javax.swing.undo.UndoableEdit;
 public abstract class AbstractContentPanel
         extends JPanel
         implements JMeldContentPanelIF {
-    private MyUndoManager undoManager = new MyUndoManager();
+    private final MyUndoManager undoManager = new MyUndoManager();
 
     // Abstract methods to be implemented by subclasses for navigation logic
     public abstract boolean isAtFirstLogicalChange();
@@ -60,11 +60,10 @@ public abstract class AbstractContentPanel
         }
 
         public void start(String text) {
+            if (activeEdit != null) {
+                throw new IllegalStateException("Compound edit already active");
+            }
             activeEdit = new CompoundEdit();
-        }
-
-        public void add(UndoableEdit edit) {
-            addEdit(edit);
         }
 
         public void end(String text) {
@@ -73,26 +72,21 @@ public abstract class AbstractContentPanel
                 addEdit(activeEdit);
                 activeEdit = null;
             }
-            checkActions();
         }
 
         @Override
         public void undoableEditHappened(UndoableEditEvent e) {
             if (activeEdit != null) {
                 activeEdit.addEdit(e.getEdit());
-                return;
+            } else {
+                // If no compound edit is active, add the edit directly
+                addEdit(e.getEdit());
             }
-
-            addEdit(e.getEdit());
-            checkActions();
         }
     }
 
     public MyUndoManager getUndoHandler() {
         return undoManager;
-    }
-
-    public void checkActions() {
     }
 
 }

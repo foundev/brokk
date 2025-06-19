@@ -63,13 +63,11 @@ public class Completions {
 
         // Handle glob patterns [only in the last part of the path]
         if (pattern.contains("*") || pattern.contains("?")) {
-            Path parent = file.absPath().getParent();
-            while (parent != null && (parent.toString().contains("*") || parent.toString().contains("?"))) {
+            var parent = file.absPath().getParent();
+            while (parent != null && (parent.getFileName().toString().contains("*") || parent.getFileName().toString().contains("?"))) {
                 parent = parent.getParent();
             }
-            if (parent == null) { // Should not happen if file.absPath() is valid
-                return List.of();
-            }
+            assert parent != null : "Invalid file path with no parent directory";
             var matcher = FileSystems.getDefault().getPathMatcher("glob:" + file.absPath());
             try (var stream = Files.walk(parent)) {
                 return stream

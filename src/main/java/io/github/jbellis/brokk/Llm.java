@@ -88,24 +88,15 @@ public class Llm {
         var timestamp = LocalDateTime.now(java.time.ZoneId.systemDefault()).format(DateTimeFormatter.ofPattern("yyyy-MM-dd-HH-mm-ss"));
         var taskDesc = LogDescription.getShortDescription(taskDescription);
 
-        // Create the specific directory for this task with uniqueness check
-        var baseTaskDirName = String.format("%s %s", timestamp, taskDesc);
-        synchronized (Llm.class) {
-            int suffix = 1;
-            var mutableDirName = historyBaseDir.resolve(baseTaskDirName);
-            while (Files.exists(mutableDirName)) {
-                var newDirName = baseTaskDirName + "-" + suffix;
-                mutableDirName = historyBaseDir.resolve(newDirName);
-                suffix++;
-            }
+        var taskDirName = String.format("%s %s", timestamp, taskDesc);
+        this.taskHistoryDir = historyBaseDir.resolve(taskDirName);
 
-            this.taskHistoryDir = mutableDirName;
-            try {
-                Files.createDirectories(this.taskHistoryDir);
-            } catch (IOException e) {
-                logger.error("Failed to create task history directory {}", this.taskHistoryDir, e);
-                // taskHistoryDir might be null or unusable, logRequest checks for null
-            }
+        // Create the specific directory for this task
+        try {
+            Files.createDirectories(this.taskHistoryDir);
+        } catch (IOException e) {
+            logger.error("Failed to create task history directory {}", this.taskHistoryDir, e);
+            // taskHistoryDir might be null or unusable, logRequest checks for null
         }
     }
 
@@ -236,7 +227,7 @@ public class Llm {
             // If no partial text, just return null response
             var partialText = accumulatedTextBuilder.toString();
             if (partialText.isEmpty()) {
-                return new StreamingResult(null, null, error); // Pass null for originalResponse too
+                return new StreamingResult(null, error);
             }
 
             // Construct a ChatResponse from accumulated partial text
@@ -259,13 +250,13 @@ public class Llm {
         return new StreamingResult(response, null);
     }
 
-    private static String formatTokensUsage(ChatResponse response) {
+    private static  String formatTokensUsage(ChatResponse response) {
         var tu = (OpenAiTokenUsage) response.tokenUsage();
         var template = "token usage: %,d input (%s cached), %,d output (%s reasoning)";
         return template.formatted(tu.inputTokenCount(),
                                   (tu.inputTokensDetails() == null) ? "?" : "%,d".formatted(tu.inputTokensDetails().cachedTokens()),
                                   tu.outputTokenCount(),
-                                  (tu.outputTokensDetails() == null) ? "?" : "%,d".formatted(tu.outputTokensDetails().reasoningTokens()));
+                                  (tu.inputTokensDetails() == null) ? "?" : "%,d".formatted(tu.outputTokensDetails().reasoningTokens()));
     }
 
     /**
@@ -300,7 +291,7 @@ public class Llm {
 
         // poor man's ToolChoice.REQUIRED (not supported by langchain4j for Anthropic)
         // Also needed for our emulation if it returns a response without a tool call
-        while (result.error == null && cr != null && cr.aiMessage() != null
+        while (result.error == null
                 && !tools.isEmpty()
                 && !cr.aiMessage().hasToolExecutionRequests()
                 && toolChoice == ToolChoice.REQUIRED)
@@ -340,19 +331,15 @@ public class Llm {
 
             response = doSingleSendMessage(model, messages, tools, toolChoice, echo);
             var cr = response.chatResponse;
-            boolean isEmpty = cr == null || cr.aiMessage() == null || (Messages.getText(cr.aiMessage()).isEmpty() && !cr.aiMessage().hasToolExecutionRequests());
+            boolean isEmpty = cr == null || (Messages.getText(cr.aiMessage()).isEmpty() && !cr.aiMessage().hasToolExecutionRequests()); // Parenthesize for clarity
             lastError = response.error;
-            // Check if cr and aiMessage are non-null before accessing them
-            boolean hasToolRequests = cr != null && cr.aiMessage() != null && cr.aiMessage().hasToolExecutionRequests();
-            boolean hasText = cr != null && cr.aiMessage() != null && !Messages.getText(castNonNull(cr.aiMessage())).isEmpty();
-
-            if ((hasText || hasToolRequests) && (lastError == null || allowPartialResponses)) {
+            if (!isEmpty && (lastError == null || allowPartialResponses)) {
                 // Success!
                 return response;
             }
 
             // don't retry on bad request errors
-            if (lastError != null && Objects.toString(lastError.getMessage(), "").contains("BadRequestError")) {
+            if (lastError != null && lastError.getMessage().contains("BadRequestError")) {
                 logger.debug("Stopping on BadRequestError", lastError);
                 break;
             }
@@ -387,12 +374,8 @@ public class Llm {
             return new StreamingResult(dummy, new IllegalStateException("Empty response after max retries"));
         }
         // Return last error - log error to the current request's file
-        // lastError is guaranteed non-null here if we fell through the loop
         var cr = ChatResponse.builder().aiMessage(new AiMessage("Error: " + lastError.getMessage())).build();
-        // response can be null if the first attempt failed and never set it.
-        // response.originalResponse() can be null if the response was a partial one due to error.
-        ChatResponse originalResp = response != null ? response.originalResponse() : null;
-        return new StreamingResult(cr, originalResp, lastError);
+        return new StreamingResult(cr, response.originalResponse(), lastError);
     }
 
     /**
@@ -520,11 +503,7 @@ public class Llm {
                 ChatResponse parsedChatResponse = parseResult.chatResponse();
                 // Ensure parsedChatResponse and its aiMessage are not null before proceeding
                 if (parsedChatResponse == null || parsedChatResponse.aiMessage() == null) {
-                    String rawTextFromOriginalResponse = "Unknown (original response or its AI message was null)";
-                    if (rawResult.chatResponse() != null && rawResult.chatResponse().aiMessage() != null) {
-                        rawTextFromOriginalResponse = rawResult.chatResponse().aiMessage().text();
-                    }
-                    throw new IllegalArgumentException("Parsed result or its AI message is null after JSON parsing. Raw text was: " + rawTextFromOriginalResponse);
+                    throw new IllegalArgumentException("Parsed result or its AI message is null after JSON parsing. Raw text was: " + rawResult.chatResponse().aiMessage().text());
                 }
 
                 if (!parsedChatResponse.aiMessage().hasToolExecutionRequests()
@@ -559,9 +538,7 @@ public class Llm {
                 io.llmOutput("\nRetry " + attempt + "/" + (maxTries - 1)
                                      + ": invalid JSON response; requesting proper format.",
                              ChatMessageType.CUSTOM);
-                // rawResult.chatResponse() is non-null if we are in this catch block after a parseError
-                // rawResult.chatResponse().aiMessage() is also non-null based on parseJsonToToolRequests logic
-                attemptMessages.add(new AiMessage(Objects.requireNonNull(Objects.requireNonNull(rawResult.chatResponse()).aiMessage()).text()));
+                attemptMessages.add(new AiMessage(rawResult.chatResponse().aiMessage().text()));
                 attemptMessages.add(new UserMessage(retryInstructionsProvider.apply(parseError)));
             }
         }
@@ -636,7 +613,7 @@ public class Llm {
         return processedMessages;
     }
 
-    private static String formatToolResults(List<ToolExecutionResultMessage> pendingTerms) { // Changed parameter to List
+    private static  String formatToolResults(List<ToolExecutionResultMessage> pendingTerms) { // Changed parameter to List
         return pendingTerms.stream()
                 .map(tr -> """
                         <toolcall id="%s" name="%s">
@@ -824,12 +801,7 @@ public class Llm {
      * Expects the top-level to have a "tool_calls" array (or the root might be that array).
      */
     private static StreamingResult parseJsonToToolRequests(StreamingResult result, ObjectMapper mapper) {
-        // result.chatResponse() and .aiMessage() can be null if the initial call failed before any response.
-        // However, this method is typically called only after a successful rawResult from the LLM.
-        Objects.requireNonNull(result.chatResponse(), "ChatResponse cannot be null when parsing JSON for tool requests.");
-        Objects.requireNonNull(result.chatResponse().aiMessage(), "AIMessage within ChatResponse cannot be null for JSON parsing.");
         String rawText = result.chatResponse().aiMessage().text();
-        Objects.requireNonNull(rawText, "Raw text from AIMessage cannot be null for JSON parsing.");
         logger.trace("parseJsonToToolRequests: rawText={}", rawText);
 
         JsonNode root;
@@ -891,15 +863,14 @@ public class Llm {
             }
             String argsStr = arguments.toString(); // Preserve raw JSON for execution
 
-                        if ("think".equals(toolName)) {
-                            // Extract reasoning from the "think" tool
-                            JsonNode reasoningNode = arguments.get("reasoning"); // Get node first
-                            if (reasoningNode == null || !reasoningNode.isTextual()) { // Check for null before isTextual
-                                throw new IllegalArgumentException("Found 'think' tool call without a textual 'reasoning' argument at index " + i);
-                            }
-                            thinkReasoning.add(reasoningNode.asText());
-                        }
-                        var toolExecutionRequest = ToolExecutionRequest.builder()
+            if ("think".equals(toolName)) {
+                // Extract reasoning from the "think" tool
+                if (!arguments.has("reasoning") || !arguments.get("reasoning").isTextual()) {
+                    throw new IllegalArgumentException("Found 'think' tool call without a textual 'reasoning' argument at index " + i);
+                }
+                thinkReasoning.add(arguments.get("reasoning").asText());
+            }
+            var toolExecutionRequest = ToolExecutionRequest.builder()
                     .id(String.valueOf(i))
                     .name(toolName)
                     .arguments(argsStr)
@@ -1034,7 +1005,7 @@ public class Llm {
     /**
      * Writes history information to task-specific files.
      */
-    private synchronized void logRequest(StreamingChatLanguageModel model, ChatRequest request, @Nullable StreamingResult result) {
+    private synchronized void logRequest(StreamingChatLanguageModel model, ChatRequest request, StreamingResult result) {
         if (taskHistoryDir == null) {
             // History directory creation failed in constructor, do nothing.
             return;
@@ -1045,30 +1016,13 @@ public class Llm {
             var formattedRequest = "# Request to %s:\n\n%s\n".formatted(contextManager.getService().nameOf(model),
                                                                         TaskEntry.formatMessages(request.messages()));
             var formattedTools = request.toolSpecifications() == null ? "" : "# Tools:\n\n" + request.toolSpecifications().stream().map(ToolSpecification::name).collect(Collectors.joining("\n"));
-            var formattedResponse = result == null || result.originalResponse == null // Check if result or its originalResponse is null
-                                    ? "# Response:\n\nCancelled or No Original Response" // Adjust message accordingly
+            var formattedResponse = result == null
+                                    ? "# Response:\n\nCancelled"
                                     : "# Response:\n\n%s".formatted(result.formatted());
             String fileTimestamp = timestamp.format(DateTimeFormatter.ofPattern("HH-mm-ss"));
             String shortDesc = result == null ? "Cancelled" : LogDescription.getShortDescription(result.getDescription());
             var filePath = taskHistoryDir.resolve(String.format("%s %s.log", fileTimestamp, shortDesc));
-            var options = new StandardOpenOption[]{StandardOpenOption.CREATE, StandardOpenOption.CREATE_NEW, StandardOpenOption.WRITE};
-            logger.trace("Writing history to file {}", filePath);
-            // Ensure the filename is unique before writing
-            var uniqueFilePath = filePath;
-            int suffix = 1;
-            while (Files.exists(uniqueFilePath)) {
-                var newFilePath = filePath.toString();
-                int dotIndex = newFilePath.lastIndexOf('.');
-                if (dotIndex > 0) {
-                    newFilePath = newFilePath.substring(0, dotIndex) + "-" + suffix + newFilePath.substring(dotIndex);
-                } else {
-                    newFilePath += "-" + suffix;
-                }
-                uniqueFilePath = Path.of(newFilePath);
-                suffix++;
-            }
-            logger.trace("Writing history to file {}", uniqueFilePath);
-            Files.writeString(uniqueFilePath, formattedRequest + formattedTools + formattedResponse, options);
+            Files.writeString(filePath, formattedRequest + formattedTools + formattedResponse, StandardOpenOption.CREATE, StandardOpenOption.CREATE_NEW, StandardOpenOption.WRITE);
         } catch (IOException e) {
             logger.error("Failed to write LLM history file", e);
         }
@@ -1146,24 +1100,16 @@ public class Llm {
      * and also include the error that we got from the HTTP layer. In this case originalResponse will be null
      */
     public record StreamingResult(@Nullable ChatResponse chatResponse,
-                                  @Nullable ChatResponse originalResponse,
-                                  @Nullable Throwable error)
+                                 @Nullable ChatResponse originalResponse,
+                                 @Nullable Throwable error)
     {
-        // Compact constructor for cases where originalResponse is same as chatResponse, or when error occurs with no response
-        public StreamingResult(@Nullable ChatResponse chatResponse, @Nullable Throwable error) {
-            this(chatResponse, chatResponse, error); // if chatResponse is null, originalResponse will also be null
+        public StreamingResult(ChatResponse chatResponse, Throwable error) {
+            this(chatResponse, chatResponse, error);
         }
 
         public StreamingResult {
-            // Must have either a chatResponse or an error, unless it's a partial response scenario with an error
-            // This assertion might be too strict if error can occur with partial chatResponse but no originalResponse
-            // assert error != null || chatResponse != null || (originalResponse == null && chatResponse != null);
-            // Simplified: if error is null, chatResponse (and by extension originalResponse from compact ctor) should exist.
-            // If error is not null, chatResponse might be null (total failure) or present (partial success).
-            if (error == null) {
-                Objects.requireNonNull(chatResponse, "chatResponse cannot be null if error is null");
-                // originalResponse can be null if constructed via the 3-arg constructor with null for it
-            }
+            // Must have either a chatResponse or an error
+            assert error != null || chatResponse != null;
         }
 
         public String formatted() {
@@ -1173,11 +1119,7 @@ public class Llm {
                        %s
                        """.formatted(formatThrowable(error), originalResponse == null ? "[Null response]" : originalResponse.toString());
             }
-            // if error is null, chatResponse is guaranteed to be non-null by the record invariant.
-            // originalResponse might be null if it was explicitly passed as such.
-            // If originalResponse is null but chatResponse is not (e.g. emulated tools), use chatResponse.
-            ChatResponse responseToFormat = originalResponse != null ? originalResponse : Objects.requireNonNull(chatResponse);
-            return responseToFormat.toString();
+            return originalResponse.toString();
         }
 
         private String formatThrowable(Throwable th) {
@@ -1198,11 +1140,8 @@ public class Llm {
                 return Objects.toString(error.getMessage(), "Unknown error");
             }
 
-            if (chatResponse == null) { // Should not happen if error is null due to record invariant
-                return "Unknown state (chatResponse is null without error)";
-            }
             var aiMessage = chatResponse.aiMessage();
-            if (aiMessage == null) { // AiMessage itself could be null in ChatResponse
+            if (aiMessage == null) {
                 return "Empty AI message";
             }
             if (aiMessage.hasToolExecutionRequests()) {

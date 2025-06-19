@@ -30,7 +30,7 @@ public class AnalyzerWrapper implements AutoCloseable {
 
     @Nullable private final AnalyzerListener listener; // can be null if no one is listening
     private final Path root;
-    @Nullable private final Path gitRepoRoot;
+    private final @Nullable Path gitRepoRoot;
     private final ContextManager.TaskRunner runner;
     private final IProject project;
 
@@ -155,7 +155,8 @@ public class AnalyzerWrapper implements AutoCloseable {
             );
         }
 
-        if (needsGitRefresh && this.gitRepoRoot != null) { // Added null check for gitRepoRoot before resolve
+        if (needsGitRefresh) { // The check for this.gitRepoRoot != null is already implied by needsGitRefresh being true
+            assert this.gitRepoRoot != null : "gitRepoRoot should be non-null when needsGitRefresh is true";
             logger.debug("Changes in git metadata directory ({}) detected", this.gitRepoRoot.resolve(".git"));
             if (listener != null) {
                 listener.onRepoChange();
@@ -248,6 +249,7 @@ public class AnalyzerWrapper implements AutoCloseable {
         boolean needsRebuild = false;
         
         if (projectLangs.size() == 1) {
+            Language lang = projectLangs.iterator().next();
             Language lang = projectLangs.iterator().next();
             assert lang != Language.NONE;
 
@@ -405,7 +407,7 @@ public class AnalyzerWrapper implements AutoCloseable {
 
     /** Load a cached analyzer for a single language, returning both the analyzer and whether it needs rebuilding. */
     private CachedAnalyzerResult loadSingleCachedAnalyzerForLanguage(Language lang, Path analyzerPath) {
-        if (analyzerPath == null || !Files.exists(analyzerPath)) {
+        if (!Files.exists(analyzerPath)) {
             return new CachedAnalyzerResult(null, false);
         }
 

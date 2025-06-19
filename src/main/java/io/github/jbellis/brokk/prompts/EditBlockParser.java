@@ -96,7 +96,7 @@ public class EditBlockParser {
         );
     }
 
-    protected final String instructions(String input, String reminder) {
+    protected final String instructions(String input, @Nullable String reminder) {
         return """
         <rules>
         %s
@@ -203,7 +203,7 @@ public class EditBlockParser {
         var plain     = new StringBuilder();
 
         int i = 0;
-        String currentFilename = null;
+        @Nullable String currentFilename = null;
 
         while (i < lines.length) {
             var trimmed = lines[i].trim();
@@ -226,7 +226,6 @@ public class EditBlockParser {
                 var candidatePath  = stripFilename(filenameLine);
                 currentFilename       = candidatePath != null && !candidatePath.isBlank()
                                         ? candidatePath
-                        // Assuming stripQuotedWrapping handles null filename parameter if findFileNameNearby returns null
                         : findFileNameNearby(lines, i + 2, projectFiles, currentFilename);
 
                 // Advance to the <<<<<<< SEARCH marker
@@ -288,8 +287,8 @@ public class EditBlockParser {
                     plain.setLength(0);
                 }
 
-                // Assuming stripQuotedWrapping handles null filename parameter if findFileNameNearby returns null
-                currentFilename = findFileNameNearby(lines, i, projectFiles, currentFilename);
+                @Nullable var newFilename = findFileNameNearby(lines, i, projectFiles, currentFilename);
+                currentFilename = newFilename != null ? newFilename : currentFilename;
 
                 i++;   // move past <<<<<<< SEARCH
                 var beforeLines = new ArrayList<String>();
@@ -353,7 +352,7 @@ public class EditBlockParser {
             blocks.add(EditBlock.OutputBlock.plain(plain.toString()));
         }
 
-        return new EditBlock.ExtendedParseResult(blocks, ""); // Return empty string for non-null error
+        return new EditBlock.ExtendedParseResult(blocks, null);
     }
 
     public String repr(EditBlock.SearchReplaceBlock block) {

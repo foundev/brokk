@@ -55,41 +55,50 @@ public final class CSharpAnalyzer extends TreeSitterAnalyzer {
 
     @Override
     protected @Nullable CodeUnit createCodeUnit(ProjectFile file,
-                                                String captureName,
-                                                String simpleName,
-                                                String packageName,
-                                                String classChain) {
+                                      String captureName,
+                                      String simpleName,
+                                      String packageName,
+                                      String classChain) {
         CodeUnit result;
         try {
+            assert captureName != null : "Capture name cannot be null";
             result = switch (captureName) {
                 case "class.definition" -> {
-                    String finalShortName = classChain.isEmpty() ? simpleName : classChain + "$" + simpleName;
+                    assert simpleName != null : "Simple name cannot be null for class definition";
+                    String finalShortName = classChain == null || classChain.isEmpty() ? simpleName : classChain + "$" + simpleName;
                     yield CodeUnit.cls(file, packageName, finalShortName);
                 }
                 case "function.definition" -> {
+                    assert simpleName != null : "Simple name cannot be null for function definition";
+                    assert classChain != null : "Class chain cannot be null for function definition";
                     String finalShortName = classChain + "." + simpleName;
                     yield CodeUnit.fn(file, packageName, finalShortName);
                 }
                 case "constructor.definition" -> {
+                    assert classChain != null : "Class chain cannot be null for constructor definition";
                     String finalShortName = classChain + ".<init>";
                     yield CodeUnit.fn(file, packageName, finalShortName);
                 }
                 case "field.definition" -> {
+                    assert simpleName != null : "Simple name cannot be null for field definition";
+                    assert classChain != null : "Class chain cannot be null for field definition";
                     String finalShortName = classChain + "." + simpleName;
                     yield CodeUnit.field(file, packageName, finalShortName);
                 }
                 default -> {
-                    log.warn("Unhandled capture name in CSharpAnalyzer.createCodeUnit: '{}' for simple name '{}', package '{}', classChain '{}' in file {}. Returning null.",
-                             captureName, simpleName, packageName, classChain, file);
+                    log.warn("Unhandled capture name '{}' for name '{}' in file {}. Package: {}, class chain: {}",
+                             captureName, simpleName, file, packageName, classChain);
                     yield null;
                 }
             };
         } catch (Exception e) {
-            log.warn("Exception in CSharpAnalyzer.createCodeUnit for capture '{}', name '{}', file '{}', package '{}', classChain '{}': {}",
-                     captureName, simpleName, file, packageName, classChain, e.getMessage(), e);
+            log.warn("Failed to create code unit for capture '{}' name '{}' (file {}): {}",
+                     captureName, simpleName, file, e.getMessage(), e);
             return null;
         }
-        log.trace("CSharpAnalyzer.createCodeUnit: returning {}", result);
+        if (log.isTraceEnabled()) {
+            log.trace("Created code unit: {}", result != null ? result.toString() : "null");
+        }
         return result;
     }
 
@@ -110,16 +119,20 @@ public final class CSharpAnalyzer extends TreeSitterAnalyzer {
 
     @Override
     protected String renderFunctionDeclaration(TSNode funcNode, String src, String exportPrefix, String asyncPrefix, String functionName, String paramsText, String returnTypeText, String indent) {
+        assert funcNode != null : "Function node cannot be null";
         TSNode body = funcNode.getChildByFieldName("body");
         String signature;
 
         if (body != null && !body.isNull()) {
+            assert src != null : "Source text cannot be null when rendering function declaration";
             signature = textSlice(funcNode.getStartByte(), body.getStartByte(), src).stripTrailing();
         } else {
             TSNode paramsNode = funcNode.getChildByFieldName("parameters");
             if (paramsNode != null && !paramsNode.isNull()) {
+                 assert src != null : "Source text cannot be null when rendering function declaration";
                  signature = textSlice(funcNode.getStartByte(), paramsNode.getEndByte(), src).stripTrailing();
             } else {
+                 assert src != null : "Source text cannot be null when rendering function declaration";
                  signature = textSlice(funcNode, src).lines().findFirst().orElse("").stripTrailing();
                  log.trace("renderFunctionDeclaration for C# (node type {}): body and params not found, using fallback signature '{}'", funcNode.getType(), signature);
             }
@@ -129,6 +142,8 @@ public final class CSharpAnalyzer extends TreeSitterAnalyzer {
 
     @Override
     protected String renderClassHeader(TSNode classNode, String src, String exportPrefix, String signatureText, String baseIndent) {
+        assert classNode != null : "Class node cannot be null";
+        assert src != null : "Source text cannot be null when rendering class header";
         return signatureText + " {";
     }
 
@@ -138,7 +153,9 @@ public final class CSharpAnalyzer extends TreeSitterAnalyzer {
     }
 
     @Override
-    protected String determinePackageName(ProjectFile file, TSNode definitionNode, TSNode rootNode, String src) {
+    protected @Nullable String determinePackageName(@Nullable ProjectFile file, @Nullable TSNode definitionNode, @Nullable TSNode rootNode, @Nullable String src) {
+        assert definitionNode != null : "Definition node cannot be null";
+        assert rootNode != null : "Root node cannot be null";
         // C# namespaces are determined by traversing up from the definition node
         // to find enclosing namespace_declaration nodes.
         // The 'file' parameter is not used here as namespace is derived from AST content.
@@ -149,7 +166,9 @@ public final class CSharpAnalyzer extends TreeSitterAnalyzer {
             if ("namespace_declaration".equals(current.getType())) {
                 TSNode nameNode = current.getChildByFieldName("name");
                 if (nameNode != null && !nameNode.isNull()) {
+                    assert src != null : "Source text cannot be null when determining package name";
                     String nsPart = textSlice(nameNode, src);
+                    assert nsPart != null : "Namespace part cannot be null";
                     namespaceParts.add(nsPart);
                 }
             }

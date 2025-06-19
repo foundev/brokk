@@ -18,6 +18,10 @@ public final class Reconciler {
     /**
      * Tracks a rendered component and its current fingerprint.
      */
+    /**
+     * @param comp The Swing component (non-null for valid entries)
+     * @param fp The fingerprint of the component's current state
+     */
     public record BlockEntry(JComponent comp, String fp) {
     }
 
@@ -40,7 +44,8 @@ public final class Reconciler {
 
             if (entry == null) {
                 // Create new component
-                JComponent comp = cd.createComponent(darkTheme);
+                var comp = cd.createComponent(darkTheme);
+                assert comp != null : "createComponent returned null for id " + cd.id();
                 entry = new BlockEntry(comp, cd.fp());
                 registry.put(cd.id(), entry);
                 container.add(comp);
@@ -49,8 +54,9 @@ public final class Reconciler {
                 // logger.debug("cd.fp()={} vs. entry.fp={}", cd.fp(), entry.fp);
                 if (!cd.fp().equals(entry.fp)) {
                     // Update existing component
-                    cd.updateComponent(entry.comp);
-                    entry = new BlockEntry(entry.comp, cd.fp());
+                    var comp = entry.comp();
+                    cd.updateComponent(comp);
+                    entry = new BlockEntry(comp, cd.fp());
                     registry.put(cd.id(), entry);
                     // logger.debug("Updated component with id {}: {}", cd.id(), cd.getClass().getSimpleName());
                 }
@@ -64,9 +70,8 @@ public final class Reconciler {
             if (!seen.contains(id)) {
                 // logger.debug("Removing component with id {}", id);
                 var entry = registry.get(id);
-                if (entry != null) {
-                    container.remove(entry.comp);
-                }
+                assert entry != null : "Missing entry for id " + id;
+                container.remove(entry.comp);
                 return true;
             }
             return false;
@@ -76,10 +81,10 @@ public final class Reconciler {
         for (int i = 0; i < desired.size(); i++) {
             var cd = desired.get(i);
             var entry = registry.get(cd.id());
-            if (entry == null) continue; // should not happen
+            assert entry != null : "Missing entry for id " + cd.id();
             var current = (i < container.getComponentCount()) ? container.getComponent(i) : null;
-            if (current != entry.comp) {
-                container.add(entry.comp, i); // inserts or moves in-place
+            if (current != entry.comp()) {
+                container.add(entry.comp(), i); // inserts or moves in-place
             }
         }
         // Trim extras (if any)

@@ -48,11 +48,12 @@ public class JavascriptAnalyzer extends TreeSitterAnalyzer {
     @Override protected String getQueryResource() { return "treesitter/javascript.scm"; }
 
     @Override
+    @Override
     protected @Nullable CodeUnit createCodeUnit(ProjectFile file,
-                                                String captureName,
-                                                String simpleName,
-                                                String packageName,
-                                                String classChain)
+                                               String captureName, 
+                                               String simpleName,
+                                               String packageName,
+                                               String classChain)
     {
         return switch (captureName) {
             case "class.definition" -> {
@@ -81,7 +82,7 @@ public class JavascriptAnalyzer extends TreeSitterAnalyzer {
             }
             default -> {
                 log.debug("Ignoring capture in JavascriptAnalyzer: {} with name: {} and classChain: {}", captureName, simpleName, classChain);
-                yield null; // Explicitly yield null
+                yield null;
             }
         };
     }
@@ -91,36 +92,20 @@ public class JavascriptAnalyzer extends TreeSitterAnalyzer {
     @Override protected String bodyPlaceholder() { return "..."; }
 
     @Override
-    protected SkeletonType getSkeletonTypeForCapture(String captureName) {
-        // The primaryCaptureName from the query is expected to be "class.definition"
-        // or "function.definition" for relevant skeleton-producing captures.
-        // The primaryCaptureName from the query is expected to be "class.definition"
-        // or "function.definition" for relevant skeleton-producing captures.
-        // This method is now implemented in the base class using captureConfiguration from LanguageSyntaxProfile.
-        // This override can be removed.
-        return super.getSkeletonTypeForCapture(captureName);
-    }
-
-    @Override
     protected String renderFunctionDeclaration(TSNode funcNode, String src, String exportPrefix, String asyncPrefix, String functionName, String paramsText, String returnTypeText, String indent) {
         // The 'indent' parameter is now "" when called from buildSignatureString.
-        String inferredReturnType = returnTypeText;
-        // ProjectFile currentFile = null; // Unused variable removed
-
-        // Attempt to get current file from CU if available through funcNode context
-        // For now, type inference will be based on syntax, not file extension.
-        // If super.getProject().findFile(sourcePath) could be used, it would require sourcePath.
+        var inferredReturnType = returnTypeText;
 
         // Infer JSX.Element return type if no explicit return type is present AND:
         // 1. It's an exported function/component starting with an uppercase letter (common React convention).
         // OR
         // 2. It's a method named "render" (classic React class component method).
-        boolean isExported = exportPrefix != null && !exportPrefix.trim().isEmpty();
-        boolean isComponentName = !functionName.isEmpty() && Character.isUpperCase(functionName.charAt(0));
-        boolean isRenderMethod = "render".equals(functionName);
+        var isExported = exportPrefix != null && !exportPrefix.trim().isEmpty();
+        var isComponentName = !functionName.isEmpty() && Character.isUpperCase(functionName.charAt(0));
+        var isRenderMethod = "render".equals(functionName);
 
         if ((isRenderMethod || (isExported && isComponentName)) && (returnTypeText == null || returnTypeText.isEmpty())) {
-            if (returnsJsxElement(funcNode)) { // src parameter removed
+            if (returnsJsxElement(funcNode)) {
                 inferredReturnType = "JSX.Element";
             }
         }
@@ -168,9 +153,9 @@ public class JavascriptAnalyzer extends TreeSitterAnalyzer {
             // Each line is a separate pattern; the query matches if any of them are found.
             // The @jsx_return capture is on the JSX node itself.
             // Queries for return statements that directly return a JSX element or one wrapped in parentheses.
-            // Note: Removed jsx_fragment queries as they were causing TSQueryErrorField,
-            // potentially due to grammar version or query engine specifics.
-            // Standard jsx_element (e.g. <></> becoming <JsxElement name={null}>) might cover fragments.
+            // Note: jsx_fragment queries were removed as they were causing TSQueryErrorField,
+            // likely due to grammar version or query engine specifics.
+            // Standard jsx_element (e.g. <></> becoming <JsxElement name={null}>) should cover fragments.
             String jsxReturnQueryStr = """
                 (return_statement (jsx_element) @jsx_return)
                 (return_statement (jsx_self_closing_element) @jsx_return)
@@ -203,7 +188,7 @@ public class JavascriptAnalyzer extends TreeSitterAnalyzer {
     }
 
     @Override
-    protected List<String> getExtraFunctionComments(TSNode bodyNode, String src, @Nullable CodeUnit functionCu) {
+    protected @Nullable List<String> getExtraFunctionComments(TSNode bodyNode, String src, @Nullable CodeUnit functionCu) {
         if (bodyNode == null || bodyNode.isNull()) {
             return List.of();
         }

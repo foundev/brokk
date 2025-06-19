@@ -177,7 +177,7 @@ public class ArchitectOptionsDialog {
             dialog.addWindowListener(new WindowAdapter() {
                 @Override
                 public void windowClosing(WindowEvent e) {
-                    resultHolder.compareAndSet(null, null); // Ensure null if not already set by OK/Cancel
+                    // resultHolder will remain null if OK was not clicked
                 }
             });
 

@@ -31,7 +31,8 @@ public class ProjectTree extends JTree {
     private final IProject project;
     private final ContextManager contextManager;
     private final Chrome chrome;
-    @Nullable private JPopupMenu currentContextMenu;
+    @Nullable
+    private JPopupMenu currentContextMenu;
 
 
     public ProjectTree(IProject project, ContextManager contextManager, Chrome chrome) {
@@ -102,36 +103,27 @@ public class ProjectTree extends JTree {
 
     private void handleDoubleClick(MouseEvent e) {
         TreePath path = getPathForLocation(e.getX(), e.getY());
-        if (path != null) {
-            DefaultMutableTreeNode node = (DefaultMutableTreeNode) path.getLastPathComponent();
-            if (node.getUserObject() instanceof ProjectTreeNode treeNode && treeNode.getFile().isFile()) {
-                ProjectFile projectFile = getProjectFileFromNode(node);
-                if (projectFile != null) {
-                    var fragment = new io.github.jbellis.brokk.context.ContextFragment.ProjectPathFragment(projectFile, contextManager);
-                    chrome.openFragmentPreview(fragment);
-                }
+        if (path == null) {
+            return;
+        }
+        DefaultMutableTreeNode node = (DefaultMutableTreeNode) path.getLastPathComponent();
+        if (node.getUserObject() instanceof ProjectTreeNode treeNode && treeNode.getFile().isFile()) {
+            ProjectFile projectFile = getProjectFileFromNode(node);
+            if (projectFile != null) {
+                var fragment = new io.github.jbellis.brokk.context.ContextFragment.ProjectPathFragment(projectFile, contextManager);
+                chrome.openFragmentPreview(fragment);
             }
         }
     }
 
     private void handlePopupTrigger(MouseEvent e) {
         if (e.isPopupTrigger()) {
-            TreePath path = getPathForLocation(e.getX(), e.getY());
+            var path = getPathForLocation(e.getX(), e.getY());
             if (path == null) {
                 // If exact hit detection failed, check if we're within any row's vertical bounds
-                int row = getRowForLocation(e.getX(), e.getY());
+                var row = getRowForLocation(e.getX(), e.getY());
                 if (row >= 0) {
                     path = getPathForRow(row);
-                } else {
-                    // Fallback: find the closest row by Y coordinate
-                    int rowCount = getRowCount();
-                    for (int i = 0; i < rowCount; i++) {
-                        Rectangle rowBounds = getRowBounds(i);
-                        if (rowBounds != null && e.getY() >= rowBounds.y && e.getY() < rowBounds.y + rowBounds.height) {
-                            path = getPathForRow(i);
-                            break;
-                        }
-                    }
                 }
             }
             if (path != null) {
@@ -140,16 +132,21 @@ public class ProjectTree extends JTree {
                 if (!isPathSelected(path)) {
                     setSelectionPath(path);
                 }
-                 // Ensure the node corresponds to a file before showing context menu.
-                DefaultMutableTreeNode node = (DefaultMutableTreeNode) path.getLastPathComponent();
-                if (node.getUserObject() instanceof ProjectTreeNode treeNode && treeNode.getFile().isFile()) {
-                    prepareAndShowContextMenu(e.getX(), e.getY());
+                // Determine if we should show a context menu.
+                // Show if the clicked node is a file, OR if files are selected, even if the click was on a directory/empty space.
+                var showContextMenu = false;
+                if (path.getLastPathComponent() instanceof DefaultMutableTreeNode node &&
+                    node.getUserObject() instanceof ProjectTreeNode treeNode && treeNode.getFile().isFile()) {
+                    showContextMenu = true;
                 } else {
-                     // If right-clicked on a directory or empty space with files selected, still show for selected files
+                    // If right-clicked on a directory or empty space with files selected, still show for selected files
                     var selectedFiles = getSelectedProjectFiles();
                     if (!selectedFiles.isEmpty()){
-                        prepareAndShowContextMenu(e.getX(), e.getY());
+                        showContextMenu = true;
                     }
+                }
+                if (showContextMenu) {
+                    prepareAndShowContextMenu(e.getX(), e.getY());
                 }
             }
         }
@@ -312,19 +309,13 @@ public class ProjectTree extends JTree {
             if (onlyChild.getUserObject() instanceof ProjectTreeNode childTreeNode &&
                 childTreeNode.getFile().isDirectory()) {
 
-                TreePath childPath = new TreePath(onlyChild.getPath());
-                // Only expand if it's not already expanded AND its children are not yet loaded
-                // (identified by placeholder). This prevents re-triggering on already processed nodes.
+                var childPath = new TreePath(onlyChild.getPath());
+                // Only expand if it's not already expanded AND its children are not yet loaded.
+                // This prevents re-triggering on already processed nodes.
                 if (!isExpanded(childPath) && !childTreeNode.isChildrenLoaded()) {
-                    // Check that the first child is indeed the "Loading..." placeholder.
-                    // This ensures we are acting on a directory that is pending its children load.
-                    if (onlyChild.getChildCount() == 1 &&
-                        onlyChild.getFirstChild() instanceof DefaultMutableTreeNode &&
-                        LOADING_PLACEHOLDER.equals(((DefaultMutableTreeNode) onlyChild.getFirstChild()).getUserObject())) {
-                        expandPath(childPath); // This will trigger the TreeWillExpandListener.
-                                               // The listener calls loadChildrenForNode.
-                                               // loadChildrenForNode calls this method again, forming the recursive chain.
-                    }
+                    expandPath(childPath); // This will trigger the TreeWillExpandListener.
+                                           // The listener calls loadChildrenForNode.
+                                           // loadChildrenForNode calls this method again, forming the recursive chain.
                 }
             }
         }
@@ -346,33 +337,22 @@ public class ProjectTree extends JTree {
         });
     }
 
-    private @Nullable DefaultMutableTreeNode findAndExpandNode(DefaultMutableTreeNode currentNode, Path relativePath, int depth) {
+    @Nullable
+    private DefaultMutableTreeNode findAndExpandNode(DefaultMutableTreeNode currentNode, Path relativePath, int depth) {
         // Ensure current node's children are loaded if it's a directory and not yet loaded
-        if (currentNode.getUserObject() instanceof ProjectTreeNode currentPtn && currentPtn.getFile().isDirectory()) {
-            if (!currentPtn.isChildrenLoaded() && currentNode.getChildCount() > 0 &&
-                LOADING_PLACEHOLDER.equals(((DefaultMutableTreeNode) currentNode.getFirstChild()).getUserObject().toString())) {
-                // Force load children if not loaded. This relies on treeWillExpand not necessarily being the only loader.
-                // This call must be on EDT if it modifies tree structure directly.
-                // loadChildrenForNode should handle model updates.
-                 loadChildrenForNode(currentNode); // This should be safe if called on EDT.
-            }
+        if (currentNode.getUserObject() instanceof ProjectTreeNode currentPtn && currentPtn.getFile().isDirectory() && !currentPtn.isChildrenLoaded()) {
+            // Force load children if not loaded. This relies on treeWillExpand not necessarily being the only loader.
+            // This call must be on EDT if it modifies tree structure directly.
+            // loadChildrenForNode should handle model updates.
+            loadChildrenForNode(currentNode); // This should be safe if called on EDT.
         }
-        
+
         if (depth == relativePath.getNameCount()) {
             // Base case: We've traversed all path components.
             // This currentNode should be the target file/directory node.
-            if (currentNode.getUserObject() instanceof ProjectTreeNode ptn) {
-                // Check if the name matches the final component of the path.
-                // For files, ptn.getFile().getName() should match relativePath.getFileName().
-                // For directories, it should also match.
-                if (ptn.getFile().getName().equals(relativePath.getFileName().toString())) {
-                    return currentNode;
-                }
-            }
-            // If the path was, e.g. "src/main" and "main" is the dir node.
-            if (currentNode.getUserObject() instanceof ProjectTreeNode ptn && ptn.getFile().isDirectory() &&
-                depth > 0 && ptn.getFile().getName().equals(relativePath.getName(depth -1).toString())) {
-                 return currentNode;
+            if (currentNode.getUserObject() instanceof ProjectTreeNode ptn &&
+                ptn.getFile().getName().equals(relativePath.getFileName().toString())) {
+                return currentNode;
             }
             return null; // Target not matched at the end of path traversal.
         }
@@ -422,7 +402,8 @@ public class ProjectTree extends JTree {
         return List.copyOf(selectedFilesList); // Return immutable list
     }
 
-    private @Nullable ProjectFile getProjectFileFromNode(DefaultMutableTreeNode node) {
+    @Nullable
+    private ProjectFile getProjectFileFromNode(DefaultMutableTreeNode node) {
         if (!(node.getUserObject() instanceof ProjectTreeNode treeNode)) {
             return null;
         }

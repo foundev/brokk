@@ -195,7 +195,9 @@ public class MarkdownOutputPanel extends JPanel implements Scrollable, ThemeAwar
 
         bubbles.clear();
         removeAll();
-        spinnerPanel = null;
+        if (spinnerPanel != null) {
+            spinnerPanel = null;
+        }
     }
 
     /**
@@ -264,16 +266,16 @@ public class MarkdownOutputPanel extends JPanel implements Scrollable, ThemeAwar
         }
 
         // Determine styling based on message type
-        @Nullable Icon iconEmojiNullable;
+        @Nullable Icon iconEmoji;
         Color highlightColor;
         String title = switch (message.type()) {
             case AI -> {
-                iconEmojiNullable = SwingUtil.uiIcon("FileView.computerIcon");
+                iconEmoji = SwingUtil.uiIcon("FileView.computerIcon");
                 highlightColor = ThemeColors.getColor(isDarkTheme, "message_border_ai");
                 yield "Brokk";
             }
             case USER -> {
-                iconEmojiNullable = SwingUtil.uiIcon("FileView.computerIcon");
+                iconEmoji = SwingUtil.uiIcon("FileView.computerIcon");
                 highlightColor = ThemeColors.getColor(isDarkTheme, "message_border_user");
                 if (message instanceof UserMessage userMessage && userMessage.name() != null
                     && !userMessage.name().isEmpty() && !userMessage.name().contains("MODE")) {
@@ -283,17 +285,17 @@ public class MarkdownOutputPanel extends JPanel implements Scrollable, ThemeAwar
                 }
             }
             case CUSTOM, SYSTEM -> {
-                iconEmojiNullable = SwingUtil.uiIcon("FileView.computerIcon");
+                iconEmoji = SwingUtil.uiIcon("FileView.computerIcon");
                 highlightColor = ThemeColors.getColor(isDarkTheme, "message_border_custom");
                 yield "System";
             }
             default -> { // Should ideally not be reached if all ChatMessageType cases are handled.
-                iconEmojiNullable = SwingUtil.uiIcon("FileView.computerIcon");
+                iconEmoji = SwingUtil.uiIcon("FileView.computerIcon");
                 highlightColor = ThemeColors.getColor(isDarkTheme, "message_border_custom");
                 yield message.type().toString();
             }
         };
-        Icon iconEmoji = Objects.requireNonNullElse(iconEmojiNullable, new ImageIcon()); // Ensure non-null icon
+        // iconEmoji may be null if icon loading failed
 
         // Create a new renderer for this message - disable edit blocks for user messages
         boolean enableEditBlocks = message.type() != ChatMessageType.USER;
@@ -322,7 +324,7 @@ public class MarkdownOutputPanel extends JPanel implements Scrollable, ThemeAwar
         worker.appendChunk(Messages.getText(message));
 
         // Re-add spinner if it was visible
-        if (spinnerWasVisible && spinnerPanel != null) { // Add null check for spinnerPanel
+        if (spinnerWasVisible) {
             add(spinnerPanel);
         }
 
@@ -378,13 +380,13 @@ public class MarkdownOutputPanel extends JPanel implements Scrollable, ThemeAwar
             }
 
             if (taskEntry.isCompressed()) {
-                setText(List.of(Messages.customSystem(Objects.toString(taskEntry.summary(), "Summary not available"))));
+                setText(List.of(Messages.customSystem(taskEntry.summary() != null ? taskEntry.summary() : "Summary not available")));
             } else {
-                var taskFragment = taskEntry.log(); // taskFragment can be null
-                if (taskFragment != null) {
-                    setText(taskFragment.messages());
+                var taskFragment = taskEntry.log();
+                if (taskFragment == null) {
+                    setText(List.of(Messages.customSystem("Task log not available for: " + (taskEntry.summary() != null ? taskEntry.summary() : "Unknown Task"))));
                 } else {
-                    setText(List.of(Messages.customSystem("Task log not available for: " + Objects.toString(taskEntry.summary(), "Unknown Task"))));
+                    setText(taskFragment.messages());
                 }
             }
         });
@@ -454,7 +456,7 @@ public class MarkdownOutputPanel extends JPanel implements Scrollable, ThemeAwar
     // --- Spinner Logic ---
 
     // We keep a reference to the spinner panel itself, so we can remove it later
-    @Nullable private SpinnerIndicatorPanel spinnerPanel = null;
+    private @Nullable SpinnerIndicatorPanel spinnerPanel;
 
     /**
      * Shows a small spinner (or message) at the bottom of the panel,
@@ -466,12 +468,12 @@ public class MarkdownOutputPanel extends JPanel implements Scrollable, ThemeAwar
     public void showSpinner(String message) {
         if (spinnerPanel != null) {
             // Already showing, update the message and return
-                spinnerPanel.setMessage(message);
-                return;
-            }
-            // Create a new spinner instance each time
-            spinnerPanel = new SpinnerIndicatorPanel(message, isDarkTheme, 
-                                 ThemeColors.getColor(isDarkTheme, "chat_background"));
+            spinnerPanel.setMessage(message);
+            return;
+        }
+        // Create new spinner
+        spinnerPanel = new SpinnerIndicatorPanel(message, isDarkTheme,
+                          ThemeColors.getColor(isDarkTheme, "chat_background"));
 
         // Add to the end of this panel. Since we have a BoxLayout (Y_AXIS),
         // it shows up below the existing rendered content.

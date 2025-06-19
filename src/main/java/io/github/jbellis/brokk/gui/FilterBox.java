@@ -15,7 +15,7 @@ public final class FilterBox extends JPanel implements ThemeAware {
 
     private final String label;                     // e.g. "Author"
     private final Supplier<List<String>> choices;   // lazy source of values
-    private @Nullable String selected;             // null == “nothing”
+    private @Nullable String selected;             // null indicates no active filter (displays default label)
 
     private final JLabel textLabel;
     private final JLabel iconLabel;
@@ -91,9 +91,9 @@ public final class FilterBox extends JPanel implements ThemeAware {
         };
     }
 
-    // Colors will be set dynamically based on theme
-    private Color unselectedFgColor = Color.BLACK; // Default initialization
-    private Color selectedFgColor = Color.BLUE; // Default initialization
+    // Theme-dependent colors (initialized in applyTheme)
+    private @Nullable Color unselectedFgColor; // text color for default label state (no selection)
+    private @Nullable Color selectedFgColor;   // text color for active filter selection
     private final Chrome chrome;
 
     public FilterBox(Chrome chrome, String label, Supplier<List<String>> choices) {

@@ -19,11 +19,15 @@ import java.awt.*;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.nio.file.Files;
-import java.util.*;
+import java.util.Collections;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Optional;
+import java.util.Set;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
+import java.util.Objects;
 import java.util.concurrent.TimeoutException;
 import java.util.function.Consumer;
 import java.util.stream.Collectors;
@@ -41,9 +45,9 @@ public class VoiceInputButton extends JButton {
     private final @Nullable Future<Set<String>> customSymbolsFuture;
 
     // For STT (mic) usage
-    private volatile @Nullable TargetDataLine micLine = null;
+    @Nullable private volatile TargetDataLine micLine;
     private final ByteArrayOutputStream micBuffer = new ByteArrayOutputStream();
-    @Nullable private volatile Thread micCaptureThread = null;
+    @Nullable private volatile Thread micCaptureThread;
     private @Nullable ImageIcon micOnIcon;
     private @Nullable ImageIcon micOffIcon;
 
@@ -208,6 +212,25 @@ public class VoiceInputButton extends JButton {
             micLine.close();
         }
         micLine = null;
+        Thread captureThread = micCaptureThread;
+        if (captureThread != null) {
+            if (captureThread.isAlive()) {
+                captureThread.interrupt();
+                try {
+                    // Give thread a chance to clean up
+                    captureThread.join(200);
+                    if (captureThread.isAlive()) {
+                        logger.warn("Mic capture thread did not terminate cleanly after 200ms - forcing shutdown");
+                        captureThread.stop(); // Last resort after graceful attempts fail
+                    }
+                } catch (InterruptedException e) {
+                    Thread.currentThread().interrupt();
+                    logger.warn("Interrupted while waiting for mic capture thread to terminate - forcing shutdown");
+                    captureThread.stop(); // Last resort
+                }
+            }
+            micCaptureThread = null;
+        }
 
         // Change icon back to mic-off and restore background
         if (micOffIcon != null) {
@@ -286,9 +309,8 @@ public class VoiceInputButton extends JButton {
                     // Perform transcription
                     String result;
                     var sttModel = contextManager.getService().sttModel();
-                    Set<String> finalSymbolsForTranscription = symbolsForTranscription != null ? symbolsForTranscription : Collections.emptySet();
                     try {
-                        result = sttModel.transcribe(tempFile, finalSymbolsForTranscription);
+                        result = sttModel.transcribe(tempFile, symbolsForTranscription != null ? symbolsForTranscription : Collections.emptySet());
                     } catch (Exception e) {
                         IConsoleIO iConsoleIO = contextManager.getIo();
                         iConsoleIO.toolError("Error transcribing audio: " + e.getMessage(), "Error");

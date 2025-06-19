@@ -447,8 +447,7 @@ public final class Service {
                     logger.info("User balance: {}", balance);
                 } catch (IOException e) {
                     logger.error("Failed to retrieve user balance: {}", e.getMessage());
-                    // Decide how to handle failure - perhaps treat as low balance?
-                    // For now, log and continue, assuming not low balance.
+                    // For now, log and continue, assuming not low balance
                 }
                 isFreeTierOnly = balance < MINIMUM_PAID_BALANCE; // Set instance field
             }
@@ -632,7 +631,7 @@ public final class Service {
      */
     @Nullable
     public StreamingChatLanguageModel getModel(String modelName, ReasoningLevel reasoningLevel, @Nullable Double temperature) {
-        @Nullable String location = modelLocations.get(modelName);
+        String location = modelLocations.get(modelName);
         logger.trace("Creating new model instance for '{}' at location '{}' with reasoning '{}' via LiteLLM",
                      modelName, location, reasoningLevel);
         if (location == null) {
@@ -654,8 +653,8 @@ public final class Service {
             if (MainProject.getProxySetting() == MainProject.LlmProxySetting.BROKK) {
                 var kp = parseKey(MainProject.getBrokkKey());
                 builder = builder
-                        .apiKey(kp.token())
-                        .customHeaders(Map.of("Authorization", "Bearer " + kp.token()))
+                        .apiKey(kp.token)
+                        .customHeaders(Map.of("Authorization", "Bearer " + kp.token))
                         .user(kp.userId().toString());
             } else {
                 // Non-Brokk proxy
@@ -686,7 +685,7 @@ public final class Service {
 
     @Nullable
     public StreamingChatLanguageModel getModel(String modelName, ReasoningLevel reasoningLevel) {
-        return getModel(modelName, reasoningLevel, null); // NullAway: Pass null explicitly for @Nullable Double
+        return getModel(modelName, reasoningLevel, null);
     }
 
     public boolean supportsJsonSchema(StreamingChatLanguageModel model) {
@@ -1012,7 +1011,7 @@ public final class Service {
             var authHeader = "Bearer dummy-key"; // Default for non-Brokk
             if (MainProject.getProxySetting() == MainProject.LlmProxySetting.BROKK) {
                 var kp = parseKey(MainProject.getBrokkKey());
-                authHeader = "Bearer " + kp.token;
+                authHeader = "Bearer " + kp.token();
             }
 
             Request request = new Request.Builder()

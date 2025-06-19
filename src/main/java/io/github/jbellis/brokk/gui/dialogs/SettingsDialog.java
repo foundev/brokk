@@ -8,7 +8,6 @@ import io.github.jbellis.brokk.gui.GuiTheme;
 import io.github.jbellis.brokk.gui.ThemeAware;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
-import org.jetbrains.annotations.Nullable;
 
 import javax.swing.*;
 import java.awt.*;
@@ -237,7 +236,7 @@ public class SettingsDialog extends JDialog implements ThemeAware {
         return dialog;
     }
 
-    public static boolean showStandaloneDataRetentionDialog(IProject project, @Nullable Frame owner) {
+    public static boolean showStandaloneDataRetentionDialog(IProject project, Frame owner) {
         assert project.isDataShareAllowed() : "Standalone data retention dialog should not be shown if data sharing is disabled by organization";
 
         var dialog = new JDialog(owner, "Data Retention Policy Required", true);
@@ -247,7 +246,9 @@ public class SettingsDialog extends JDialog implements ThemeAware {
 
         // Create a temporary SettingsProjectPanel just for its DataRetentionPanel inner class logic
         // This is a bit of a workaround to reuse the panel logic.
-        var tempProjectPanelForRetention = new SettingsProjectPanel.DataRetentionPanel(project, null); // Pass null for parentProjectPanel
+        // We pass null for buttons as they are not used by this standalone dialog's retention panel.
+        // This is a bit of a workaround to reuse the panel logic.
+        var tempProjectPanelForRetention = new SettingsProjectPanel.DataRetentionPanel(project, null);
 
         var contentPanel = new JPanel(new BorderLayout(10, 10));
         contentPanel.setBorder(BorderFactory.createEmptyBorder(10, 10, 10, 10));

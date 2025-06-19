@@ -9,6 +9,7 @@ import io.github.jbellis.brokk.context.Context;
 import io.github.jbellis.brokk.git.IGitRepo;
 import io.github.jbellis.brokk.prompts.EditBlockParser;
 import io.github.jbellis.brokk.tools.ToolRegistry;
+import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
 import java.util.Collection;
@@ -64,7 +65,7 @@ public interface IContextManager {
      * Returns the frozen counterpart of liveContext.
      * @return the frozen counterpart of liveContext
      */
-    default @Nullable Context topContext() {
+    default Context topContext() {
         throw new UnsupportedOperationException();
     }
 
@@ -85,10 +86,15 @@ public interface IContextManager {
      *
      * @param listener The listener to add. Must not be null.
      */
-    default void addContextListener(ContextListener listener) {
+    default void addContextListener( ContextListener listener) {
     }
 
-    default void removeContextListener(ContextListener listener) {
+    /**
+     * Removes a previously registered context listener.
+     *
+     * @param listener The listener to remove. Must not be null.
+     */
+    default void removeContextListener( ContextListener listener) {
     }
 
     default ProjectFile toFile(String relName) {

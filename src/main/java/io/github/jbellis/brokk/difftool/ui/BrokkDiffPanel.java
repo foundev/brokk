@@ -100,7 +100,7 @@ public class BrokkDiffPanel extends JPanel {
         // Initialize file comparisons list - all modes use the same approach
         this.fileComparisons = new ArrayList<>(builder.fileComparisons);
         assert !this.fileComparisons.isEmpty() : "File comparisons cannot be empty";
-        this.bufferDiffPanel = null; // Initialize @Nullable field
+        this.bufferDiffPanel = null;
 
         // Make the container focusable, so it can handle key events
         setFocusable(true);
@@ -139,7 +139,7 @@ public class BrokkDiffPanel extends JPanel {
             assert contextManager != null;
             this.contextManager = contextManager;
             this.fileComparisons = new ArrayList<>();
-            this.leftSource = null; // Initialize @Nullable fields
+            this.leftSource = null;
             this.rightSource = null;
         }
 
@@ -192,14 +192,14 @@ public class BrokkDiffPanel extends JPanel {
         return btnUndo;
     }
 
-    private JButton btnUndo = new JButton("Undo"); // Initialize to prevent NullAway issues
-    private JButton btnRedo = new JButton("Redo");
-    private JButton captureDiffButton = new JButton("Capture Diff");
-    private JButton btnNext = new JButton("Next Change");
-    private JButton btnPrevious = new JButton("Previous Change");
-    private JButton btnPreviousFile = new JButton("Previous File");
-    private JButton btnNextFile = new JButton("Next File");
-    private JLabel fileIndicatorLabel = new JLabel(""); // Initialize
+    private JButton btnUndo;
+    private JButton btnRedo; 
+    private JButton captureDiffButton;
+    private JButton btnNext;
+    private JButton btnPrevious;
+    private JButton btnPreviousFile;
+    private JButton btnNextFile;
+    private JLabel fileIndicatorLabel;
     @Nullable
     private BufferDiffPanel bufferDiffPanel;
 
@@ -240,12 +240,8 @@ public class BrokkDiffPanel extends JPanel {
         assert SwingUtilities.isEventDispatchThread() : "Must be called on EDT";
         updateUndoRedoButtons();
 
-        if (btnPreviousFile != null) {
-            btnPreviousFile.setEnabled(canNavigateToPreviousFile());
-        }
-        if (btnNextFile != null) {
-            btnNextFile.setEnabled(canNavigateToNextFile());
-        }
+        btnPreviousFile.setEnabled(canNavigateToPreviousFile());
+        btnNextFile.setEnabled(canNavigateToNextFile());
     }
 
 
@@ -253,7 +249,17 @@ public class BrokkDiffPanel extends JPanel {
         // Create toolbar
         var toolBar = new JToolBar();
 
-// Buttons are already initialized as fields
+        // Create buttons
+        btnNext = new JButton("Next Change");
+        btnPrevious = new JButton("Previous Change");
+        btnUndo = new JButton("Undo");
+        btnRedo = new JButton("Redo");
+        captureDiffButton = new JButton("Capture Diff");
+
+        // Multi-file navigation buttons
+        btnPreviousFile = new JButton("Previous File");
+        btnNextFile = new JButton("Next File");
+        fileIndicatorLabel = new JLabel("");
         fileIndicatorLabel.setFont(fileIndicatorLabel.getFont().deriveFont(Font.BOLD));
 
         btnNext.addActionListener(e -> navigateToNextChange());
@@ -266,16 +272,11 @@ public class BrokkDiffPanel extends JPanel {
         btnNextFile.addActionListener(e -> nextFile());
         captureDiffButton.addActionListener(e -> {
             var bufferPanel = getBufferDiffPanel();
-            if (bufferPanel == null) {
-                logger.warn("Capture diff called but bufferPanel is null");
-                return;
-            }
+            assert bufferPanel != null;
             var leftPanel = bufferPanel.getFilePanel(BufferDiffPanel.PanelSide.LEFT);
             var rightPanel = bufferPanel.getFilePanel(BufferDiffPanel.PanelSide.RIGHT);
-            if (leftPanel == null || rightPanel == null) {
-                logger.warn("Capture diff called but left or right panel is null");
-                return;
-            }
+            assert leftPanel != null;
+            assert rightPanel != null;
             var leftContent = leftPanel.getEditor().getText();
             var rightContent = rightPanel.getEditor().getText();
             var leftLines = Arrays.asList(leftContent.split("\\R"));
@@ -534,7 +535,7 @@ public class BrokkDiffPanel extends JPanel {
         if (STATE_PROPERTY.equals(evt.getPropertyName()) && SwingWorker.StateValue.DONE.equals(evt.getNewValue())) {
             var compInfo = fileComparisons.get(fileIndex);
             try {
-                String result = (String) ((SwingWorker<?, ?>) evt.getSource()).get(); // Explicit type for clarity with cast
+                var result = (String) ((SwingWorker<?, ?>) evt.getSource()).get();
                 if (result == null) {
                     var comp = (FileComparison) evt.getSource();
                     var loadedPanel = comp.getPanel();
@@ -585,9 +586,7 @@ public class BrokkDiffPanel extends JPanel {
     }
 
     private void updateFileIndicatorLabel(String text) {
-        if (fileIndicatorLabel != null) {
-            fileIndicatorLabel.setText(text);
-        }
+        fileIndicatorLabel.setText(text);
     }
 
     private void performUndoRedo(java.util.function.Consumer<AbstractContentPanel> action) {

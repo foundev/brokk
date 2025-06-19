@@ -46,18 +46,22 @@ public class ImportDependencyDialog {
 
     private static class DialogHelper {
         private final Chrome chrome;
-        private JDialog dialog = new JDialog(); // Initialized
         @Nullable
-        private JRadioButton jarRadioButton; // Null if not Java project
+        private JDialog dialog;
+        @Nullable 
+        private JRadioButton jarRadioButton;
         @Nullable
-        private JRadioButton dirRadioButton; // Null if not Java project
-        private JPanel fspContainerPanel = new JPanel(new BorderLayout()); // Initialized
+        private JRadioButton dirRadioButton;
+        @Nullable
+        private JPanel fspContainerPanel;
         @Nullable
         private FileSelectionPanel currentFileSelectionPanel;
-        private JTextArea previewArea = new JTextArea(); // Initialized
-        private JButton importButton = new JButton("Import"); // Initialized
+        @Nullable
+        private JTextArea previewArea;
+        @Nullable
+        private JButton importButton;
 
-        private SourceType currentSourceType = SourceType.JAR; // Default
+        private SourceType currentSourceType = SourceType.JAR;
         @Nullable
         private BrokkFile selectedBrokkFileForImport;
         private final Path dependenciesRoot;
@@ -65,11 +69,10 @@ public class ImportDependencyDialog {
         DialogHelper(Chrome chrome) {
             this.chrome = chrome;
             this.dependenciesRoot = chrome.getProject().getRoot().resolve(".brokk").resolve("dependencies");
-            // Initialize other fields that might be null based on conditions later
         }
 
         void buildAndShow() {
-            dialog = new JDialog(chrome.getFrame(), "Import Dependency", true);
+            this.dialog = new JDialog(chrome.getFrame(), "Import Dependency", true);
             dialog.setDefaultCloseOperation(JDialog.DISPOSE_ON_CLOSE);
             dialog.setLayout(new BorderLayout(10, 10));
 
@@ -93,9 +96,8 @@ public class ImportDependencyDialog {
             gbc.gridx = 0;
             gbc.gridy = currentRowIndex;
             gbc.gridwidth = 1;
-            gbc.anchor = GridBagConstraints.NORTHWEST; // Apply NORTHWEST anchor for this row.
+            gbc.anchor = GridBagConstraints.WEST;
             mainPanel.add(new JLabel("Source Type:"), gbc);
-            // This anchor will also apply to the radioPanel in the next cell of this row.
 
             jarRadioButton = new JRadioButton("JAR (decompile & add sources)");
                 jarRadioButton.setSelected(true); // JAR is default if shown
@@ -125,7 +127,7 @@ public class ImportDependencyDialog {
             gbc.fill = GridBagConstraints.BOTH; // Make FSP expand
             gbc.weightx = 1.0;
             gbc.weighty = 1.0; // Allow FSP to take vertical space
-            fspContainerPanel = new JPanel(new BorderLayout());
+            this.fspContainerPanel = new JPanel(new BorderLayout());
             fspContainerPanel.setPreferredSize(new Dimension(500, 250));
             mainPanel.add(fspContainerPanel, gbc);
             currentRowIndex++;
@@ -145,7 +147,7 @@ public class ImportDependencyDialog {
             gbc.gridwidth = 2;
             gbc.weighty = 0.5; // Preview area can also take some space
             gbc.fill = GridBagConstraints.BOTH;
-            previewArea = new JTextArea(5, 40);
+            this.previewArea = new JTextArea(5, 40);
             previewArea.setEditable(false);
             previewArea.setFont(new Font(Font.MONOSPACED, Font.PLAIN, 12));
             JScrollPane previewScrollPane = new JScrollPane(previewArea);
@@ -158,7 +160,7 @@ public class ImportDependencyDialog {
             dialog.add(mainPanel, BorderLayout.CENTER);
 
             // Buttons
-            importButton = new JButton("Import");
+            this.importButton = new JButton("Import");
             importButton.setEnabled(false);
             importButton.addActionListener(e -> performImport());
             JButton cancelButton = new JButton("Cancel");
@@ -258,9 +260,9 @@ public class ImportDependencyDialog {
 
             // Listener for text changes in FSP input to update preview
             currentFileSelectionPanel.getFileInputComponent().getDocument().addDocumentListener(new javax.swing.event.DocumentListener() {
-                @Override public void insertUpdate(javax.swing.event.DocumentEvent e) { onFspInputTextChange(); }
-                @Override public void removeUpdate(javax.swing.event.DocumentEvent e) { onFspInputTextChange(); }
-                @Override public void changedUpdate(javax.swing.event.DocumentEvent e) { onFspInputTextChange(); }
+                @Override public void insertUpdate(javax.swing.event.DocumentEvent e) { onFspInputTextChanged(); }
+                @Override public void removeUpdate(javax.swing.event.DocumentEvent e) { onFspInputTextChanged(); }
+                @Override public void changedUpdate(javax.swing.event.DocumentEvent e) { onFspInputTextChanged(); }
             });
 
             fspContainerPanel.add(currentFileSelectionPanel, BorderLayout.CENTER);
@@ -268,7 +270,7 @@ public class ImportDependencyDialog {
             fspContainerPanel.repaint();
         }
 
-        private void onFspInputTextChange() {
+        private void onFspInputTextChanged() {
             SwingUtilities.invokeLater(() -> { // Ensure UI updates are on EDT
                 if (currentFileSelectionPanel == null) {
                     selectedBrokkFileForImport = null;

@@ -50,6 +50,6 @@ project/project/
 .DS_Store
 
 ### BROKK'S CONFIGURATION ###
-.brokk/**
+.brokk/
 !.brokk/style.md
 !.brokk/project.properties

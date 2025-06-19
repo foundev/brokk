@@ -18,6 +18,7 @@ import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 import com.google.common.base.Splitter;
 import org.jetbrains.annotations.Nullable;
+import javax.annotation.Nonnull;
 
 /**
  * Static utilities for showing diffs, capturing diffs, or editing files
@@ -382,8 +383,8 @@ public final class GitUiUtil
      * This attempts to extract the last two path segments
      * as "owner" and "repo". Returns null if it cannot.
      */
-    public static @Nullable OwnerRepo parseOwnerRepoFromUrl(String remoteUrl) {
-        if (remoteUrl.isBlank()) {
+    public static @Nullable OwnerRepo parseOwnerRepoFromUrl(@Nullable String remoteUrl) {
+        if (remoteUrl == null || remoteUrl.isBlank()) {
             logger.warn("Remote URL is blank for parsing owner/repo.");
             return null;
         }
@@ -452,7 +453,7 @@ public final class GitUiUtil
         cm.submitUserTask("Opening diff for commit " + shortenCommitId(commitInfo.id()), () -> {
             try {
                 var files = commitInfo.changedFiles();
-                if (files == null || files.isEmpty()) {
+                if (files.isEmpty()) {
                     chrome.systemOutput("No files changed in this commit.");
                     return;
                 }
@@ -481,7 +482,7 @@ public final class GitUiUtil
         });
     }
 
-    private static String getFileContentOrEmpty(io.github.jbellis.brokk.git.IGitRepo repo, String commitId, ProjectFile file) {
+    private static String getFileContentOrEmpty(@Nonnull io.github.jbellis.brokk.git.IGitRepo repo, @Nullable String commitId, @Nonnull ProjectFile file) {
         try {
             return repo.getFileContent(commitId, file);
         } catch (Exception e) {
@@ -557,7 +558,7 @@ public final class GitUiUtil
     public static void rollbackFilesToCommit
     (
             ContextManager contextManager,
-            Chrome chrome,
+            @Nonnull Chrome chrome,
             String commitId,
             List<ProjectFile> files
     ) {
@@ -574,15 +575,11 @@ public final class GitUiUtil
             try {
                 repo.checkoutFilesFromCommit(commitId, files);
                 SwingUtilities.invokeLater(() -> {
-                    chrome.systemOutput(String.format(
-                            "Successfully rolled back %d file(s) to commit %s",
+                    chrome.systemOutput("Successfully rolled back %d file(s) to commit %s".formatted(
                             files.size(), shortCommitId
                     ));
                     // Refresh Git panels to show the changed files
-                    var gitPanel = chrome.getGitPanel();
-                    if (gitPanel != null) {
-                        gitPanel.updateCommitPanel();
-                    }
+                    chrome.getGitPanel().updateCommitPanel();
                 });
             } catch (Exception e) {
                 logger.error("Error rolling back files", e);
@@ -600,7 +597,7 @@ public final class GitUiUtil
      * @param files List of ProjectFile objects
      * @return A formatted string like "file1.java, file2.java" or "5 files"
      */
-    public static String formatFileList(List<ProjectFile> files) {
+    public static String formatFileList(@Nullable List<ProjectFile> files) {
         if (files == null || files.isEmpty()) {
             return "no files";
         }

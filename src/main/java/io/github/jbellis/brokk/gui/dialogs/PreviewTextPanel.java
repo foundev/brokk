@@ -57,22 +57,22 @@ public class PreviewTextPanel extends JPanel implements ThemeAware {
     private static final Logger logger = LogManager.getLogger(PreviewTextPanel.class);
     private final PreviewTextArea textArea;
     private final GenericSearchBar searchBar;
-    @Nullable private JButton editButton;
-    @Nullable private JButton captureButton;
-    @Nullable private JButton saveButton;
+    private JButton editButton;
+    private JButton captureButton;
+    private JButton saveButton;
     private final ContextManager contextManager;
 
     // Nullable
-    @Nullable private final ProjectFile file;
+    private final ProjectFile file;
     private final String contentBeforeSave;
     private List<ChatMessage> quickEditMessages = new ArrayList<>();
-    @Nullable private final Future<Set<CodeUnit>> fileDeclarations;
+    private Future<Set<CodeUnit>> fileDeclarations;
     private final List<JComponent> dynamicMenuItems = new ArrayList<>(); // For usage capture items
 
     public PreviewTextPanel(ContextManager contextManager,
-                            @Nullable ProjectFile file,
+                            ProjectFile file,
                             String content,
-                            @Nullable String syntaxStyle,
+                            String syntaxStyle,
                             GuiTheme guiTheme,
                             @Nullable ContextFragment fragment)
     {
@@ -96,10 +96,6 @@ public class PreviewTextPanel extends JPanel implements ThemeAware {
         // Button panel for actions on the right
         JPanel actionButtonPanel = new JPanel(new FlowLayout(FlowLayout.RIGHT, 5, 0)); // Use FlowLayout, add some spacing
 
-        // Initialize buttons that might not be created
-        this.saveButton = null;
-        this.captureButton = null;
-        this.editButton = null;
 
         // Save button (conditionally added for ProjectFile)
         if (file != null) {
@@ -116,14 +112,11 @@ public class PreviewTextPanel extends JPanel implements ThemeAware {
         if (fragment != null && fragment.getType() == ContextFragment.FragmentType.GIT_FILE) {
             var ghf = (ContextFragment.GitFileFragment) fragment;
             captureButton = new JButton("Capture this Revision");
-            var finalCaptureButton = captureButton; // Final reference for lambda
             captureButton.addActionListener(e -> {
                 // Add the GitHistoryFragment to the read-only context
                 contextManager.addReadOnlyFragment(ghf); // Use the new method
-                if (finalCaptureButton != null) {
-                    finalCaptureButton.setEnabled(false); // Disable after capture
-                    finalCaptureButton.setToolTipText("Revision captured");
-                }
+                captureButton.setEnabled(false); // Disable after capture
+                captureButton.setToolTipText("Revision captured");
             });
             actionButtonPanel.add(captureButton); // Add capture button
         }
@@ -132,20 +125,15 @@ public class PreviewTextPanel extends JPanel implements ThemeAware {
         if (file != null) {
             var text = (fragment != null && fragment.getType() == ContextFragment.FragmentType.GIT_FILE) ? "Edit Current Version" : "Edit File";
             editButton = new JButton(text);
-            var finalEditButton = editButton; // Final reference for lambda
             if (contextManager.getEditableFiles().contains(file)) {
-                if (finalEditButton != null) {
-                    finalEditButton.setEnabled(false);
-                    finalEditButton.setToolTipText("File is in Edit context");
-                }
+                editButton.setEnabled(false);
+                editButton.setToolTipText("File is in Edit context");
             } else {
-                if (finalEditButton != null) {
-                    finalEditButton.addActionListener(e -> {
-                        contextManager.editFiles(List.of(this.file));
-                        finalEditButton.setEnabled(false);
-                        finalEditButton.setToolTipText("File is in Edit context");
-                    });
-                }
+                editButton.addActionListener(e -> {
+                    contextManager.editFiles(List.of(this.file));
+                    editButton.setEnabled(false);
+                    editButton.setToolTipText("File is in Edit context");
+                });
             }
             actionButtonPanel.add(editButton); // Add edit button to the action panel
         }
@@ -285,10 +273,6 @@ public class PreviewTextPanel extends JPanel implements ThemeAware {
                 private void populateDynamicMenuItems() {
                     // Add "Capture usages" items if it's a project file and declarations are available
                     if (file == null) {
-                        return;
-                    }
-                    if (fileDeclarations == null) { // Guard against null fileDeclarations
-                        logger.warn("fileDeclarations is null when populating dynamic menu items. This should not happen if file is not null.");
                         return;
                     }
 
@@ -876,7 +860,7 @@ public class PreviewTextPanel extends JPanel implements ThemeAware {
      * @param buttonToDisable The save button instance to disable after a successful save.
      * @return true if the save was successful, false otherwise.
      */
-    private boolean performSave(@Nullable JButton buttonToDisable) {
+    private boolean performSave(JButton buttonToDisable) {
         assert file != null : "Attempted to save but no ProjectFile is associated with this panel.";
         var newContent = textArea.getText();
 
@@ -888,7 +872,7 @@ public class PreviewTextPanel extends JPanel implements ThemeAware {
                 var originalLines = contentBeforeSave.lines().collect(Collectors.toList());
                 var newLines = newContent.lines().collect(Collectors.toList());
                 var patch = DiffUtils.diff(originalLines, newLines);
-                var fileNameForDiff = file != null ? file.toString() : "untitled";
+                var fileNameForDiff = file.toString();
                 var unifiedDiff = UnifiedDiffUtils.generateUnifiedDiff(fileNameForDiff,
                                                                               fileNameForDiff,
                                                                               originalLines,
@@ -914,26 +898,14 @@ public class PreviewTextPanel extends JPanel implements ThemeAware {
         try {
             // Write the new content to the file, regardless of whether it matched initial content,
             // because saveButton being enabled implies it's different from last saved state.
-            if (file != null) {
-                file.write(newContent);
-                if (buttonToDisable != null) {
-                    buttonToDisable.setEnabled(false); // Disable after successful save
-                }
-                quickEditMessages.clear(); // Clear quick edit messages accumulated up to this save
-                logger.debug("File saved: " + file);
-                return true; // Save successful
-            } else {
-                // Should not happen if save button is only enabled for project files
-                logger.error("Attempted to save but no ProjectFile is associated with this panel.");
-                JOptionPane.showMessageDialog(this,
-                                              "Cannot save: No file context.",
-                                              "Save Error",
-                                              JOptionPane.ERROR_MESSAGE);
-                return false;
-            }
+            file.write(newContent);
+            buttonToDisable.setEnabled(false); // Disable after successful save
+            quickEditMessages.clear(); // Clear quick edit messages accumulated up to this save
+            logger.debug("File saved: " + file);
+            return true; // Save successful
         } catch (IOException ex) {
             // If save fails, button remains enabled and messages are not cleared.
-            logger.error("Error saving file {}", file != null ? file : "null", ex);
+            logger.error("Error saving file {}", file, ex);
             JOptionPane.showMessageDialog(this,
                                           "Error saving file: " + ex.getMessage(),
                                           "Save Error",

@@ -82,7 +82,7 @@ public class SwingUtil {
                 }
             }
         } catch (Exception e) {
-            logger.warn("Failed to load UI icon for key '{}': {}", iconKey, e.getMessage());
+            logger.warn("Failed to load UI icon for key '{}'", iconKey, e);
         }
 
         return null;
@@ -93,8 +93,9 @@ public class SwingUtil {
      * Tries the primary icon key first, then falls back to a reliable default icon.
      *
      * @param iconKey The UIManager key for the desired icon (e.g., "FileView.directoryIcon")
+     * @return The loaded icon, or a fallback icon if the primary key and all common fallbacks fail.
      */
-    public static @Nullable Icon uiIcon(String iconKey) {
+    public static Icon uiIcon(String iconKey) {
         // Try primary icon first
         var icon = loadUIIcon(iconKey);
         if (icon != null) {

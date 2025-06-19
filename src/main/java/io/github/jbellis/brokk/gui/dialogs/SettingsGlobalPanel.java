@@ -36,29 +36,29 @@ public class SettingsGlobalPanel extends JPanel implements ThemeAware {
     private final SettingsDialog parentDialog; // To access project for data retention refresh
 
     // UI Components managed by this panel
-    private JTextField brokkKeyField = new JTextField();
+    private JTextField brokkKeyField;
     @Nullable
     private JRadioButton brokkProxyRadio; // Can be null if STAGING
-    @Nullable
+    @Nullable 
     private JRadioButton localhostProxyRadio; // Can be null if STAGING
-    private JComboBox<String> architectModelComboBox = new JComboBox<>();
-    private JComboBox<Service.ReasoningLevel> architectReasoningComboBox = new JComboBox<>();
-    private JComboBox<String> codeModelComboBox = new JComboBox<>();
-    private JComboBox<Service.ReasoningLevel> codeReasoningComboBox = new JComboBox<>();
-    private JComboBox<String> askModelComboBox = new JComboBox<>();
-    private JComboBox<Service.ReasoningLevel> askReasoningComboBox = new JComboBox<>();
-    private JComboBox<String> searchModelComboBox = new JComboBox<>();
-    private JComboBox<Service.ReasoningLevel> searchReasoningComboBox = new JComboBox<>();
-    private JRadioButton lightThemeRadio = new JRadioButton("Light");
-    private JRadioButton darkThemeRadio = new JRadioButton("Dark");
-    private JTable quickModelsTable = new JTable();
-    private FavoriteModelsTableModel quickModelsTableModel = new FavoriteModelsTableModel(new ArrayList<>());
-    private JTextField balanceField = new JTextField();
-    private BrowserLabel signupLabel = new BrowserLabel("", ""); // Initialized with dummy values
+    private JComboBox<String> architectModelComboBox;
+    private JComboBox<Service.ReasoningLevel> architectReasoningComboBox;
+    private JComboBox<String> codeModelComboBox;
+    private JComboBox<Service.ReasoningLevel> codeReasoningComboBox;
+    private JComboBox<String> askModelComboBox;
+    private JComboBox<Service.ReasoningLevel> askReasoningComboBox;
+    private JComboBox<String> searchModelComboBox;
+    private JComboBox<Service.ReasoningLevel> searchReasoningComboBox;
+    private JRadioButton lightThemeRadio;
+    private JRadioButton darkThemeRadio;
+    private JTable quickModelsTable;
+    private FavoriteModelsTableModel quickModelsTableModel;
+    private JTextField balanceField;
+    private BrowserLabel signupLabel;
     @Nullable
     private JTextField gitHubTokenField; // Null if GitHub tab not shown
-    private JTabbedPane globalSubTabbedPane = new JTabbedPane(JTabbedPane.TOP);
-    private JPanel defaultModelsPanel = new JPanel(); // Initialized
+    private JTabbedPane globalSubTabbedPane;
+    private JPanel defaultModelsPanel;
     // Jira fields removed
 
 
@@ -71,7 +71,7 @@ public class SettingsGlobalPanel extends JPanel implements ThemeAware {
     }
 
     private void initComponents() {
-        // globalSubTabbedPane is already initialized
+        globalSubTabbedPane = new JTabbedPane(JTabbedPane.TOP);
 
         // Service Tab
         var servicePanel = createServicePanel();
@@ -117,12 +117,12 @@ public class SettingsGlobalPanel extends JPanel implements ThemeAware {
         defaultModelsPanel.setEnabled(projectIsOpen);
         setEnabledRecursive(defaultModelsPanel, projectIsOpen);
 
-        // Special handling for JComboBox renderers if they show "Off" when disabled
+        // Update reasoning combo boxes
         var service = chrome.getContextManager().getService();
-        if (architectReasoningComboBox != null) updateReasoningComboBox(architectModelComboBox, architectReasoningComboBox, service);
-        if (codeReasoningComboBox != null) updateReasoningComboBox(codeModelComboBox, codeReasoningComboBox, service);
-        if (askReasoningComboBox != null) updateReasoningComboBox(askModelComboBox, askReasoningComboBox, service);
-        if (searchReasoningComboBox != null) updateReasoningComboBox(searchModelComboBox, searchReasoningComboBox, service);
+        updateReasoningComboBox(architectModelComboBox, architectReasoningComboBox, service);
+        updateReasoningComboBox(codeModelComboBox, codeReasoningComboBox, service);
+        updateReasoningComboBox(askModelComboBox, askReasoningComboBox, service);
+        updateReasoningComboBox(searchModelComboBox, searchReasoningComboBox, service);
     }
 
     private void setEnabledRecursive(Container container, boolean enabled) {
@@ -278,10 +278,7 @@ public class SettingsGlobalPanel extends JPanel implements ThemeAware {
     // createJiraPanel() removed
 
     private void updateSignupLabelVisibility() {
-        if (this.signupLabel == null) {
-            logger.warn("signupLabel is null, cannot update visibility.");
-            return;
-        }
+        assert signupLabel != null;
         String currentPersistedKey = MainProject.getBrokkKey(); // Read from persistent store
         boolean keyIsEffectivelyPresent = currentPersistedKey != null && !currentPersistedKey.trim().isEmpty();
         this.signupLabel.setVisible(!keyIsEffectivelyPresent);
@@ -561,8 +558,8 @@ public class SettingsGlobalPanel extends JPanel implements ThemeAware {
         });
     }
 
-    private @Nullable String generateModelTooltipText(String modelName, Service service) {
-        if (modelName == null || service == null) return null;
+    private String generateModelTooltipText(String modelName, Service service) {
+        assert modelName != null && service != null;
         var pricing = service.getModelPricing(modelName);
         if (pricing == null || pricing.bands().isEmpty()) return "Price information not available.";
         if (pricing.bands().stream().allMatch(b -> b.inputCostPerToken() == 0 && b.cachedInputCostPerToken() == 0 && b.outputCostPerToken() == 0)) return "Free";
@@ -859,7 +856,7 @@ public class SettingsGlobalPanel extends JPanel implements ThemeAware {
             };
         }
         @Override public boolean isCellEditable(int rowIndex, int columnIndex) { return true; }
-        @Override public @Nullable Object getValueAt(int rowIndex, int columnIndex) {
+        @Override public Object getValueAt(int rowIndex, int columnIndex) {
             Service.FavoriteModel favorite = favorites.get(rowIndex);
             return switch (columnIndex) {
                 case 0 -> favorite.alias();

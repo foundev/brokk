@@ -123,15 +123,22 @@ public class GitPanel extends JPanel
         updateBorderTitle(); // Set initial title with branch name
     }
 
+    @Nullable
     private String getCurrentBranchName() {
         try {
             var project = contextManager.getProject();
+            // Project should always exist here if the GitPanel is constructed.
+            // If it doesn't have Git, the worktree tab won't be added, but the project won't be null.
+            assert project != null : "Project should not be null when getting current branch name";
             IGitRepo repo = project.getRepo();
+            // GitRepo should always be an instance of GitRepo if project.hasGit() is true.
+            // If project.hasGit() is false, we wouldn't call this method expecting a branch.
+            assert repo instanceof GitRepo : "IGitRepo should be GitRepo instance";
             return ((GitRepo) repo).getCurrentBranch();
         } catch (Exception e) {
             logger.warn("Could not get current branch name", e);
+            return null; // Return null if branch name cannot be determined
         }
-        return "";
     }
 
     private void updateBorderTitle() {
@@ -139,7 +146,8 @@ public class GitPanel extends JPanel
         SwingUtilities.invokeLater(() -> {
             var border = getBorder();
             if (border instanceof TitledBorder titledBorder) {
-                String newTitle = branchName != null && !branchName.isBlank()
+                // If branchName is null or blank, default to "Git ▼"
+                String newTitle = (branchName != null && !branchName.isBlank())
                                   ? "Git (" + branchName + ") ▼"
                                   : "Git ▼";
                 titledBorder.setTitle(newTitle);

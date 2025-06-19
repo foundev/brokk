@@ -39,10 +39,10 @@ public class DiffScrollComponent extends JComponent implements ChangeListener
     private final int toPanelIndex;
 
     // Holds clickable shapes on the screen, each mapped to a \"command\"
-    private List<Command> commands = new ArrayList<>();
+    private List<Command> commands;
 
     // We keep track of antialias settings for painting
-    @Nullable private Object antiAlias = RenderingHints.VALUE_ANTIALIAS_DEFAULT;
+    @Nullable private Object antiAlias;
 
     // For controlling how the curves are drawn
     private int curveType;
@@ -61,7 +61,10 @@ public class DiffScrollComponent extends JComponent implements ChangeListener
      */
     public DiffScrollComponent(BufferDiffPanel diffPanel, int fromPanelIndex, int toPanelIndex)
     {
-        this.diffPanel = diffPanel;
+        this.diffPanel = Objects.requireNonNull(diffPanel, "diffPanel cannot be null");
+        if (fromPanelIndex < 0 || toPanelIndex < 0) {
+            throw new IllegalArgumentException("Panel indexes must be non-negative");
+        }
         this.fromPanelIndex = fromPanelIndex;
         this.toPanelIndex = toPanelIndex;
 
@@ -69,8 +72,15 @@ public class DiffScrollComponent extends JComponent implements ChangeListener
         // getFromPanel() and getToPanel() can return null if panels are not yet set up by BufferDiffPanel.
         // However, they are called here after diffPanel is constructed, which constructs its FilePanels.
         // Asserting non-null for safety, as addChangeListener will NPE if scrollPane is null.
-        FilePanel fromP = Objects.requireNonNull(getFromPanel(), "FromPanel must be available in DiffScrollComponent constructor");
-        FilePanel toP = Objects.requireNonNull(getToPanel(), "ToPanel must be available in DiffScrollComponent constructor");
+        FilePanel fromP = getFromPanel();
+        FilePanel toP = getToPanel();
+        
+        // Asserting non-null for safety, as addChangeListener will NPE if scrollPane is null.
+        // However, fromPanel and toPanel are expected to be non-null after diffPanel is constructed.
+        // Removed Objects.requireNonNull as it adds unnecessary verbosity for NullAway.
+        assert fromP != null : "FromPanel must be available in DiffScrollComponent constructor";
+        assert toP != null : "ToPanel must be available in DiffScrollComponent constructor";
+        
         fromP.getScrollPane().getViewport().addChangeListener(this);
         toP.getScrollPane().getViewport().addChangeListener(this);
 
@@ -129,11 +139,15 @@ public class DiffScrollComponent extends JComponent implements ChangeListener
             @Override
             public void mouseClicked(MouseEvent me)
             {
-                // Check for shift key press (consider moving this to Command execution)
-                shift = (me.getModifiersEx() & InputEvent.SHIFT_DOWN_MASK) != 0;
-                requestFocus();
-                // Execute a command if the user clicked inside a shape
-                executeCommand(me.getX(), me.getY());
+                try {
+                    // Check for shift key press
+                    shift = (me.getModifiersEx() & InputEvent.SHIFT_DOWN_MASK) != 0;
+                    requestFocus();
+                    // Execute a command if the user clicked inside a shape
+                    executeCommand(me.getX(), me.getY());
+                } catch (Exception e) {
+                    logger.error("Error handling mouse click", e);
+                }
             }
         };
     }
@@ -143,7 +157,7 @@ public class DiffScrollComponent extends JComponent implements ChangeListener
      */
     public void executeCommand(double x, double y)
     {
-        if (commands == null) {
+        if (commands == null || commands.isEmpty()) {
             return;
         }
         // Iterate in reverse order so topmost shapes are checked first
@@ -188,8 +202,12 @@ public class DiffScrollComponent extends JComponent implements ChangeListener
 
         // Retrieve the patch from BufferDiffPanel
         var patch = diffPanel.getPatch();
-        if (patch == null || patch.getDeltas().isEmpty()) {
+        if (patch == null) {
+            logger.debug("No patch available to paint diffs");
             return;
+        }
+        if (patch.getDeltas().isEmpty()) {
+            return; // No diffs to paint
         }
         // We'll store clickable shapes in commands
         commands = new ArrayList<>();
@@ -199,10 +217,12 @@ public class DiffScrollComponent extends JComponent implements ChangeListener
         FilePanel toPanel = getToPanel();
 
         // If either panel is null (should not happen if constructor assertions hold), abort painting.
-        if (fromPanel == null || toPanel == null) {
-            logger.warn("paintDiffs called but FilePanel(s) are null. FromPanel: {}, ToPanel: {}", fromPanel, toPanel);
-            return;
-        }
+        // This null check is redundant if constructor ensures non-null panels or if NullAway handles it.
+        // Removing for conciseness as per style guide.
+        // if (fromPanel == null || toPanel == null) {
+        //     logger.warn("paintDiffs called but FilePanel(s) are null. FromPanel: {}, ToPanel: {}", fromPanel, toPanel);
+        //     return;
+        // }
         
         var viewportFrom = fromPanel.getScrollPane().getViewport();
         var editorFrom = fromPanel.getEditor();
@@ -212,9 +232,6 @@ public class DiffScrollComponent extends JComponent implements ChangeListener
         var editorTo = toPanel.getEditor();
         var bdTo = toPanel.getBufferDocument();
 
-        if (bdFrom == null || bdTo == null) {
-            return; // Need both documents
-        }
 
         Rectangle viewRectFrom = viewportFrom.getViewRect();
         Rectangle viewRectTo = viewportTo.getViewRect();
@@ -425,17 +442,27 @@ public class DiffScrollComponent extends JComponent implements ChangeListener
                  }
             }
         } catch (BadLocationException ex) {
-            // Log error or handle gracefully
-            System.err.println("Error calculating view coordinates: " + ex.getMessage());
-            // Consider painting an error message or indicator
+            logger.error("Error calculating view coordinates", ex);
+            // Paint a subtle error indicator
+            try {
+                g2.setColor(Color.RED);
+                g2.drawString("!", 5, 15);
+            } catch (Exception e) {
+                logger.error("Error painting error indicator", e);
+            }
         }
     }
 
     /** Helper to get 0-based line number for a given Y coordinate */
     private int getVisibleLine(JTextComponent editor, BufferDocumentIF doc, int y) {
-        Point p = new Point(0, y); // X doesn't matter for line number
-        int offset = editor.viewToModel2D(p);
-        return (offset >= 0) ? doc.getLineForOffset(offset) : -1;
+        try {
+            Point p = new Point(0, y); // X doesn't matter for line number
+            int offset = editor.viewToModel2D(p);
+            return (offset >= 0) ? doc.getLineForOffset(offset) : -1;
+        } catch (Exception e) {
+            logger.warn("Error getting visible line for y={}", y, e);
+            return -1;
+        }
     }
 
     /** Record to hold calculated rectangle info */
@@ -480,7 +507,10 @@ public class DiffScrollComponent extends JComponent implements ChangeListener
                 }
             }
             // If still null, fallback to top of viewport
-            if (startViewRect == null) startViewRect = new Rectangle(visibleRect.x, visibleRect.y, 1, 1);
+            if (startViewRect == null) {
+                logger.warn("Could not determine start view rect for line {}", startLine);
+                startViewRect = new Rectangle(visibleRect.x, visibleRect.y, 1, 1);
+            }
         }
         if (endViewRect == null) {
              // If end is invalid, use start position + estimate or bottom of viewport
@@ -590,9 +620,12 @@ public class DiffScrollComponent extends JComponent implements ChangeListener
     private MouseWheelListener getMouseWheelListener()
     {
         return me -> {
-            // If wheel moves down, next delta; if up, previous delta
-            diffPanel.toNextDelta(me.getWheelRotation() > 0);
-            // No need to repaint here, toNextDelta usually triggers selection change -> repaint
+            try {
+                Objects.requireNonNull(diffPanel, "diffPanel cannot be null")
+                      .toNextDelta(me.getWheelRotation() > 0);
+            } catch (Exception e) {
+                logger.error("Error handling mouse wheel event", e);
+            }
         };
     }
 
@@ -609,9 +642,9 @@ public class DiffScrollComponent extends JComponent implements ChangeListener
 
         Command(Shape shape, AbstractDelta<String> delta)
         {
-            this.shape = shape;
+            this.shape = Objects.requireNonNull(shape, "Command shape cannot be null");
             this.bounds = shape.getBounds();
-            this.delta = delta;
+            this.delta = Objects.requireNonNull(delta, "Command delta cannot be null");
         }
 
         boolean contains(double x, double y)
@@ -641,6 +674,9 @@ public class DiffScrollComponent extends JComponent implements ChangeListener
         DiffChangeCommand(Shape shape, AbstractDelta<String> delta, int sourcePanelIndex, int targetPanelIndex)
         {
             super(shape, delta);
+            if (sourcePanelIndex < 0 || targetPanelIndex < 0) {
+                throw new IllegalArgumentException("Panel indexes must be non-negative");
+            }
             this.sourcePanelIndex = sourcePanelIndex;
             this.targetPanelIndex = targetPanelIndex;
         }
@@ -700,15 +736,13 @@ public class DiffScrollComponent extends JComponent implements ChangeListener
     // --- Panel Accessors ---
 
     @Nullable
-    private FilePanel getFromPanel()
-    {
+    private FilePanel getFromPanel() {
         // diffPanel.getFilePanel can return null if index is bad or panels not fully set up
         return diffPanel.getFilePanel(fromPanelIndex);
     }
 
     @Nullable
-    private FilePanel getToPanel()
-    {
+    private FilePanel getToPanel() {
         return diffPanel.getFilePanel(toPanelIndex);
     }
 }

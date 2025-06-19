@@ -8,6 +8,7 @@ import org.fife.ui.rsyntaxtextarea.RSyntaxTextArea;
 import org.fife.ui.rsyntaxtextarea.Theme;
 
 import javax.annotation.Nullable;
+import org.jetbrains.annotations.NotNull;
 import javax.swing.*;
 import java.awt.*;
 import java.io.IOException;
@@ -38,7 +39,7 @@ public class GuiTheme {
      * Creates a new theme manager
      *
      * @param frame The main application frame
-     * @param mainScrollPane The main scroll pane for LLM output (can be null)
+     * @param mainScrollPane The main scroll pane for LLM output
      * @param chrome The Chrome instance for UI feedback
      */
     public GuiTheme(JFrame frame, @Nullable JScrollPane mainScrollPane, Chrome chrome) {
@@ -142,7 +143,7 @@ public class GuiTheme {
         try {
             return Optional.of(Theme.load(inputStream));
         } catch (IOException e) {
-            logger.error("Could not load {} RSyntaxTextArea theme from {}: {}", themeChoice, themeResource, e.getMessage());
+            logger.error("Could not load {} RSyntaxTextArea theme from {}", themeChoice, themeResource, e);
             return Optional.empty();
         }
     }
@@ -175,7 +176,7 @@ public class GuiTheme {
             case JScrollPane scrollPane -> {
                 var viewport = scrollPane.getViewport();
                 if (viewport != null) {
-                    @Nullable Component view = viewport.getView();
+                    Component view = viewport.getView();
                     applyThemeToComponent(view, theme);
                 }
             }
@@ -236,8 +237,7 @@ public class GuiTheme {
                 for (String iconFile : iconFiles) {
                     // Extract filename without extension for the key
                     String filename = iconFile.substring(iconFile.lastIndexOf('/') + 1);
-                    int dotIndex = filename.lastIndexOf('.');
-                    String keyName = (dotIndex == -1) ? filename : filename.substring(0, dotIndex);
+                    String keyName = filename.substring(0, filename.lastIndexOf('.'));
                     String iconKey = "Brokk." + keyName;
                     
                     registerIcon(iconKey, iconFile);
@@ -261,37 +261,21 @@ public class GuiTheme {
         var iconFiles = new ArrayList<String>();
         
         try {
-            String protocol = directoryUrl.getProtocol();
-            if (protocol == null) {
-                logger.warn("URL has no protocol: {}", directoryUrl);
-                return iconFiles;
-            }
-
-            if ("file".equals(protocol)) {
+            if ("file".equals(directoryUrl.getProtocol())) {
                 // Running from file system (development)
                 var dirPath = java.nio.file.Paths.get(directoryUrl.toURI());
                 try (var stream = java.nio.file.Files.list(dirPath)) {
                     stream.filter(path -> {
-                        var fileNamePath = path.getFileName();
-                        if (fileNamePath == null) {
-                            return false;
-                        }
-                        String name = fileNamePath.toString().toLowerCase(Locale.ROOT);
+                        String name = path.getFileName().toString().toLowerCase(Locale.ROOT);
                         return name.endsWith(".png") || name.endsWith(".gif");
                     }).forEach(path -> {
-                        // We've already filtered for non-null fileNamePath in the filter,
-                        // so direct use of getFileName() here is safe.
                         String filename = path.getFileName().toString();
                         iconFiles.add(iconBase + filename);
                     });
                 }
-            } else if ("jar".equals(protocol)) {
+            } else if ("jar".equals(directoryUrl.getProtocol())) {
                 // Running from JAR file
-                @Nullable String jarPath = directoryUrl.getPath();
-                if (jarPath == null) {
-                    logger.warn("JAR URL has no path: {}", directoryUrl);
-                    return iconFiles;
-                }
+                var jarPath = directoryUrl.getPath();
                 var exclamationIndex = jarPath.indexOf('!');
                 if (exclamationIndex >= 0) {
                     var jarFile = jarPath.substring(5, exclamationIndex); // Remove "file:"
@@ -301,11 +285,7 @@ public class GuiTheme {
                         var entries = jar.entries();
                         while (entries.hasMoreElements()) {
                             var entry = entries.nextElement();
-                            @Nullable String entryName = entry.getName();
-                            if (entryName == null) {
-                                logger.warn("JAR entry has null name in {}: {}", jarFile, entry);
-                                continue;
-                            }
+                            String entryName = entry.getName();
                             if (entryName.startsWith(entryPath) && !entry.isDirectory()) {
                                 var filename = entryName.substring(entryName.lastIndexOf('/') + 1).toLowerCase(Locale.ROOT);
                                 if (filename.endsWith(".png") || filename.endsWith(".gif")) {

@@ -48,11 +48,11 @@ public class MultiFileSelectionDialog extends JDialog {
     private final AnalyzerWrapper analyzerWrapper;
 
     // UI Components - Files Tab
-    @Nullable private FileSelectionPanel fileSelectionPanel; // Use the new panel
+    private FileSelectionPanel fileSelectionPanel; // Use the new panel
 
     // UI Components - Classes Tab
-    @Nullable private JTextArea classInput; // Keep for classes tab
-    @Nullable private AutoCompletion classAutoCompletion; // Keep for classes tab
+    private JTextArea classInput; // Keep for classes tab
+    private AutoCompletion classAutoCompletion; // Keep for classes tab
 
     // Common UI Components
     private JTabbedPane tabbedPane;
@@ -108,7 +108,7 @@ public class MultiFileSelectionDialog extends JDialog {
                     f -> true, // Default filter, can be customized if needed
                     autocompletePathsForPanel,
                     true, // multiSelect = true
-                    bf -> {},  // No-op single file confirmed action for multi-select panel
+                    null,  // No single file confirmed action for multi-select panel
                     true, // includeProjectFilesInAutocomplete
                     buildFilesTabHintText(allowExternalFiles)
             );
@@ -153,7 +153,7 @@ public class MultiFileSelectionDialog extends JDialog {
                     Component selectedComponent = tabbedPane.getSelectedComponent();
                     if (selectedComponent instanceof FileSelectionPanel fsp) {
                         fsp.getFileInputComponent().requestFocusInWindow();
-                    } else if (selectedComponent != null && "ClassesPanel".equals(selectedComponent.getName()) && classInput != null) {
+                    } else if ("ClassesPanel".equals(selectedComponent.getName())) {
                         classInput.requestFocusInWindow();
                     }
                 });
@@ -240,17 +240,17 @@ public class MultiFileSelectionDialog extends JDialog {
 
         String componentName = selectedComponent.getName();
 
-        if ("FilesPanel".equals(componentName) && fileSelectionPanel != null) {
-            List<BrokkFile> filesResult = fileSelectionPanel.resolveAndGetSelectedFiles();
-            selectionResult = new Selection((filesResult != null && !filesResult.isEmpty()) ? List.copyOf(filesResult) : null, null);
+        if ("FilesPanel".equals(componentName)) {
+            var filesResult = fileSelectionPanel.resolveAndGetSelectedFiles();
+            selectionResult = new Selection(filesResult.isEmpty() ? null : List.copyOf(filesResult), null);
             confirmed = !selectionResult.isEmpty();
             if (!confirmed) selectionResult = null;
             dispose();
             return;
         }
 
-        if ("ClassesPanel".equals(componentName) && classInput != null) {
-            final String typedClasses = classInput.getText().trim();
+        if ("ClassesPanel".equals(componentName)) {
+            var typedClasses = classInput.getText().trim();
             if (!typedClasses.isEmpty()) {
                 okButton.setEnabled(false);
                 cancelButton.setEnabled(false);
@@ -381,8 +381,7 @@ public class MultiFileSelectionDialog extends JDialog {
         return confirmed;
     }
 
-    @Nullable
-    public Selection getSelection() {
+    public @Nullable Selection getSelection() {
         return selectionResult;
     }
 
@@ -487,9 +486,7 @@ public class MultiFileSelectionDialog extends JDialog {
                                                         cu -> 0,
                                                         this::createClassCompletion);
 
-            if (classAutoCompletion != null) { // classAutoCompletion can be null if Classes tab is not created
-                AutoCompleteUtil.sizePopupWindows(classAutoCompletion, comp, matches);
-            }
+            AutoCompleteUtil.sizePopupWindows(classAutoCompletion, comp, matches);
             return matches.stream().map(c -> (Completion) c).toList();
         }
 

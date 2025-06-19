@@ -1,6 +1,7 @@
 package io.github.jbellis.brokk.difftool.ui;
 
 import io.github.jbellis.brokk.difftool.doc.BufferDocumentIF;
+import org.jspecify.annotations.Nullable;
 import io.github.jbellis.brokk.difftool.utils.ColorUtil;
 import io.github.jbellis.brokk.difftool.utils.Colors;
 
@@ -21,7 +22,8 @@ import com.github.difflib.patch.Patch;
 public class RevisionBar extends JComponent
 {
     private static final long serialVersionUID = 1L;
-    private static final org.apache.logging.log4j.Logger logger = org.apache.logging.log4j.LogManager.getLogger(RevisionBar.class);
+    private static final org.apache.logging.log4j.Logger logger = 
+        org.apache.logging.log4j.LogManager.getLogger(RevisionBar.class);
 
     private final BufferDiffPanel diffPanel;
     private final FilePanel filePanel;

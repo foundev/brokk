@@ -37,10 +37,7 @@ public class SearchTools {
     // This is necessary because LLMs may incorrectly include them, but the underlying
     // code analysis tools expect clean FQNs or symbol names without parameter lists.
 
-    private static @Nullable String stripParams(String sym) {
-        if (sym == null) {
-            return null;
-        }
+    private static String stripParams(String sym) {
         // Remove trailing (...) if it looks like a parameter list
         return sym.replaceAll("(?<=\\w)\\([^)]*\\)$", "");
     }
@@ -442,15 +439,15 @@ public class SearchTools {
     ) {
         assert getAnalyzer().isCpg() : "Cannot get call graph: CPG analyzer is not available.";
         // Sanitize methodName: remove potential `(params)` suffix from LLM.
-        String sanitizedMethodName = stripParams(methodName);
-        if (sanitizedMethodName == null || sanitizedMethodName.isBlank()) {
+        methodName = stripParams(methodName);
+        if (methodName.isBlank()) {
             throw new IllegalArgumentException("Cannot get call graph: method name is empty");
         }
 
-        var graph = getAnalyzer().getCallgraphTo(sanitizedMethodName, 5);
-        String result = AnalyzerUtil.formatCallGraph(graph, sanitizedMethodName, false);
+        var graph = getAnalyzer().getCallgraphTo(methodName, 5);
+        String result = AnalyzerUtil.formatCallGraph(graph, methodName, false);
         if (result.isEmpty()) {
-            return "No callers found of method: " + sanitizedMethodName;
+            return "No callers found of method: " + methodName;
         }
         return result;
     }
@@ -465,15 +462,15 @@ public class SearchTools {
     ) {
         assert getAnalyzer().isCpg() : "Cannot get call graph: CPG analyzer is not available.";
         // Sanitize methodName: remove potential `(params)` suffix from LLM.
-        String sanitizedMethodName = stripParams(methodName);
-        if (sanitizedMethodName == null || sanitizedMethodName.isBlank()) {
+        methodName = stripParams(methodName);
+        if (methodName.isBlank()) {
             throw new IllegalArgumentException("Cannot get call graph: method name is empty");
         }
 
-        var graph = getAnalyzer().getCallgraphFrom(sanitizedMethodName, 5); // Use correct analyzer method
-        String result = AnalyzerUtil.formatCallGraph(graph, sanitizedMethodName, true);
+        var graph = getAnalyzer().getCallgraphFrom(methodName, 5);
+        String result = AnalyzerUtil.formatCallGraph(graph, methodName, true);
         if (result.isEmpty()) {
-            return "No calls out made by method: " + sanitizedMethodName;
+            return "No calls out made by method: " + methodName;
         }
         return result;
     }

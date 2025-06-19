@@ -158,7 +158,7 @@ public class SettingsProjectPanel extends JPanel implements ThemeAware {
         projectSubTabbedPane.addTab("Issues", null, issuesPanel, "Issue tracker integration settings");
 
         // Data Retention Tab
-        dataRetentionPanelInner = new DataRetentionPanel(project, this);
+        this.dataRetentionPanelInner = new DataRetentionPanel(project, this);
         projectSubTabbedPane.addTab("Data Retention", null, dataRetentionPanelInner, "Data retention policy for this project");
 
         // Jira Tab is now removed, its contents moved to the "Issues" tab's Jira card.
@@ -326,7 +326,7 @@ public class SettingsProjectPanel extends JPanel implements ThemeAware {
         githubHostField.setToolTipText("e.g., github.mycompany.com (leave blank for github.com)");
         gbcGitHub.gridx = 1; gbcGitHub.gridy = githubRow++; gbcGitHub.weightx = 1.0; gbcGitHub.fill = GridBagConstraints.HORIZONTAL;
         gitHubCard.add(githubHostField, gbcGitHub);
-        
+
         var ghInfoLabel = new JLabel("<html>If not overridden, issues are fetched from the project's own GitHub repository. Uses global GitHub token. Specify host for GitHub Enterprise.</html>");
         ghInfoLabel.setFont(ghInfoLabel.getFont().deriveFont(Font.ITALIC, ghInfoLabel.getFont().getSize() * 0.9f));
         gbcGitHub.gridx = 0; gbcGitHub.gridy = githubRow++; gbcGitHub.gridwidth = 2; gbcGitHub.insets = new Insets(8, 2, 2, 2);
@@ -590,14 +590,12 @@ public class SettingsProjectPanel extends JPanel implements ThemeAware {
                                                         JOptionPane.PLAIN_MESSAGE);
             if (newDir != null && !newDir.trim().isEmpty()) {
                 String trimmedNewDir = newDir.trim();
-                List<String> currentElements = java.util.Collections.list(excludedDirectoriesListModel.elements());
-                if (!currentElements.contains(trimmedNewDir)) { // Avoid duplicates if user adds same dir again
-                    currentElements.add(trimmedNewDir);
-                }
-                currentElements.sort(String::compareToIgnoreCase);
-                
+                excludedDirectoriesListModel.addElement(trimmedNewDir);
+                var elements = new ArrayList<String>();
+                for (int i = 0; i < excludedDirectoriesListModel.getSize(); i++) elements.add(excludedDirectoriesListModel.getElementAt(i));
+                elements.sort(String::compareToIgnoreCase);
                 excludedDirectoriesListModel.clear();
-                currentElements.forEach(excludedDirectoriesListModel::addElement);
+                for (String element : elements) excludedDirectoriesListModel.addElement(element);
             }
         });
         this.removeExcludedDirButton.addActionListener(e -> {
@@ -634,8 +632,7 @@ public class SettingsProjectPanel extends JPanel implements ThemeAware {
             // Add a listener to reset the button when the initial agent completes
             detailsFuture.whenCompleteAsync((result, ex) -> {
                 SwingUtilities.invokeLater(() -> {
-                    // inferBuildDetailsButton is non-null
-                    if (manualInferBuildTaskFuture == null) {
+                    if (inferBuildDetailsButton != null && manualInferBuildTaskFuture == null) {
                         setButtonToReadyState();
                     }
                 });
@@ -764,16 +761,20 @@ public class SettingsProjectPanel extends JPanel implements ThemeAware {
         // this panel's overall enabled state (due to project presence) is handled in initComponents.
         buildProgressBar.setVisible(!enabled);
 
-        Stream.of(buildCleanCommandField, allTestsCommandField, someTestsCommandField,
-                  runAllTestsRadio, runTestsInWorkspaceRadio,
-                  cpgRefreshComboBox,
-                  editLanguagesButton,
-                  excludedScrollPane, excludedDirectoriesList,
-                  addExcludedDirButton, removeExcludedDirButton,
-                  // Parent dialog buttons
-                  okButtonParent, cancelButtonParent, applyButtonParent)
-              .filter(java.util.Objects::nonNull) // Filter out null components (e.g., optional parent buttons)
-              .forEach(control -> control.setEnabled(enabled));
+        buildCleanCommandField.setEnabled(enabled);
+        allTestsCommandField.setEnabled(enabled);
+        someTestsCommandField.setEnabled(enabled);
+        runAllTestsRadio.setEnabled(enabled);
+        runTestsInWorkspaceRadio.setEnabled(enabled);
+        cpgRefreshComboBox.setEnabled(enabled);
+        editLanguagesButton.setEnabled(enabled);
+        excludedScrollPane.setEnabled(enabled);
+        excludedDirectoriesList.setEnabled(enabled);
+        addExcludedDirButton.setEnabled(enabled);
+        removeExcludedDirButton.setEnabled(enabled);
+        okButtonParent.setEnabled(enabled);
+        cancelButtonParent.setEnabled(enabled);
+        applyButtonParent.setEnabled(enabled);
     }
 
     private void updateBuildDetailsFieldsFromAgent(BuildAgent.BuildDetails details) {
@@ -790,7 +791,7 @@ public class SettingsProjectPanel extends JPanel implements ThemeAware {
     }
 
     private void updateLanguagesDisplayField() {
-        // languagesDisplayField and currentAnalyzerLanguagesForDialog are initialized at declaration and non-null.
+        if (languagesDisplayField == null || currentAnalyzerLanguagesForDialog == null) return;
         String cdl = currentAnalyzerLanguagesForDialog.stream()
                 .map(lang -> lang.name())
                 .sorted()
@@ -903,7 +904,7 @@ public class SettingsProjectPanel extends JPanel implements ThemeAware {
         }
 
         // Data Retention Tab
-        if (dataRetentionPanelInner != null) dataRetentionPanelInner.loadPolicy();
+        dataRetentionPanelInner.loadPolicy();
     }
 
     private void loadBuildPanelSettings() {
@@ -1021,7 +1022,7 @@ public class SettingsProjectPanel extends JPanel implements ThemeAware {
         }
 
         // Data Retention Tab
-        if (dataRetentionPanelInner != null) dataRetentionPanelInner.applyPolicy();
+        dataRetentionPanelInner.applyPolicy();
         
         // After applying data retention, model list might need refresh
         chrome.getContextManager().submitBackgroundTask("Refreshing models due to policy change", () -> {
@@ -1037,9 +1038,7 @@ public class SettingsProjectPanel extends JPanel implements ThemeAware {
     }
     
     public void refreshDataRetentionPanel() {
-        if (dataRetentionPanelInner != null) {
-            dataRetentionPanelInner.refreshStateAndUI();
-        }
+        dataRetentionPanelInner.refreshStateAndUI();
     }
 
 
@@ -1051,7 +1050,7 @@ public class SettingsProjectPanel extends JPanel implements ThemeAware {
     // Static inner class DataRetentionPanel (Copied and adapted from SettingsDialog)
     public static class DataRetentionPanel extends JPanel {
         private final IProject project;
-        private final @Nullable SettingsProjectPanel parentProjectPanel; // For triggering model refresh
+        private final SettingsProjectPanel parentProjectPanel; // For triggering model refresh
         private final ButtonGroup policyGroup;
         private final JRadioButton improveRadio;
         private final JLabel improveDescLabel;

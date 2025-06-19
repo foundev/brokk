@@ -7,6 +7,7 @@ import dev.langchain4j.data.message.UserMessage;
 
 import java.util.List;
 import java.util.Set;
+import javax.annotation.Nonnull;
 
 public class SummarizerPrompts {
     public static final SummarizerPrompts instance = new SummarizerPrompts() {};
@@ -17,8 +18,7 @@ public class SummarizerPrompts {
     
     private SummarizerPrompts() {}
 
-    public List<ChatMessage> collectMessages(String actionTxt, int wordBudget) {
-        assert actionTxt != null;
+    public @Nonnull List<ChatMessage> collectMessages(@Nonnull String actionTxt, int wordBudget) {
         assert !actionTxt.isBlank();
         assert Set.of(WORD_BUDGET_3, WORD_BUDGET_5, WORD_BUDGET_12).contains(wordBudget) : wordBudget;
 
@@ -57,7 +57,7 @@ public class SummarizerPrompts {
                        new UserMessage(request));
     }
 
-    private static String getRequest(String actionTxt, int wordBudget) {
+    private static @Nonnull String getRequest(@Nonnull String actionTxt, int wordBudget) {
         return """
         <text>
         %s
@@ -68,7 +68,7 @@ public class SummarizerPrompts {
         """.stripIndent().formatted(actionTxt, wordBudget);
     }
 
-    public String systemIntro() {
+    public @Nonnull String systemIntro() {
         return """
                You are an expert software engineer that generates concise summaries of code-related text.
 
@@ -76,7 +76,7 @@ public class SummarizerPrompts {
                """.stripIndent();
     }
 
-    public List<ChatMessage> compressHistory(String entryText) {
+    public @Nonnull List<ChatMessage> compressHistory(@Nonnull String entryText) {
         var instructions = """
         Give a detailed but concise summary of this task.
         A third party should be able to understand what happened without reference to the original.
@@ -88,7 +88,7 @@ public class SummarizerPrompts {
         return List.of(new SystemMessage(systemIntro()), new UserMessage(instructions));
     }
 
-    public List<ChatMessage> collectPrDescriptionMessages(String diff) {
+    public @Nonnull List<ChatMessage> collectPrDescriptionMessages(@Nonnull String diff) {
         return List.of(
                 new SystemMessage("""
                     You are an expert software engineer writing clear pull-request descriptions.

@@ -32,17 +32,15 @@ public abstract class BaseSearchableComponent implements SearchableComponent {
      * @param currentMatch current match number (1-based)
      */
     protected void notifySearchComplete(int totalMatches, int currentMatch) {
-        if (searchCompleteCallback != null) {
-            // If already on EDT, call directly; otherwise use invokeLater
-            if (SwingUtilities.isEventDispatchThread()) {
-                searchCompleteCallback.onSearchComplete(totalMatches, currentMatch);
-            } else {
-                SwingUtilities.invokeLater(() -> {
-                    if (searchCompleteCallback != null) {
-                        searchCompleteCallback.onSearchComplete(totalMatches, currentMatch);
-                    }
-                });
-            }
+        if (searchCompleteCallback == null) {
+            return;
+        }
+        
+        var callback = searchCompleteCallback;
+        if (SwingUtilities.isEventDispatchThread()) {
+            callback.onSearchComplete(totalMatches, currentMatch);
+        } else {
+            SwingUtilities.invokeLater(() -> callback.onSearchComplete(totalMatches, currentMatch));
         }
     }
 
@@ -50,17 +48,15 @@ public abstract class BaseSearchableComponent implements SearchableComponent {
      * Notifies the callback that an error occurred.
      */
     protected void notifySearchError(String error) {
-        if (searchCompleteCallback != null) {
-            // If already on EDT, call directly; otherwise use invokeLater
-            if (SwingUtilities.isEventDispatchThread()) {
-                searchCompleteCallback.onSearchError(error);
-            } else {
-                SwingUtilities.invokeLater(() -> {
-                    if (searchCompleteCallback != null) {
-                        searchCompleteCallback.onSearchError(error);
-                    }
-                });
-            }
+        if (searchCompleteCallback == null) {
+            return;
+        }
+        
+        var callback = searchCompleteCallback;
+        if (SwingUtilities.isEventDispatchThread()) {
+            callback.onSearchError(error);
+        } else {
+            SwingUtilities.invokeLater(() -> callback.onSearchError(error));
         }
     }
 

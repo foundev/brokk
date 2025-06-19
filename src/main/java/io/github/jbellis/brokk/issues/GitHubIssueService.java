@@ -162,7 +162,7 @@ public class GitHubIssueService implements IssueService {
         return new IssueDetails(header, markdownBody, comments, attachmentUrls);
     }
 
-    private @Nullable IssueHeader mapToIssueHeader(@Nullable GHIssue ghIssue) {
+    private IssueHeader mapToIssueHeader(GHIssue ghIssue) {
         if (ghIssue == null) return null;
         try {
             String id = "#" + ghIssue.getNumber();
@@ -187,18 +187,16 @@ public class GitHubIssueService implements IssueService {
         }
     }
 
-    private String getAuthorLogin(GHUser user) {
+    private String getAuthorLogin(@Nullable GHUser user) {
         if (user == null) {
             return "N/A";
         }
         try {
-            // GHUser.getLogin() itself does not throw IOException.
-            // The `user` object might have been obtained via a call that threw (e.g., ghIssue.getUser()).
-            // That IOException would be caught where ghIssue.getUser() is called.
             String login = user.getLogin();
             return (login != null && !login.isBlank()) ? login : "N/A";
-        } catch (Exception e) { // Catching generic Exception as a safeguard for unexpected issues with the user object
-            logger.warn("Unexpected error retrieving login for user object (ID: {}): {}. Defaulting to 'N/A'.", user.getId(), e.getMessage());
+        } catch (Exception e) {
+            logger.warn("Unexpected error retrieving login for user object (ID: {}): {}. Defaulting to 'N/A'.",
+                      user.getId(), e.getMessage());
             return "N/A";
         }
     }
@@ -209,7 +207,7 @@ public class GitHubIssueService implements IssueService {
         return List.of("Open", "Closed");
     }
 
-    private ImmutableList<Comment> mapToComments(List<GHIssueComment> ghComments) {
+    private ImmutableList<Comment> mapToComments(@Nullable List<GHIssueComment> ghComments) {
         if (ghComments == null) return ImmutableList.of();
         var builder = ImmutableList.<Comment>builder();
         for (GHIssueComment gc : ghComments) {
@@ -226,7 +224,7 @@ public class GitHubIssueService implements IssueService {
         return builder.build();
     }
 
-    private List<URI> extractAttachmentUrls(String issueBodyMarkdown, List<Comment> dtoComments) {
+    private List<URI> extractAttachmentUrls(@Nullable String issueBodyMarkdown, @Nullable List<Comment> dtoComments) {
         Set<String> allImageUrls = new LinkedHashSet<>();
         if (issueBodyMarkdown != null && !issueBodyMarkdown.isBlank()) {
             allImageUrls.addAll(MarkdownImageParser.extractImageUrls(issueBodyMarkdown));
@@ -268,7 +266,6 @@ public class GitHubIssueService implements IssueService {
         if (labelFilter == null || labelFilter.isBlank()) {
             return true;
         }
-        // GHLabel.getName() and issue.getLabels() do not typically throw IOException once the GHIssue is fetched.
         return issue.getLabels().stream().anyMatch(label -> labelFilter.equals(label.getName()));
     }
 
@@ -276,12 +273,6 @@ public class GitHubIssueService implements IssueService {
         if (assigneeFilter == null || assigneeFilter.isBlank()) {
             return true;
         }
-        // GHUser.getLogin() for assignees.
-        return issue.getAssignees().stream().anyMatch(assignee -> {
-            // No need for try-catch here as getAuthorLogin handles its own exceptions related to fetching login
-            // and returns "N/A" which will simply not match if assigneeFilter is a valid login.
-            // The comparison itself (assigneeFilter.equals(...)) is safe.
-            return assigneeFilter.equals(getAuthorLogin(assignee));
-        });
+        return issue.getAssignees().stream().anyMatch(assignee -> assigneeFilter.equals(getAuthorLogin(assignee)));
     }
 }

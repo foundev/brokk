@@ -114,10 +114,8 @@ public class DtoMapper {
         if (taskDtos.containsKey(idToResolve)) {
             return _buildTaskFragment(taskDtos.get(idToResolve), mgr);
         }
-        logger.warn("Fragment DTO not found for ID: {} during resolveAndBuildFragment. Returning null.", idToResolve);
-        // Instead of throwing, return null, let caller (HistoryIo's computeIfAbsent) handle it.
-        // computeIfAbsent expects the mappingFunction to return null if the key should not be inserted.
-        return null;
+        logger.error("Fragment DTO not found for ID: {} during resolveAndBuildFragment", idToResolve);
+        throw new IllegalStateException("Fragment DTO not found for ID: " + idToResolve + " during resolveAndBuildFragment");
     }
 
     private static @Nullable ContextFragment _buildReferencedFragment(@Nullable ReferencedFragmentDto dto, IContextManager mgr, @Nullable Map<String, byte[]> imageBytesMap) {
@@ -142,12 +140,12 @@ public class DtoMapper {
                     ffd.id(),
                     mgr,
                     ContextFragment.FragmentType.valueOf(ffd.originalType()),
-                    Objects.toString(ffd.description(), ""),
-                    Objects.toString(ffd.shortDescription(), ""),
-                    ffd.isTextFragment() ? Objects.toString(ffd.textContent(), "") : "", 
-                    imageBytesMap != null ? imageBytesMap.get(ffd.id()) : null, 
+                    ffd.description(),
+                    ffd.shortDescription(),
+                    ffd.isTextFragment() ? ffd.textContent() : null,
+                    imageBytesMap != null ? imageBytesMap.get(ffd.id()) : null,
                     ffd.isTextFragment(),
-                    Objects.toString(ffd.syntaxStyle(), ""),
+                    ffd.syntaxStyle(),
                     ffd.files().stream().map(DtoMapper::fromProjectFileDto).collect(Collectors.toSet()),
                     ffd.originalClassName(),
                     ffd.meta()
@@ -182,8 +180,8 @@ public class DtoMapper {
                     ContextFragment.FragmentType.valueOf(frozenDto.originalType()),
                     frozenDto.description(),
                     frozenDto.shortDescription(),
-                    frozenDto.textContent(), 
-                    imageBytesMap != null ? imageBytesMap.get(frozenDto.id()) : null, 
+                    frozenDto.isTextFragment() ? frozenDto.textContent() : null,
+                    imageBytesMap != null ? imageBytesMap.get(frozenDto.id()) : null,
                     frozenDto.isTextFragment(),
                     frozenDto.syntaxStyle(),
                     frozenDto.files().stream().map(DtoMapper::fromProjectFileDto).collect(Collectors.toSet()),
@@ -239,11 +237,11 @@ public class DtoMapper {
                 return new FrozenFragmentDto(
                     ff.id(),
                     ff.getType().name(),
-                    Objects.toString(ff.description(), ""),
-                    Objects.toString(ff.shortDescription(), ""),
-                    ff.isText() ? Objects.toString(ff.text(), "") : "",
+                    ff.description(),
+                    ff.shortDescription(),
+                    ff.isText() ? ff.text() : null,
                     ff.isText(),
-                    Objects.toString(ff.syntaxStyle(), ""),
+                    ff.syntaxStyle(),
                     filesDto,
                     ff.originalClassName(),
                     ff.meta()
@@ -318,7 +316,7 @@ private static BrokkFile fromImageFileDtoToBrokkFile(ImageFileDto ifd, IContextM
                     ff.getType().name(),
                     ff.description(),
                     ff.shortDescription(),
-                    ff.isText() ? ff.text() : "", // Pass empty string if text is null
+                    ff.isText() ? ff.text() : null,
                     ff.isText(),
                     ff.syntaxStyle(),
                     filesDto,
@@ -455,35 +453,21 @@ private static BrokkFile fromImageFileDtoToBrokkFile(ImageFileDto ifd, IContextM
     }
 
     // Note: fragmentCache parameter is for recursive resolution of dependencies.
-    private static @Nullable TaskEntry _fromTaskEntryDto(TaskEntryDto dto, IContextManager mgr, // Make return @Nullable
+    private static TaskEntry _fromTaskEntryDto(TaskEntryDto dto, IContextManager mgr,
                                               Map<String, ContextFragment> fragmentCacheForRecursion,
                                               Map<String, ReferencedFragmentDto> allReferencedDtos,
-                                               Map<String, VirtualFragmentDto> allVirtualDtos,
-                                               Map<String, TaskFragmentDto> allTaskDtos) {
-        if (dto == null) return null;
-
-        if (dto.log() != null && dto.log().id() != null) {
-            ContextFragment resolvedFragment = fragmentCacheForRecursion.computeIfAbsent(
-                dto.log().id(), 
-                idToResolve -> resolveAndBuildFragment(idToResolve, allReferencedDtos, allVirtualDtos, allTaskDtos,
-                                                       mgr, null, fragmentCacheForRecursion)
-            );
-            if (resolvedFragment instanceof ContextFragment.TaskFragment taskFragment) {
-                return new TaskEntry(dto.sequence(), taskFragment, null);
-            } else if (resolvedFragment != null) { // Resolved to something, but not a TaskFragment
-                logger.warn("Resolved fragment for TaskEntryDto log ID {} was not a TaskFragment. Type: {}. Falling back to summary if available.",
-                            dto.log().id(), resolvedFragment.getClass().getName());
-            } else { // resolveAndBuildFragment returned null (ID not found in any DTO map)
-                 logger.warn("TaskFragment with ID {} (from TaskEntryDto log) not found in any DTO map. Falling back to summary if available.", dto.log().id());
-            }
+                                              Map<String, VirtualFragmentDto> allVirtualDtos,
+                                              Map<String, TaskFragmentDto> allTaskDtos) {
+        ContextFragment resolvedFragment = fragmentCacheForRecursion.computeIfAbsent(
+            dto.log().id(),
+            idToResolve -> resolveAndBuildFragment(idToResolve, allReferencedDtos, allVirtualDtos, allTaskDtos,
+                                                   mgr, null, fragmentCacheForRecursion)
+        );
+        if (!(resolvedFragment instanceof ContextFragment.TaskFragment)) {
+            throw new IllegalStateException("Resolved fragment for TaskEntryDto log ID " + dto.log().id() + 
+                                          " was not a TaskFragment. Type: " + resolvedFragment.getClass().getName());
         }
-        // Fallback to summary if log is null, log.id is null, or log resolution failed/was wrong type/ID not found
-        if (dto.summary() != null) {
-            return TaskEntry.fromCompressed(dto.sequence(), dto.summary());
-        } else {
-            logger.warn("TaskEntryDto (seq {}) had neither resolvable log nor summary during deserialization.", dto.sequence());
-            return null;
-        }
+        return new TaskEntry(dto.sequence(), (ContextFragment.TaskFragment) resolvedFragment, null);
     }
 
     private static CodeUnit fromCodeUnitDto(CodeUnitDto dto) { // IContextManager not needed as ProjectFileDto has full path info

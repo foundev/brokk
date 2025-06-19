@@ -100,7 +100,7 @@ public class InstructionsPanel extends JPanel implements IContextManager.Context
     private final JButton stopButton;
     private final JButton configureModelsButton;
     private final JLabel commandResultLabel;
-    private final @Nullable ContextManager contextManager; // Can be null if Chrome is initialized without one
+    private final ContextManager contextManager; // Can be null if Chrome is initialized without one
     private JTable referenceFileTable;
     private JLabel failureReasonLabel;
     private JPanel suggestionContentPanel;
@@ -122,9 +122,9 @@ public class InstructionsPanel extends JPanel implements IContextManager.Context
     private final UndoManager commandInputUndoManager;
     private boolean lowBalanceNotified = false;
     private boolean freeTierNotified = false;
-    private @Nullable String lastCheckedInputText = null;
-    private @Nullable float[][] lastCheckedEmbeddings = null;
-    private @Nullable List<FileReferenceData> pendingQuickContext = null;
+    private String lastCheckedInputText;
+    private float[][] lastCheckedEmbeddings;
+    private List<FileReferenceData> pendingQuickContext;
 
     public InstructionsPanel(Chrome chrome) {
         super(new BorderLayout(2, 2));
@@ -137,7 +137,6 @@ public class InstructionsPanel extends JPanel implements IContextManager.Context
         this.chrome = chrome;
         this.contextManager = chrome.getContextManager(); // Store potentially null CM
         this.commandInputUndoManager = new UndoManager();
-        this.overlayPanel = new JPanel();
 
 
         // Initialize components
@@ -431,7 +430,7 @@ public class InstructionsPanel extends JPanel implements IContextManager.Context
         commandScrollPane.setMinimumSize(new Dimension(100, 80));
 
         // Transparent input-overlay panel
-        this.overlayPanel = new JPanel(); // Initialize the member variable
+        overlayPanel = new JPanel();
         overlayPanel.setOpaque(false); // Make it transparent
         overlayPanel.setCursor(Cursor.getPredefinedCursor(Cursor.TEXT_CURSOR)); // Hint text input
 
@@ -535,15 +534,6 @@ public class InstructionsPanel extends JPanel implements IContextManager.Context
         });
 
         // ----- create failure reason label ----------------------------------------------------
-        this.referenceFileTable = new JTable(new javax.swing.table.DefaultTableModel(new Object[]{"File References"}, 1) {
-            @Override
-            public boolean isCellEditable(int row, int column) { return false; }
-            @Override
-            public Class<?> getColumnClass(int columnIndex) { return List.class; }
-        });
-        this.failureReasonLabel = new JLabel();
-        this.suggestionCardLayout = new CardLayout();
-        this.suggestionContentPanel = new JPanel(this.suggestionCardLayout);
 
         // Configure failureReasonLabel
         failureReasonLabel.setFont(referenceFileTable.getFont()); // Use same font as table/badges
@@ -689,8 +679,9 @@ public class InstructionsPanel extends JPanel implements IContextManager.Context
      */
     private boolean contextHasImages() {
         var contextManager = chrome.getContextManager();
-        return contextManager.topContext() != null &&
-                Objects.requireNonNull(contextManager.topContext()).allFragments()
+        var topContext = contextManager.topContext();
+        return topContext != null &&
+                topContext.allFragments()
                         .anyMatch(f -> !f.isText() && !f.getType().isOutputFragment());
     }
 

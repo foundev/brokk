@@ -18,6 +18,7 @@ import java.io.IOException;
 import java.io.UncheckedIOException;
 import java.util.*;
 import java.util.stream.Collectors;
+import javax.annotation.Nullable;
 
 
 /**
@@ -559,7 +560,7 @@ public abstract class CodePrompts {
         var readOnlyMessages = getWorkspaceReadOnlyMessages(cm);
         var editableMessages = getWorkspaceEditableMessages(cm);
 
-        // If both are empty and no related classes requested, return empty
+        // Return empty if no content and no related classes requested
         if (readOnlyMessages.isEmpty() && editableMessages.isEmpty() && !includeRelatedClasses) {
             return List.of();
         }
@@ -645,9 +646,6 @@ public abstract class CodePrompts {
      */
     public final Collection<ChatMessage> getWorkspaceSummaryMessages(IContextManager cm) {
         var c = cm.topContext();
-        if (c == null) {
-            return List.of();
-        }
         var summaries = Streams.concat(c.getReadOnlyFragments(), c.getEditableFragments())
                 .map(ContextFragment::formatSummary)
                 .filter(s -> !s.isBlank())
@@ -697,7 +695,10 @@ public abstract class CodePrompts {
         return List.of(editableUserMessage, new AiMessage("Thank you for the original editable Workspace state."));
     }
 
-    public List<ChatMessage> getSingleFileEditableMessage(ProjectFile file) {
+    public List<ChatMessage> getSingleFileEditableMessage(@Nullable ProjectFile file) {
+        if (file == null) {
+            return List.of();
+        }
         try {
             String editableText = """
                                   <workspace_editable_original>
@@ -749,8 +750,8 @@ public abstract class CodePrompts {
     /**
      * Returns messages containing the current state of files that have been changed during the task.
      */
-    public final List<ChatMessage> getSingleFileCurrentMessages(Set<ProjectFile> changedFiles) {
-        if (changedFiles.isEmpty()) {
+    public final List<ChatMessage> getSingleFileCurrentMessages(@Nullable Set<ProjectFile> changedFiles) {
+        if (changedFiles == null || changedFiles.isEmpty()) {
             return List.of();
         }
         assert changedFiles.size() == 1 : changedFiles;
