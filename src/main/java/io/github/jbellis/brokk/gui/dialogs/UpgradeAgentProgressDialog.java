@@ -376,8 +376,10 @@ public class UpgradeAgentProgressDialog extends JDialog {
 
         @Override
         public void toolError(String msg, String title) {
-            errorTextArea.append("[%s] %s: %s".formatted(fileContext, title, msg));
-            errorTextArea.setCaretPosition(errorTextArea.getDocument().getLength());
+            SwingUtilities.invokeLater(() -> {
+                errorTextArea.append("[%s] %s: %s".formatted(fileContext, title, msg));
+                errorTextArea.setCaretPosition(errorTextArea.getDocument().getLength());
+            });
         }
 
         @Override
