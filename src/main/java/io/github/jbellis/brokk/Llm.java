@@ -64,7 +64,7 @@ public class Llm {
     /** Base directory where LLM interaction history logs are stored. */
     public static final String HISTORY_DIR_NAME = "llm-history";
 
-    private final IConsoleIO io;
+    private IConsoleIO io;
     private final Path taskHistoryDir; // Directory for this specific LLM task's history files
     final IContextManager contextManager;
     private final int MAX_ATTEMPTS = 8; // Keep retry logic for now
@@ -336,7 +336,7 @@ public class Llm {
 
             // don't retry on bad request errors
             if (lastError != null && lastError.getMessage().contains("BadRequestError")) {
-                logger.debug("Stopping on BadRequestError", lastError);
+                // logged by doSingleStreamingCallInternal, don't be redundant
                 break;
             }
 
@@ -505,7 +505,7 @@ public class Llm {
 
                 if (echo) {
                     // output the thinking tool's contents
-                    contextManager.getIo().llmOutput(parseResult.chatResponse.aiMessage().text(), ChatMessageType.AI);
+                    io.llmOutput(parseResult.chatResponse.aiMessage().text(), ChatMessageType.AI);
                 }
 
                 // we got tool calls, or they're optional -- we're done
@@ -1090,6 +1090,10 @@ public class Llm {
      */
     public double getTotalCost() {
         return totalCost;
+    }
+
+    public void setOutput(IConsoleIO io) {
+        this.io = io;
     }
 
     /**

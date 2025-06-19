@@ -269,8 +269,8 @@ public class CodeAgent {
      * @return A TaskResult containing the conversation history and original file contents
      */
     public TaskResult runTask(String userInput, boolean forArchitect) {
-        var io = contextManager.getIo();
         var coder = contextManager.getLlm(model, "Code: " + userInput, true);
+        coder.setOutput(io);
         var parser = contextManager.getParserForWorkspace();
 
         var originalWorkspaceEditableMessages = CodePrompts.instance.getOriginalWorkspaceEditableMessages(contextManager);
@@ -417,7 +417,6 @@ public class CodeAgent {
      */
     @VisibleForTesting
     public List<ProjectFile> preCreateNewFiles(Collection<EditBlock.SearchReplaceBlock> blocks) {
-        var io = contextManager.getIo();
         List<ProjectFile> newFiles = new ArrayList<>();
         for (EditBlock.SearchReplaceBlock block : blocks) {
             // Skip blocks that aren't for new files (new files have empty beforeText)
