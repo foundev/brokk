@@ -68,7 +68,7 @@ public class CodeAgent {
 
         // ????? is this causing problems
         // it looks like a valid response is getting llmError set to non-null
-        boolean hasUsableContent = llmError != null && llmResponse != null && !Messages.getText(llmResponse.aiMessage()).isBlank();
+        boolean hasUsableContent = llmError == null && llmResponse != null && !Messages.getText(llmResponse.aiMessage()).isBlank();
         if (!hasUsableContent) {
             String message;
             TaskResult.StopDetails stopDetails;
