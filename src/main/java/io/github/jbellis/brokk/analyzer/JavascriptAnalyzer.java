@@ -187,9 +187,9 @@ public class JavascriptAnalyzer extends TreeSitterAnalyzer {
     }
 
     @Override
-    protected @Nullable List<String> getExtraFunctionComments(TSNode bodyNode, String src, @Nullable CodeUnit functionCu) {
+    protected List<String> getExtraFunctionComments(TSNode bodyNode, String src, @Nullable CodeUnit functionCu) {
         if (bodyNode == null || bodyNode.isNull()) {
-            return List.of();
+            return Collections.emptyList();
         }
 
         // Only apply for .jsx or .tsx files, or if JSX syntax is clearly present.
@@ -224,13 +224,13 @@ public class JavascriptAnalyzer extends TreeSitterAnalyzer {
             log.error("Error querying function body for mutations: {}", e.getMessage(), e);
         }
 
-        if (!mutatedIdentifiers.isEmpty()) {
-            List<String> sortedMutations = new ArrayList<>(mutatedIdentifiers);
-            Collections.sort(sortedMutations);
-            return List.of("// mutates: " + String.join(", ", sortedMutations));
+        if (mutatedIdentifiers.isEmpty()) {
+            return Collections.emptyList();
         }
 
-        return List.of();
+        List<String> sortedMutations = new ArrayList<>(mutatedIdentifiers);
+        Collections.sort(sortedMutations);
+        return Collections.singletonList("// mutates: " + String.join(", ", sortedMutations));
     }
 
 

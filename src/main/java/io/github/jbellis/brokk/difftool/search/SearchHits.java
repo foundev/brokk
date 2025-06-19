@@ -7,7 +7,7 @@ import java.util.List;
 
 public class SearchHits {
     private final List<SearchHit> searchHits;
-    @Nullable 
+    @Nullable
     private SearchHit current;
 
     public SearchHits() {
@@ -27,7 +27,8 @@ public class SearchHits {
     }
 
     public boolean isCurrent(SearchHit sh) {
-        return sh.equals(getCurrent());
+        var currentHit = getCurrent();
+        return currentHit != null && sh.equals(currentHit);
     }
 
     @Nullable

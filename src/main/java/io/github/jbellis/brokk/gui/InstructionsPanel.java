@@ -105,7 +105,7 @@ public class InstructionsPanel extends JPanel implements IContextManager.Context
     private JTable referenceFileTable;
     private JLabel failureReasonLabel;
     private JPanel suggestionContentPanel;
-    private CardLayout suggestionCardLayout;
+    private final CardLayout suggestionCardLayout = new CardLayout();
     private final LoadingButton deepScanButton;
     private final JPanel centerPanel;
     private final javax.swing.Timer contextSuggestionTimer; // Timer for debouncing quick context suggestions
@@ -119,7 +119,7 @@ public class InstructionsPanel extends JPanel implements IContextManager.Context
     }), e -> logger.error("Unexpected error", e));
     // Generation counter to identify the latest suggestion request
     private final AtomicLong suggestionGeneration = new AtomicLong(0);
-    private JPanel overlayPanel; // Panel used to initially disable command input
+    private final JPanel overlayPanel = new JPanel(); // Panel used to initially disable command input
     private final UndoManager commandInputUndoManager;
     private boolean lowBalanceNotified = false;
     private boolean freeTierNotified = false;
@@ -225,6 +225,10 @@ public class InstructionsPanel extends JPanel implements IContextManager.Context
         JPanel bottomPanel = buildBottomPanel();
         add(bottomPanel, BorderLayout.SOUTH);
 
+        // Initialize components that depend on others
+        suggestionContentPanel = new JPanel(suggestionCardLayout);
+        failureReasonLabel = new JLabel();
+        
         // Initialize the reference file table and suggestion area
         initializeReferenceFileTable();
 

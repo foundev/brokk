@@ -6,6 +6,8 @@ import org.treesitter.TSLanguage;
 import org.treesitter.TSNode;
 import org.treesitter.TreeSitterCSharp;
 
+import static java.util.Objects.requireNonNull;
+
 import java.util.Collections;
 import java.util.Set;
 
@@ -153,9 +155,10 @@ public final class CSharpAnalyzer extends TreeSitterAnalyzer {
     }
 
     @Override
-    protected @Nullable String determinePackageName(@Nullable ProjectFile file, @Nullable TSNode definitionNode, @Nullable TSNode rootNode, @Nullable String src) {
-        assert definitionNode != null : "Definition node cannot be null";
-        assert rootNode != null : "Root node cannot be null";
+    protected String determinePackageName(@Nullable ProjectFile file, TSNode definitionNode, TSNode rootNode, String src) {
+        requireNonNull(definitionNode, "Definition node cannot be null");
+        requireNonNull(rootNode, "Root node cannot be null"); 
+        requireNonNull(src, "Source text cannot be null when determining package name");
         // C# namespaces are determined by traversing up from the definition node
         // to find enclosing namespace_declaration nodes.
         // The 'file' parameter is not used here as namespace is derived from AST content.
@@ -166,9 +169,7 @@ public final class CSharpAnalyzer extends TreeSitterAnalyzer {
             if ("namespace_declaration".equals(current.getType())) {
                 TSNode nameNode = current.getChildByFieldName("name");
                 if (nameNode != null && !nameNode.isNull()) {
-                    assert src != null : "Source text cannot be null when determining package name";
                     String nsPart = textSlice(nameNode, src);
-                    assert nsPart != null : "Namespace part cannot be null";
                     namespaceParts.add(nsPart);
                 }
             }

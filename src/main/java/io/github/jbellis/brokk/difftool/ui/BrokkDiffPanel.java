@@ -192,16 +192,16 @@ public class BrokkDiffPanel extends JPanel {
         return btnUndo;
     }
 
-    private JButton btnUndo;
-    private JButton btnRedo; 
-    private JButton captureDiffButton;
-    private JButton btnNext;
-    private JButton btnPrevious;
-    private JButton btnPreviousFile;
-    private JButton btnNextFile;
-    private JLabel fileIndicatorLabel;
-    @Nullable
-    private BufferDiffPanel bufferDiffPanel;
+    private final JButton btnUndo = new JButton();
+    private final JButton btnRedo = new JButton();
+    private final JButton captureDiffButton = new JButton();
+    private final JButton btnNext = new JButton();
+    private final JButton btnPrevious = new JButton();
+    private final JButton btnPreviousFile = new JButton();
+    private final JButton btnNextFile = new JButton();
+    private final JLabel fileIndicatorLabel = new JLabel();
+    @Nullable 
+    private BufferDiffPanel bufferDiffPanel = null;
 
     public void setBufferDiffPanel(@Nullable BufferDiffPanel bufferDiffPanel) {
         this.bufferDiffPanel = bufferDiffPanel;
@@ -249,17 +249,17 @@ public class BrokkDiffPanel extends JPanel {
         // Create toolbar
         var toolBar = new JToolBar();
 
-        // Create buttons
-        btnNext = new JButton("Next Change");
-        btnPrevious = new JButton("Previous Change");
-        btnUndo = new JButton("Undo");
-        btnRedo = new JButton("Redo");
-        captureDiffButton = new JButton("Capture Diff");
+        // Set button text (buttons are already initialized as fields)
+        btnNext.setText("Next Change");
+        btnPrevious.setText("Previous Change");
+        btnUndo.setText("Undo");
+        btnRedo.setText("Redo");
+        captureDiffButton.setText("Capture Diff");
 
         // Multi-file navigation buttons
-        btnPreviousFile = new JButton("Previous File");
-        btnNextFile = new JButton("Next File");
-        fileIndicatorLabel = new JLabel("");
+        btnPreviousFile.setText("Previous File");
+        btnNextFile.setText("Next File");
+        fileIndicatorLabel.setText("");
         fileIndicatorLabel.setFont(fileIndicatorLabel.getFont().deriveFont(Font.BOLD));
 
         btnNext.addActionListener(e -> navigateToNextChange());
@@ -272,11 +272,14 @@ public class BrokkDiffPanel extends JPanel {
         btnNextFile.addActionListener(e -> nextFile());
         captureDiffButton.addActionListener(e -> {
             var bufferPanel = getBufferDiffPanel();
-            assert bufferPanel != null;
+            if (bufferPanel == null) {
+                return;
+            }
             var leftPanel = bufferPanel.getFilePanel(BufferDiffPanel.PanelSide.LEFT);
             var rightPanel = bufferPanel.getFilePanel(BufferDiffPanel.PanelSide.RIGHT);
-            assert leftPanel != null;
-            assert rightPanel != null;
+            if (leftPanel == null || rightPanel == null) {
+                return;
+            }
             var leftContent = leftPanel.getEditor().getText();
             var rightContent = rightPanel.getEditor().getText();
             var leftLines = Arrays.asList(leftContent.split("\\R"));
@@ -350,19 +353,21 @@ public class BrokkDiffPanel extends JPanel {
     public void updateUndoRedoButtons() {
         assert SwingUtilities.isEventDispatchThread() : "Must be called on EDT";
         var currentPanel = getCurrentContentPanel();
-
-        btnUndo.setEnabled(currentPanel != null && currentPanel.isUndoEnabled());
-        btnRedo.setEnabled(currentPanel != null && currentPanel.isRedoEnabled());
-
-        if (currentPanel != null) {
-            var isFirstChangeOverall = currentFileIndex == 0 && currentPanel.isAtFirstLogicalChange();
-            var isLastChangeOverall = currentFileIndex == fileComparisons.size() - 1 && currentPanel.isAtLastLogicalChange();
-            btnPrevious.setEnabled(!isFirstChangeOverall);
-            btnNext.setEnabled(!isLastChangeOverall);
-        } else {
+        if (currentPanel == null) {
+            btnUndo.setEnabled(false);
+            btnRedo.setEnabled(false);
             btnPrevious.setEnabled(false);
             btnNext.setEnabled(false);
+            return;
         }
+
+        btnUndo.setEnabled(currentPanel.isUndoEnabled());
+        btnRedo.setEnabled(currentPanel.isRedoEnabled());
+
+        var isFirstChangeOverall = currentFileIndex == 0 && currentPanel.isAtFirstLogicalChange();
+        var isLastChangeOverall = currentFileIndex == fileComparisons.size() - 1 && currentPanel.isAtLastLogicalChange();
+        btnPrevious.setEnabled(!isFirstChangeOverall);
+        btnNext.setEnabled(!isLastChangeOverall);
     }
 
     public void launchComparison() {

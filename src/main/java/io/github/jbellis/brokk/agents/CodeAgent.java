@@ -21,6 +21,7 @@ import org.apache.logging.log4j.Logger;
 import org.eclipse.jgit.api.errors.GitAPIException;
 import org.jetbrains.annotations.Nullable;
 import org.jetbrains.annotations.VisibleForTesting;
+import static java.util.Objects.requireNonNull;
 
 import java.io.IOException;
 import java.io.UncheckedIOException;
@@ -73,7 +74,8 @@ public class CodeAgent {
             TaskResult.StopDetails stopDetails;
             if (llmError != null) {
                 message = "LLM returned an error even after retries: " + llmError.getMessage() + ". Ending task";
-                stopDetails = new TaskResult.StopDetails(TaskResult.StopReason.LLM_ERROR, llmError.getMessage());
+                stopDetails = new TaskResult.StopDetails(TaskResult.StopReason.LLM_ERROR, 
+                    llmError.getMessage() != null ? llmError.getMessage() : "Unknown LLM error");
             } else {
                 message = "Empty LLM response even after retries. Ending task";
                 stopDetails = new TaskResult.StopDetails(TaskResult.StopReason.EMPTY_RESPONSE);
@@ -81,11 +83,11 @@ public class CodeAgent {
             io.toolError(message);
             throw new EditStopException(stopDetails);
         }
-        assert llmResponse != null && llmResponse.aiMessage() != null; // if !hasUsableContent was false
-
+        // Safe to cast after hasUsableContent check
+        var aiMessage = castNonNull(llmResponse).aiMessage();
         var updatedTaskMessages = new ArrayList<>(currentState.taskMessages());
         updatedTaskMessages.add(currentState.nextRequest());
-        updatedTaskMessages.add(llmResponse.aiMessage());
+        updatedTaskMessages.add(aiMessage);
 
         EditState newState = currentState.afterLlmInteraction(updatedTaskMessages);
         return new LlmOutcome(newState, streamingResult);
@@ -106,7 +108,7 @@ public class CodeAgent {
         UserMessage nextRequest = currentState.nextRequest(); // Keep current by default
 
         var isPartialResponse = streamingResult.error() != null ||
-                                streamingResult.chatResponse().finishReason() == FinishReason.LENGTH;
+                                castNonNull(streamingResult.chatResponse()).finishReason() == FinishReason.LENGTH;
         UserMessage messageForRetry = null;
         @Nullable String consoleLogForRetry = null;
 
@@ -183,8 +185,9 @@ public class CodeAgent {
         try {
             editResult = EditBlock.applyEditBlocks(contextManager, io, blocks);
         } catch (IOException e) {
-            io.toolError(e.getMessage());
-            throw new EditStopException(new TaskResult.StopDetails(TaskResult.StopReason.IO_ERROR, e.getMessage()));
+            String errorMsg = e.getMessage() != null ? e.getMessage() : "I/O error";
+            io.toolError(errorMsg);
+            throw new EditStopException(new TaskResult.StopDetails(TaskResult.StopReason.IO_ERROR, errorMsg));
         }
 
         if (editResult.hadSuccessfulEdits()) {
@@ -501,7 +504,8 @@ public class CodeAgent {
                                                                      var goal = "The previous attempt to modify this file using SEARCH/REPLACE failed repeatedly. Original goal: " + originalUserInput;
                                                                      var messages = CodePrompts.instance.collectFullFileReplacementMessages(contextManager, file, goal, taskMessages);
                                                                      var model = contextManager.getService().getModel(Service.GROK_3_MINI, Service.ReasoningLevel.DEFAULT);
-                                                                     var coder = contextManager.getLlm(model, "Full File Replacement: " + file.getFileName());
+                                                                     var modelNonNull = requireNonNull(model, "model");
+                                                                      var coder = contextManager.getLlm(modelNonNull, "Full File Replacement: " + file.getFileName());
 
                                                                      return executeReplace(file, coder, messages);
                                                                  } catch (InterruptedException e) {
@@ -581,7 +585,7 @@ public class CodeAgent {
             return Optional.of("LLM error for %s: %s".formatted(file, result.error().getMessage()));
         }
         var response = result.chatResponse();
-        if (response.aiMessage().text().trim().isEmpty()) {
+        if (castNonNull(response.aiMessage()).text().trim().isEmpty()) {
             return Optional.of("Empty LLM response for %s".formatted(file));
         }
 
@@ -710,9 +714,10 @@ public class CodeAgent {
         // Determine stop reason based on LLM response
         TaskResult.StopDetails stopDetails;
         if (result.error() != null) {
-            stopDetails = new TaskResult.StopDetails(TaskResult.StopReason.LLM_ERROR, result.error().getMessage());
+            String errorMsg = result.error().getMessage() != null ? result.error().getMessage() : "Unknown LLM error";
+            stopDetails = new TaskResult.StopDetails(TaskResult.StopReason.LLM_ERROR, errorMsg);
             io.toolError("Quick edit failed: " + result.error().getMessage());
-        } else if (result.chatResponse().aiMessage().text().isBlank()) {
+        } else if (castNonNull(result.chatResponse()).aiMessage().text().isBlank()) {
             stopDetails = new TaskResult.StopDetails(TaskResult.StopReason.EMPTY_RESPONSE);
             io.toolError("LLM returned empty response for quick edit.");
         } else {

@@ -15,6 +15,7 @@ Compile / unmanagedJars ++= Seq(
   baseDirectory.value / "errorprone" / "nullaway-0.12.7.jar",
   baseDirectory.value / "errorprone" / "dataflow-nullaway-3.49.3.jar",
   baseDirectory.value / "errorprone" / "checker-qual-3.49.3.jar",
+  baseDirectory.value / "errorprone" / "jsr305-3.0.2.jar" // Needed for @Nullable annotations
 )
 
 // also add to javac’s annotation-processor classpath
@@ -25,6 +26,7 @@ Compile / javacOptions ++= {
     baseDirectory.value / "errorprone" / "nullaway-0.12.7.jar",
     baseDirectory.value / "errorprone" / "dataflow-nullaway-3.49.3.jar",
     baseDirectory.value / "errorprone" / "checker-qual-3.49.3.jar",
+    baseDirectory.value / "errorprone" / "jsr305-3.0.2.jar"
   )
 
   val procPath = pluginJars.map(_.getAbsolutePath).mkString(java.io.File.pathSeparator)
@@ -46,7 +48,15 @@ javacOptions := {
       "-Xep:EmptyBlockTag:OFF " +
       "-Xep:NonCanonicalType:OFF " +
       "-Xep:NullAway:ERROR " +
-      "-XepOpt:NullAway:AnnotatedPackages=io.github.jbellis.brokk ",
+      "-XepOpt:NullAway:AnnotatedPackages=io.github.jbellis.brokk " +
+      "-XepOpt:NullAway:ExcludedFieldAnnotations=org.junit.jupiter.api.BeforeEach,org.junit.jupiter.api.BeforeAll,org.junit.jupiter.api.Test " +
+      "-XepOpt:NullAway:ExcludedClassAnnotations=org.junit.jupiter.api.extension.ExtendWith,org.junit.jupiter.api.TestInstance " +
+      "-XepOpt:NullAway:UnannotatedSubPackages=io.github.jbellis.brokk.test " +
+      "-XepOpt:NullAway:AcknowledgeRestrictiveAnnotations=true " +
+      "-XepOpt:NullAway:JarInferStrictMode=true " +
+      "-XepOpt:NullAway:CheckOptionalEmptiness=true " +
+      "-XepOpt:NullAway:KnownInitializers=org.junit.jupiter.api.BeforeEach,org.junit.jupiter.api.BeforeAll " +
+      "-XepOpt:NullAway:HandleTestAssertionLibraries=true ",
     "-Werror",
     "-Xlint:deprecation",
     "-Xlint:unchecked",
@@ -89,6 +99,9 @@ resolvers ++= Seq(
 )
 
 libraryDependencies ++= Seq(
+  // NullAway - version must match local jar version
+  "com.uber.nullaway" % "nullaway" % "0.12.7",
+  
   // LangChain4j dependencies
   "dev.langchain4j" % "langchain4j" % "1.0.0-beta3",
   "dev.langchain4j" % "langchain4j-open-ai" % "1.0.0-beta3",

@@ -284,6 +284,9 @@ public class CreatePullRequestDialog extends JDialog {
 
     // Fix the UnnecessaryLambda warning by implementing updateBranchFlow as a method
     private void updateBranchFlow() {
+        if (targetBranchComboBox == null || sourceBranchComboBox == null || branchFlowLabel == null) {
+            return;
+        }
         var target = (String) targetBranchComboBox.getSelectedItem();
         var source = (String) sourceBranchComboBox.getSelectedItem();
         if (target != null && source != null) {
@@ -297,9 +300,9 @@ public class CreatePullRequestDialog extends JDialog {
                 branchFlowLabel.setForeground(UIManager.getColor("Label.foreground"));
                 branchFlowLabel.setToolTipText(null);
             }
-            this.branchFlowLabel.setText(baseText + suffix);
-        } else {
-            this.branchFlowLabel.setText(""); // Clear if branches not selected
+            branchFlowLabel.setText(baseText + suffix);
+        } else if (branchFlowLabel != null) {
+            branchFlowLabel.setText(""); // Clear if branches not selected
         }
     }
 
@@ -376,6 +379,10 @@ public class CreatePullRequestDialog extends JDialog {
                 } else {
                     // Auto-generate title and description
                     // This diff is for the LLM, not for display directly
+                    if (this.mergeBaseCommit == null) {
+                        logger.warn("No merge base found between {} and {}", sourceBranch, targetBranch);
+                        return Collections.emptyList();
+                    }
                     var diffText = gitRepo.showDiff(sourceBranch, this.mergeBaseCommit);
                     debounceGenerate(diffText);
                 }
@@ -393,15 +400,21 @@ public class CreatePullRequestDialog extends JDialog {
     }
 
     private void updateCreatePrButtonState() {
-        if (createPrButton != null) {
-            createPrButton.setEnabled(isCreatePrReady());
+        if (createPrButton == null || titleField == null || descriptionArea == null || 
+            sourceBranchComboBox == null || targetBranchComboBox == null) {
+            return;
         }
+        createPrButton.setEnabled(isCreatePrReady());
     }
 
     /**
      * Checks whether the dialog has sufficient information to enable PR creation.
      */
     private boolean isCreatePrReady() {
+        if (titleField == null || descriptionArea == null || 
+            sourceBranchComboBox == null || targetBranchComboBox == null) {
+            return false;
+        }
         var title = titleField.getText();
         var description = descriptionArea.getText();
         var sourceBranch = (String) sourceBranchComboBox.getSelectedItem();
@@ -420,6 +433,9 @@ public class CreatePullRequestDialog extends JDialog {
     }
     
     private void setupInputListeners() {
+        if (titleField == null || descriptionArea == null) {
+            return;
+        }
         javax.swing.event.DocumentListener inputChangedListener = new javax.swing.event.DocumentListener() {
             @Override
             public void insertUpdate(javax.swing.event.DocumentEvent e) {

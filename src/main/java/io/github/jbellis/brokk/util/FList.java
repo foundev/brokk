@@ -4,6 +4,7 @@ package io.github.jbellis.brokk.util;
 import org.jetbrains.annotations.Nullable;
 
 import java.util.AbstractList;
+import static java.util.Objects.requireNonNull;
 import java.util.Iterator;
 import java.util.NoSuchElementException;
 
@@ -26,13 +27,8 @@ public final class FList<E> extends AbstractList<E> {
         }
 
         FList<E> current = this;
-        // The original implementation had a loop like this, which is fine
-        // for (int i = 0; i < index; i++) {
-        //    current = current.myTail;
-        // }
-        // Let's go back to the while loop that was shown in the original code, it's more idiomatic for linked lists.
         while (index > 0) {
-            current = current.myTail;
+            current = requireNonNull(current.myTail);
             index--;
         }
         return current.myHead;
@@ -50,14 +46,14 @@ public final class FList<E> extends AbstractList<E> {
         FList<E> front = emptyList();
         FList<E> current = this;
 
-        while (!current.isEmpty()) {
+        while (current != null && !current.isEmpty()) {
             if (java.util.Objects.equals(current.myHead, elem)) { // Use Objects.equals for null-safe comparison
                 FList<E> result = current.myTail; // Found element, the rest of 'current' becomes the new tail
                 while (!front.isEmpty()) { // Re-prepend elements from 'front' (the part of list before the removed element)
-                    result = result.prepend(front.myHead);
-                    front = front.myTail;
+                    result = requireNonNull(result).prepend(requireNonNull(front.myHead));
+                    front = requireNonNull(front.myTail);
                 }
-                return result;
+                return requireNonNull(result);
             }
             front = front.prepend(current.myHead); // Element not found, add current head to 'front' and move to next
             current = current.myTail;
@@ -114,8 +110,8 @@ public final class FList<E> extends AbstractList<E> {
             if (!java.util.Objects.equals(thisList.myHead, thatList.myHead)) {
                 return false;
             }
-            thisList = thisList.myTail;
-            thatList = thatList.myTail;
+            thisList = requireNonNull(thisList.myTail);
+            thatList = requireNonNull(thatList.myTail);
         }
         return true;
     }

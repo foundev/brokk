@@ -212,8 +212,8 @@ final class StreamingWorker {
      * Safe to call multiple times.
      */
     void shutdown() {
-        var future = inFlight.get();
-        if (!future.isDone()) {
+        @Nullable var future = inFlight.get();
+        if (future != null && !future.isDone()) {
             future.completeExceptionally(new CancellationException("Worker shutdown"));
         }
         exec.shutdownNow();

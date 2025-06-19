@@ -16,6 +16,7 @@ import org.apache.logging.log4j.Logger;
 import org.bouncycastle.jce.provider.BouncyCastleProvider;
 import org.jetbrains.annotations.Nullable;
 import static org.checkerframework.checker.nullness.util.NullnessUtil.castNonNull;
+import static java.util.Objects.requireNonNull;
 
 import javax.swing.*;
 import javax.swing.border.Border;
@@ -185,7 +186,7 @@ public class Brokk {
 
             final Path pathForDialog = currentDialogPath;    // capture for EDT lambda
             Path projectPathFromDialog = SwingUtil.runOnEdt(
-                    () -> StartupDialog.showDialog((JFrame)null,
+                    () -> StartupDialog.showDialog(new JFrame(),
                                                    MainProject.getBrokkKey(),
                                                    false,
                                                    pathForDialog,
@@ -311,7 +312,7 @@ public class Brokk {
             if (projectsToAttemptOpen.isEmpty()) {
                 SwingUtil.runOnEdt(Brokk::hideSplashScreen); // Hide splash before project selection dialog
                 final Path dialogPathForLambda = currentDialogContextPath;
-                @Nullable Path selectedPath = SwingUtil.runOnEdt(() -> StartupDialog.showDialog((JFrame)null, MainProject.getBrokkKey(), true, dialogPathForLambda, StartupDialog.DialogMode.REQUIRE_PROJECT_ONLY), null);
+                @Nullable Path selectedPath = SwingUtil.runOnEdt(() -> StartupDialog.showDialog(new JFrame(), MainProject.getBrokkKey(), true, dialogPathForLambda, StartupDialog.DialogMode.REQUIRE_PROJECT_ONLY), null);
                 if (selectedPath == null) { // User quit dialog
                     logger.info("Startup dialog (project selection) was closed. Shutting down.");
                     System.exit(0);
@@ -575,7 +576,7 @@ public class Brokk {
 
                     if (project.getDataRetentionPolicy() == MainProject.DataRetentionPolicy.UNSET) {
                         logger.debug("Project {} has no Data Retention Policy set. Showing dialog.", actualProjectPath.getFileName());
-                    boolean policySetAndConfirmed = SettingsDialog.showStandaloneDataRetentionDialog(project, null);
+                    boolean policySetAndConfirmed = SettingsDialog.showStandaloneDataRetentionDialog(project, new JFrame());
                         if (!policySetAndConfirmed) {
                             logger.info("Data retention dialog cancelled for project {}. Aborting open.", actualProjectPath.getFileName());
                             hideSplashScreen();
@@ -757,7 +758,7 @@ public class Brokk {
             }
 
             if (!project.hasGit()) {
-                int response = SwingUtil.runOnEdt(() -> JOptionPane.showConfirmDialog(
+                Integer response = SwingUtil.runOnEdt(() -> JOptionPane.showConfirmDialog(
                         null,
                         """
                         This project is not under Git version control. Would you like to initialize a new Git repository here?
@@ -827,7 +828,8 @@ public class Brokk {
             // Mark as re-opening, the windowClosed listener will do the rest
             reOpeningProjects.add(projectPath);
             // Programatically close the window
-            var frame = openProjectWindows.get(projectPath).getFrame();
+            var chrome = requireNonNull(openProjectWindows.get(projectPath), "No Chrome found for project path");
+            var frame = chrome.getFrame();
             frame.dispatchEvent(new WindowEvent(frame, WindowEvent.WINDOW_CLOSING));
         } else {
             // If not open, just open it directly.

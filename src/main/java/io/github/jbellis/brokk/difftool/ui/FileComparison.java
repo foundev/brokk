@@ -186,7 +186,9 @@ public class FileComparison extends SwingWorker<String, Object> {
         }
         ImageIcon resizedIcon = getScaledIcon();
         addTabToPane(panel, resizedIcon);
-        SwingUtilities.invokeLater(() -> panel.applyTheme(theme));
+        if (panel != null) {
+            SwingUtilities.invokeLater(() -> panel.applyTheme(theme));
+        }
     }
 
     private static @Nullable ImageIcon getScaledIcon() {
@@ -214,7 +216,7 @@ public class FileComparison extends SwingWorker<String, Object> {
         } catch (Exception ex) {
             // Handle exceptions during the 'done' phase, e.g., from get()
             System.err.println("Error completing file comparison task: " + ex.getMessage());
-            if (mainPanel != null && !ex.getMessage().contains("Task cancelled") && mainPanel.isDisplayable()) {
+            if (mainPanel != null && ex.getMessage() != null && !ex.getMessage().contains("Task cancelled") && mainPanel.isDisplayable()) {
                 JOptionPane.showMessageDialog(mainPanel, "Error finalizing comparison: " + ex.getMessage(), "Error", JOptionPane.ERROR_MESSAGE);
             }
         }

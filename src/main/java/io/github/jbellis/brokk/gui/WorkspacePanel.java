@@ -1355,7 +1355,13 @@ public class WorkspacePanel extends JPanel {
                 if (dialog == null || !dialog.isConfirmed()) { // Check confirmed state
                     chrome.systemOutput("No method selected.");
                 } else {
-                    contextManager.addCallersForMethod(dialog.getSelectedMethod(), dialog.getDepth(), dialog.getCallGraph());
+                    var method = dialog.getSelectedMethod();
+                    var callGraph = dialog.getCallGraph();
+                    if (method == null || callGraph == null) {
+                        chrome.toolError("No method or call graph selected");
+                        return;
+                    }
+                    contextManager.addCallersForMethod(method, dialog.getDepth(), callGraph);
                 }
             } catch (CancellationException cex) {
                 chrome.systemOutput("Method selection canceled.");
@@ -1384,7 +1390,13 @@ public class WorkspacePanel extends JPanel {
                 if (dialog == null || !dialog.isConfirmed()) {
                     chrome.systemOutput("No method selected.");
                 } else {
-                    contextManager.calleesForMethod(dialog.getSelectedMethod(), dialog.getDepth(), dialog.getCallGraph());
+                    var method = dialog.getSelectedMethod();
+                    var callGraph = dialog.getCallGraph();
+                    if (method == null || callGraph == null) {
+                        chrome.toolError("No method or call graph selected");
+                        return;
+                    }
+                    contextManager.calleesForMethod(method, dialog.getDepth(), callGraph);
                 }
             } catch (CancellationException cex) {
                 chrome.systemOutput("Method selection canceled.");

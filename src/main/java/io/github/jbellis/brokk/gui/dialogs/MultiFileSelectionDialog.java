@@ -110,7 +110,7 @@ public class MultiFileSelectionDialog extends JDialog {
                     f -> true, // Default filter, can be customized if needed
                     autocompletePathsForPanel,
                     true, // multiSelect = true
-                    null,  // No single file confirmed action for multi-select panel
+                    (FileSelectionPanel.FileConfirmedAction) f -> {},  // Empty action for multi-select panel
                     true, // includeProjectFilesInAutocomplete
                     buildFilesTabHintText(allowExternalFiles)
             );
@@ -254,8 +254,7 @@ public class MultiFileSelectionDialog extends JDialog {
         }
 
         if ("ClassesPanel".equals(componentName)) {
-            requireNonNull(classInput != null);
-            var typedClasses = classInput.getText().trim();
+            var typedClasses = requireNonNull(classInput).getText().trim();
             if (!typedClasses.isEmpty()) {
                 okButton.setEnabled(false);
                 cancelButton.setEnabled(false);

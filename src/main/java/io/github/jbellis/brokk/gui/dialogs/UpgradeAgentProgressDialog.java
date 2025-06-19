@@ -9,6 +9,7 @@ import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 import org.jetbrains.annotations.Nullable;
 
+import java.util.Objects;
 import javax.swing.*;
 import java.awt.*;
 import java.util.List;
@@ -32,11 +33,16 @@ public class UpgradeAgentProgressDialog extends JDialog {
     private record ProgressData(String fileName, @Nullable String errorMessage) {}
 
     public UpgradeAgentProgressDialog(Frame owner,
-                                      String instructions,
-                                      Service.FavoriteModel selectedFavorite,
-                                      List<ProjectFile> filesToProcess,
-                                      Chrome chrome) {
+                                    String instructions,
+                                    Service.FavoriteModel selectedFavorite,
+                                    List<ProjectFile> filesToProcess,
+                                    Chrome chrome) {
         super(owner, "Upgrade Agent Progress", true);
+        Objects.requireNonNull(instructions);
+        Objects.requireNonNull(selectedFavorite);
+        Objects.requireNonNull(filesToProcess);
+        Objects.requireNonNull(chrome);
+        
         this.totalFiles = filesToProcess.size();
         this.executorService = Executors.newFixedThreadPool(Math.min(200, Math.max(1, filesToProcess.size())));
 
@@ -78,7 +84,6 @@ public class UpgradeAgentProgressDialog extends JDialog {
 
             @Override
             protected Void doInBackground() {
-                var project = chrome.getProject();
                 var contextManager = chrome.getContextManager();
                 var service = contextManager.getService();
                 for (ProjectFile file : filesToProcess) {

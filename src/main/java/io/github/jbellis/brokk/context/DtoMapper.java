@@ -12,6 +12,7 @@ import io.github.jbellis.brokk.util.Messages;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 import java.util.Objects;
+import static java.util.Objects.requireNonNull;
 import org.jetbrains.annotations.Nullable;
 
 import javax.imageio.ImageIO;
@@ -142,7 +143,7 @@ public class DtoMapper {
                     ContextFragment.FragmentType.valueOf(ffd.originalType()),
                     ffd.description(),
                     ffd.shortDescription(),
-                    ffd.isTextFragment() ? ffd.textContent() : null,
+                    requireNonNull(ffd.isTextFragment() ? ffd.textContent() : ""),
                     imageBytesMap != null ? imageBytesMap.get(ffd.id()) : null,
                     ffd.isTextFragment(),
                     ffd.syntaxStyle(),
@@ -459,11 +460,11 @@ private static BrokkFile fromImageFileDtoToBrokkFile(ImageFileDto ifd, IContextM
                                               Map<String, VirtualFragmentDto> allVirtualDtos,
                                               Map<String, TaskFragmentDto> allTaskDtos) {
         ContextFragment resolvedFragment = fragmentCacheForRecursion.computeIfAbsent(
-            dto.log().id(),
+            requireNonNull(dto.log(), "TaskEntryDto log cannot be null").id(),
             idToResolve -> resolveAndBuildFragment(idToResolve, allReferencedDtos, allVirtualDtos, allTaskDtos,
                                                    mgr, null, fragmentCacheForRecursion)
         );
-        if (!(resolvedFragment instanceof ContextFragment.TaskFragment)) {
+        if (!(resolvedFragment instanceof ContextFragment.TaskFragment taskFragment)) {
             throw new IllegalStateException("Resolved fragment for TaskEntryDto log ID " + dto.log().id() + 
                                           " was not a TaskFragment. Type: " + resolvedFragment.getClass().getName());
         }

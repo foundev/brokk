@@ -1,6 +1,7 @@
 package io.github.jbellis.brokk.difftool.doc;
 
 import org.jetbrains.annotations.Nullable;
+import static java.util.Objects.requireNonNull;
 
 import javax.swing.event.DocumentEvent;
 import javax.swing.event.DocumentListener;
@@ -21,10 +22,13 @@ import java.util.stream.Collectors;
 public abstract class AbstractBufferDocument implements BufferDocumentIF, DocumentListener {
     private String name = "";
     private String shortName = "";
-    // These fields are initialized in initializeAndRead and are non-null afterwards
+    @Nullable
     private Line[] lineArray;
+    @Nullable 
     private int[] lineOffsetArray;
+    @Nullable
     private PlainDocument document;
+    @Nullable
     private MyGapContent content;
     private final List<BufferDocumentChangeListenerIF> listeners;
 
@@ -34,6 +38,10 @@ public abstract class AbstractBufferDocument implements BufferDocumentIF, Docume
 
     protected AbstractBufferDocument() {
         listeners = new ArrayList<>();
+        lineArray = new Line[0];
+        lineOffsetArray = new int[0];
+        content = new MyGapContent(0);
+        document = new PlainDocument(content);
     }
 
     // Called by subclasses after setting name/shortName
@@ -42,7 +50,7 @@ public abstract class AbstractBufferDocument implements BufferDocumentIF, Docume
             document.removeDocumentListener(this);
         }
         content = new MyGapContent(getBufferSize() + 500);
-        document = new PlainDocument(content);
+        document = new PlainDocument(requireNonNull(content));
         try {
             new DefaultEditorKit().read(getReader(), document, 0);
         } catch (Exception readEx) {
@@ -91,9 +99,7 @@ public abstract class AbstractBufferDocument implements BufferDocumentIF, Docume
 
     @Override
     public PlainDocument getDocument() {
-        // Document is initialized by initializeAndRead() before any calls to this
-        assert document != null : "Document accessed before initialization for " + getName();
-        return document;
+        return requireNonNull(document, "Document accessed before initialization for " + getName());
     }
 
     @Override
@@ -104,7 +110,7 @@ public abstract class AbstractBufferDocument implements BufferDocumentIF, Docume
     @Override
     public Line[] getLines() {
         initLines();
-        return lineArray;
+        return requireNonNull(lineArray, "Lines not initialized for " + getName());
     }
 
     @Override
@@ -137,7 +143,7 @@ public abstract class AbstractBufferDocument implements BufferDocumentIF, Docume
             return 0;
         }
 
-        if (offset >= document.getLength()) {
+        if (offset >= requireNonNull(document, "Document not initialized").getLength()) {
             return Math.max(0, lineArray.length - 1);
         }
 
@@ -152,45 +158,50 @@ public abstract class AbstractBufferDocument implements BufferDocumentIF, Docume
     }
 
     private void initLines() {
-        if (lineArray != null) {
+        if (lineArray != null && lineArray.length > 0) {
             return;
         }
-        // document and content must be non-null here due to initializeAndRead() contract
-        assert document != null;
-        Element paragraph = document.getDefaultRootElement();
+        var doc = requireNonNull(document, "Document not initialized when initializing lines for " + getName());
+        Element paragraph = doc.getDefaultRootElement();
         int size = paragraph.getElementCount();
+        
+        if (size == 0) {
+            lineArray = new Line[0];
+            lineOffsetArray = new int[0];
+            return;
+        }
+        
         lineArray = new Line[size];
-        lineOffsetArray = new int[lineArray.length];
-        for (int i = 0; i < lineArray.length; i++) {
+        lineOffsetArray = new int[size];
+        for (int i = 0; i < size; i++) {
             Element e = paragraph.getElement(i);
             Line line = new Line(e);
             lineArray[i] = line;
-            // Store the *start* offset for binary search in getLineForOffset
             lineOffsetArray[i] = line.getStartOffset();
         }
     }
 
     protected void resetLineCache() {
-        lineArray = null;
-        lineOffsetArray = null;
+        lineArray = new Line[0];
+        lineOffsetArray = new int[0];
     }
 
     @Override
     public void write() {
         // Ensure document exists before writing
-        if (document == null) {
-            throw new IllegalStateException("Cannot write document, it was not initialized: " + getName());
-        }
-        try (Writer out = getWriter()) {
-            if (out == null) {
-                throw new RuntimeException("Cannot get writer for document: " + getName());
+        var doc = requireNonNull(document, "Cannot write document, it was not initialized: " + getName());
+        try {
+            Writer out = requireNonNull(getWriter(), "Cannot get writer for document: " + getName());
+            try {
+                new DefaultEditorKit().write(out, doc, 0, doc.getLength());
+                out.flush();
+            } finally {
+                out.close();
             }
-            new DefaultEditorKit().write(out, document, 0, document.getLength());
-            out.flush();
+            initDigest(); // Update digest after successful write
         } catch (Exception ex) {
-            throw new RuntimeException("Failed to write document: " + getName(), ex);
+            throw new RuntimeException("Failed to write document '" + getName() + "'", ex);
         }
-        initDigest(); // Update digest after successful write
     }
 
     class MyGapContent extends GapContent {
@@ -269,9 +280,7 @@ public abstract class AbstractBufferDocument implements BufferDocumentIF, Docume
         }
 
         MyGapContent getContent() {
-            // Content should be initialized by initializeAndRead()
-            assert content != null : "Line accessed before content was initialized";
-            return content;
+            return requireNonNull(content, "Content not initialized when accessing Line");
         }
 
         public int getStartOffset() {
@@ -284,20 +293,24 @@ public abstract class AbstractBufferDocument implements BufferDocumentIF, Docume
 
         @Override
         public boolean equals(Object o) {
+            if (this == o) return true;
             if (!(o instanceof Line otherLine)) {
                 return false;
             }
-            Element element2 = otherLine.element;
-            int start1 = this.getStartOffset();
-            int end1 = this.getEndOffset();
-            int start2 = element2.getStartOffset();
-            int end2 = element2.getEndOffset();
+            try {
+                Element element2 = otherLine.element;
+                int start1 = this.getStartOffset();
+                int end1 = this.getEndOffset();
+                int start2 = element2.getStartOffset();
+                int end2 = element2.getEndOffset();
 
-            if ((end1 - start1) != (end2 - start2)) {
+                if ((end1 - start1) != (end2 - start2)) {
+                    return false;
+                }
+                return this.getContent().equals(otherLine.getContent(), start1, end1, start2);
+            } catch (Exception e) {
                 return false;
             }
-            // getContent() is asserted non-null
-            return this.getContent().equals(otherLine.getContent(), start1, end1, start2);
         }
 
         @Override
@@ -316,7 +329,8 @@ public abstract class AbstractBufferDocument implements BufferDocumentIF, Docume
             try {
                 int start = getStartOffset();
                 int end = getEndOffset();
-                int docLen = document.getLength(); // document is asserted non-null
+                var doc = requireNonNull(document, "Document not initialized when getting line text for " + getName());
+                int docLen = doc.getLength();
 
                 if (start < 0 || end < 0 || start > docLen) {
                     return "<INVALID RANGE>";
@@ -338,9 +352,10 @@ public abstract class AbstractBufferDocument implements BufferDocumentIF, Docume
                             return "";
                         }
                         // Otherwise substring from [start..docLen], then if last char is newline, append it
-                        String text = getContent().getString(start, length);
-                        if (docLen > 0) {
-                            char lastChar = getContent().charAtOffset(docLen - 1);
+                        var content = getContent();
+                String text = content.getString(start, length);
+                if (docLen > 0) {
+                    char lastChar = content.charAtOffset(docLen - 1);
                             if (lastChar == '\n') {
                                 text += "\n";
                             }
@@ -360,7 +375,17 @@ public abstract class AbstractBufferDocument implements BufferDocumentIF, Docume
                 return getContent().getString(start, length);
 
             } catch (BadLocationException ex) {
-                throw new RuntimeException(ex);
+                throw new IllegalStateException(String.format(
+                    "Invalid document location when getting line %d/%d (position %d) text (offsets %d-%d) for %s (document length: %d, changed: %b)", 
+                    getLineForOffset(start), lineArray != null ? lineArray.length : -1, 
+                    Arrays.asList(lineArray).indexOf(this), start, end, getName(), 
+                    document != null ? document.getLength() : -1, changed), ex);
+            } catch (NullPointerException ex) {
+                throw new IllegalStateException(String.format(
+                    "Document not properly initialized when getting line text (offsets %d-%d) for %s (document: %s, content: %s)",
+                    start, end, getName(), 
+                    document != null ? "initialized" : "null",
+                    content != null ? "initialized" : "null"), ex);
             }
         }
 
@@ -386,9 +411,24 @@ public abstract class AbstractBufferDocument implements BufferDocumentIF, Docume
     }
 
     private void initDigest() {
-        originalLength = document.getLength();
-        digest = content.getDigest();
-        changed = false;
+        try {
+            var doc = requireNonNull(document, "Document not initialized when computing digest for " + getName());
+            var cnt = requireNonNull(content, "Content not initialized when computing digest for " + getName());
+            originalLength = doc.getLength();
+            digest = cnt.getDigest();
+            changed = false;
+        } catch (NullPointerException e) {
+            throw new IllegalStateException(String.format(
+                "Failed to compute digest for document '%s' (document: %s, content: %s, length: %d, changed: %b, listeners: %d, lineCount: %d, lineCache: %s)",
+                getName(), 
+                document != null ? "initialized" : "null", 
+                content != null ? "initialized" : "null",
+                document != null ? document.getLength() : -1,
+                changed,
+                listeners.size(),
+                lineArray != null ? lineArray.length : -1,
+                lineArray != null ? "initialized" : "null"), e);
+        }
     }
 
     private void documentChanged(DocumentEvent de) {
@@ -400,10 +440,11 @@ public abstract class AbstractBufferDocument implements BufferDocumentIF, Docume
         jmde.setStartLine(startLine);
 
         boolean newChanged;
-        if (document.getLength() != originalLength) {
+        var doc = requireNonNull(document, "Document not initialized");
+        if (doc.getLength() != originalLength) {
             newChanged = true;
         } else {
-            int newDigest = content.getDigest();
+            int newDigest = requireNonNull(content, "Content not initialized").getDigest();
             newChanged = (newDigest != digest);
         }
 
@@ -447,7 +488,7 @@ public abstract class AbstractBufferDocument implements BufferDocumentIF, Docume
     @Override
     public List<String> getLineList() {
         initLines();
-        return Arrays.stream(lineArray)
+        return Arrays.stream(requireNonNull(lineArray, "Lines not initialized"))
                     .map(Line::toString)
                     .collect(Collectors.toList());
     }

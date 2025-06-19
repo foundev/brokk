@@ -73,8 +73,7 @@ class DeepScanDialog {
             logger.debug("Deep Scan: Running ValidationAgent...");
             var agent = new ValidationAgent(contextManager);
             var relevantTestResults = agent.execute(goal);
-            var ctx = contextManager.topContext();
-            assert ctx != null;
+            var ctx = Objects.requireNonNull(contextManager.topContext(), "Context is null");
             var filesInWorkspace = Streams.concat(ctx.editableFiles(), ctx.readonlyFiles())
                     .filter(ContextFragment.PathFragment.class::isInstance)
                     .map(ContextFragment.PathFragment.class::cast)
@@ -101,8 +100,10 @@ class DeepScanDialog {
                         throw ie;
                     }
                     // For other execution exceptions, log, notify user, and complete future exceptionally.
-                    logger.error("Error during Deep Scan agent execution", ee.getCause());
-                    SwingUtilities.invokeLater(() -> chrome.toolError("Error during Deep Scan execution: " + ee.getCause().getMessage()));
+                    var cause = ee.getCause();
+                    logger.error("Error during Deep Scan agent execution", cause);
+                    String errorMsg = cause != null ? cause.getMessage() : "Unknown error";
+                    SwingUtilities.invokeLater(() -> chrome.toolError("Error during Deep Scan execution: " + errorMsg));
                     analysisDoneFuture.completeExceptionally(ee.getCause());
                     return; // Exit the task
                 }
@@ -138,7 +139,8 @@ class DeepScanDialog {
                 logger.debug("Deep Scan finished. Proposing {} unique fragments.", allSuggestedFragments.size());
 
                 if (allSuggestedFragments.isEmpty()) {
-                    if (contextManager.topContext().allFragments().findAny().isPresent()) {
+                    var topContext = contextManager.topContext();
+                    if (topContext != null && topContext.allFragments().findAny().isPresent()) {
                         chrome.systemOutput("Deep Scan complete with no additional recommendations");
                     } else {
                         chrome.systemOutput("Deep Scan complete with no recommendations");

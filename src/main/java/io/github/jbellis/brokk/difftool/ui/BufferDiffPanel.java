@@ -17,6 +17,7 @@ import java.util.ArrayList;
 import java.util.EnumMap;
 import javax.swing.*;
 import javax.swing.text.BadLocationException;
+import static java.util.Objects.requireNonNull;
 
 import io.github.jbellis.brokk.gui.GuiTheme;
 import io.github.jbellis.brokk.gui.ThemeAware;
@@ -32,7 +33,6 @@ import org.jetbrains.annotations.Nullable;
  */
 public class BufferDiffPanel extends AbstractContentPanel implements ThemeAware
 {
-    private static final Logger logger = LogManager.getLogger(BufferDiffPanel.class);
 
     /**
      * Enum representing the two sides of the diff panel.
@@ -511,8 +511,7 @@ public class BufferDiffPanel extends AbstractContentPanel implements ThemeAware
             }
 
             // Remove this delta so we can't click it again
-            assert patch != null; // Should not be null here if we selected a delta
-            patch.getDeltas().remove(delta);
+            requireNonNull(patch, "Patch should not be null when removing delta").getDeltas().remove(delta);
 
             setSelectedDelta(null);
             setSelectedLine(sourceChunk.getPosition());
@@ -554,8 +553,7 @@ public class BufferDiffPanel extends AbstractContentPanel implements ThemeAware
         toEditor.replaceSelection("");
 
         // Remove the just-used delta
-        assert patch != null; // Should not be null here if we selected a delta
-        patch.getDeltas().remove(delta);
+        requireNonNull(patch, "Patch should not be null when removing delta").getDeltas().remove(delta);
 
         setSelectedDelta(null);
         setSelectedLine(chunk.getPosition());

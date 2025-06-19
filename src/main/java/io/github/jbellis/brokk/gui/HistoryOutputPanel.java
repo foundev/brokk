@@ -45,11 +45,11 @@ public class HistoryOutputPanel extends JPanel {
     private final JButton manageSessionsButton;
 
     // Output components
-    private MarkdownOutputPanel llmStreamArea;
-    private JScrollPane llmScrollPane;
+    private final MarkdownOutputPanel llmStreamArea;
+    private final JScrollPane llmScrollPane;
     // systemArea, systemScrollPane, commandResultLabel removed
     @Nullable private JTextArea captureDescriptionArea;
-    private JButton copyButton;
+    private final JButton copyButton;
 
     private final InstructionsPanel instructionsPanel;
     private final List<OutputWindow> activeStreamingWindows = new ArrayList<>();
@@ -573,19 +573,6 @@ public class HistoryOutputPanel extends JPanel {
     /**
      * Builds the LLM streaming area where markdown output is displayed
      */
-    private JScrollPane buildLLMStreamScrollPane() {
-
-        // Wrap it in a scroll pane so it can scroll if content is large
-        var jsp = new JScrollPane(llmStreamArea);
-        jsp.setBorder(BorderFactory.createEmptyBorder(5, 5, 5, 5));
-        jsp.setVerticalScrollBarPolicy(JScrollPane.VERTICAL_SCROLLBAR_AS_NEEDED);
-        AutoScroller.install(jsp);
-
-        // Add a text change listener to update capture buttons
-        llmStreamArea.addTextChangeListener(chrome::updateCaptureButtons);
-
-        return jsp;
-    }
 
     // buildSystemMessagesArea removed
 

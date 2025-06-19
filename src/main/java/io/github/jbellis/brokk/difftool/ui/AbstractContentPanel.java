@@ -9,9 +9,7 @@ import javax.swing.undo.CompoundEdit;
 import javax.swing.undo.UndoManager;
 import javax.swing.undo.UndoableEdit;
 
-public abstract class AbstractContentPanel
-        extends JPanel
-        implements JMeldContentPanelIF {
+public abstract class AbstractContentPanel extends JPanel implements JMeldContentPanelIF {
     private final MyUndoManager undoManager = new MyUndoManager();
 
     // Abstract methods to be implemented by subclasses for navigation logic
@@ -51,7 +49,7 @@ public abstract class AbstractContentPanel
     public void doDown() {
     }
 
-    public class MyUndoManager extends UndoManager implements UndoableEditListener {
+    public static class MyUndoManager extends UndoManager implements UndoableEditListener {
         @Nullable
         CompoundEdit activeEdit;
 

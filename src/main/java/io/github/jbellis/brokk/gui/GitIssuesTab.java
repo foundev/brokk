@@ -57,15 +57,10 @@ public class GitIssuesTab extends JPanel implements SettingsChangeListener {
     private JButton openInBrowserButton;
     private JButton captureButton;
 
-    @Nullable
     private FilterBox statusFilter;
-    @Nullable
     private FilterBox resolutionFilter;
-    @Nullable
     private FilterBox authorFilter;
-    @Nullable
     private FilterBox labelFilter;
-    @Nullable
     private FilterBox assigneeFilter;
     private JTextField searchField;
     private Timer searchDebounceTimer;
@@ -688,8 +683,7 @@ public class GitIssuesTab extends JPanel implements SettingsChangeListener {
         // This method runs on a background thread.
         logger.debug("processAndDisplayWorker: Starting. Source list size: {}. isFullUpdate: {}", sourceList.size(), isFullUpdate);
 
-        // Read filter values. These are assumed to be safe to read from a background thread
-        // as FilterBox.getSelected() should be a simple getter.
+        // Read filter values
         String selectedAuthorActual = getBaseFilterValue(authorFilter.getSelected());
         String selectedLabelActual = getBaseFilterValue(labelFilter.getSelected());
         String selectedAssigneeActual = getBaseFilterValue(assigneeFilter.getSelected());

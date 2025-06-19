@@ -21,6 +21,7 @@ import java.awt.*;
 import java.awt.event.MouseAdapter;
 import java.awt.event.MouseEvent;
 import java.nio.file.Path;
+import static java.util.Objects.requireNonNull;
 import java.util.*;
 import java.util.List;
 import java.util.stream.Collectors;
@@ -694,10 +695,8 @@ public class GitCommitBrowserPanel extends JPanel {
                     var sortedDirs = new ArrayList<>(filesByDir.keySet());
                     sortedDirs.sort(Comparator.comparing(Path::toString));
                     for (var dirPath : sortedDirs) {
-                        var files = filesByDir.get(dirPath);
-                        if (files != null) {
-                            files.sort(String::compareTo);
-                        }
+                        var files = requireNonNull(filesByDir.get(dirPath), "Files list should not be null");
+                        files.sort(String::compareTo);
                         var dirNode = dirPath.equals(Path.of("")) ? changesRootNode : new DefaultMutableTreeNode(dirPath);
                         if (dirNode != changesRootNode) changesRootNode.add(dirNode);
                         for (var f : files) dirNode.add(new DefaultMutableTreeNode(f));

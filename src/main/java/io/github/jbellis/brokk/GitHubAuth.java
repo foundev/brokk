@@ -16,6 +16,7 @@ import org.kohsuke.github.GitHubBuilder;
 import okhttp3.OkHttpClient;
 import okhttp3.Request;
 import org.jetbrains.annotations.Nullable;
+import org.jetbrains.annotations.NotNull;
 
 import java.io.IOException;
 import java.util.List;
@@ -240,7 +241,7 @@ public class GitHubAuth
         throw new IOException("Failed to connect to GitHub repository " + owner + "/" + repoName + " on host " + targetHostDisplay + " (tried token and anonymous).");
     }
 
-    public GHRepository getGhRepository() throws IOException
+    public @Nullable GHRepository getGhRepository() throws IOException
     {
         connect(); // Ensures ghRepository is initialized or throws
         return this.ghRepository;
@@ -260,7 +261,7 @@ public class GitHubAuth
      * @return The initialized GitHub client.
      * @throws IOException if connection fails.
      */
-    public GitHub getGitHub() throws IOException {
+    public @Nullable GitHub getGitHub() throws IOException {
         connect();
         return this.githubClient;
     }

@@ -3,6 +3,8 @@ package io.github.jbellis.brokk.gui.mop.stream;
 import io.github.jbellis.brokk.gui.mop.stream.blocks.ComponentData;
 import org.jetbrains.annotations.Nullable;
 
+import static java.util.Objects.requireNonNull;
+
 import javax.swing.*;
 import java.util.HashSet;
 import java.util.List;
@@ -23,7 +25,11 @@ public final class Reconciler {
      * @param comp The Swing component (non-null for valid entries)
      * @param fp The fingerprint of the component's current state
      */
-    public record BlockEntry(@Nullable JComponent comp, String fp) {
+    public record BlockEntry(JComponent comp, String fp) {
+        public BlockEntry {
+            requireNonNull(comp, "Component cannot be null");
+            requireNonNull(fp, "Fingerprint cannot be null");
+        }
     }
 
     /**
@@ -55,7 +61,7 @@ public final class Reconciler {
                 // logger.debug("cd.fp()={} vs. entry.fp={}", cd.fp(), entry.fp);
                 if (!cd.fp().equals(entry.fp)) {
                     // Update existing component
-                    var comp = entry.comp();
+                    var comp = requireNonNull(entry.comp(), "Missing component for id " + cd.id());
                     cd.updateComponent(comp);
                     entry = new BlockEntry(comp, cd.fp());
                     registry.put(cd.id(), entry);
@@ -73,7 +79,6 @@ public final class Reconciler {
                 var entry = registry.get(id);
                 assert entry != null : "Missing entry for id " + id;
                 var comp = entry.comp();
-                assert comp != null : "Missing component for id " + id;
                 container.remove(comp);
                 return true;
             }
@@ -86,7 +91,6 @@ public final class Reconciler {
             var entry = registry.get(cd.id());
             assert entry != null : "Missing entry for id " + cd.id();
             var comp = entry.comp();
-            assert comp != null : "Missing component for id " + cd.id();
             var current = (i < container.getComponentCount()) ? container.getComponent(i) : null;
             if (current != comp) {
                 container.add(comp, i); // inserts or moves in-place

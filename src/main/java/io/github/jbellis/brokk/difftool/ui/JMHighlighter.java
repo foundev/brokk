@@ -11,6 +11,7 @@ import java.util.Arrays;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import static java.util.Objects.requireNonNull;
 
 import io.github.jbellis.brokk.gui.GuiTheme;
 import io.github.jbellis.brokk.gui.ThemeAware;
@@ -27,7 +28,8 @@ public class JMHighlighter implements Highlighter, ThemeAware {
 
     // Stores highlights mapped by their layers
     private final Map<Integer, List<Highlight>> highlights = new HashMap<>();
-    private @Nullable JTextComponent component; // The associated text component
+    @Nullable
+    private JTextComponent component; // The associated text component
 
     /**
      * Installs the highlighter into a JTextComponent.
@@ -102,7 +104,7 @@ public class JMHighlighter implements Highlighter, ThemeAware {
      */
     public Object addHighlight(int layer, int p0, int p1, HighlightPainter painter) throws BadLocationException {
         assert component != null : "Highlighter not installed in a JTextComponent";
-        Document doc = component.getDocument();
+        Document doc = requireNonNull(component).getDocument();
         HighlightInfo hli = new HighlightInfo(doc.createPosition(p0), doc.createPosition(p1), painter);
 
         getLayer(layer).add(hli);
@@ -150,7 +152,7 @@ public class JMHighlighter implements Highlighter, ThemeAware {
     public void changeHighlight(Object highlight, int p0, int p1) throws BadLocationException {
         if (!(highlight instanceof HighlightInfo hli)) return;
         assert component != null : "Highlighter not installed in a JTextComponent";
-        Document doc = component.getDocument();
+        Document doc = requireNonNull(component).getDocument();
         hli.p0 = doc.createPosition(p0);
         hli.p1 = doc.createPosition(p1);
         repaint();

@@ -60,13 +60,13 @@ public class GitWorktreeTab extends JPanel {
     private final ContextManager contextManager;
     // private final GitPanel gitPanel; // Field is not read
 
-    private JTable worktreeTable;
-    private DefaultTableModel worktreeTableModel;
-    private JButton addButton;
-    private JButton removeButton;
-    private JButton openButton;
-    private JButton refreshButton;
-    private JButton mergeButton;
+    private @Nullable JTable worktreeTable;
+    private @Nullable DefaultTableModel worktreeTableModel;
+    private @Nullable JButton addButton;
+    private @Nullable JButton removeButton;
+    private @Nullable JButton openButton;
+    private @Nullable JButton refreshButton;
+    private @Nullable JButton mergeButton;
 
     private final boolean isWorktreeWindow;
 
@@ -325,7 +325,8 @@ public class GitWorktreeTab extends JPanel {
 
     private List<Path> getSelectedWorktreePaths() {
         List<Path> paths = new java.util.ArrayList<>();
-        if (worktreeTable == null || worktreeTableModel == null) return List.of();
+        var wtTable = requireNonNull(worktreeTable, "worktreeTable");
+        var wtModel = requireNonNull(worktreeTableModel, "worktreeTableModel");
         int[] selectedRows = worktreeTable.getSelectedRows();
         for (int row : selectedRows) {
             if (row == 0) continue; // Skip main repo
@@ -342,9 +343,7 @@ public class GitWorktreeTab extends JPanel {
         List<Path> selectedPaths = getSelectedWorktreePaths();
         boolean hasSelection = !selectedPaths.isEmpty();
 
-        if (openButton != null) {
-            openButton.setEnabled(hasSelection);
-        }
+        requireNonNull(openButton).setEnabled(hasSelection);
 
         if (isWorktreeWindow) {
             if (addButton != null) {
@@ -374,9 +373,7 @@ public class GitWorktreeTab extends JPanel {
                     Path currentProjectRoot = contextManager.getProject().getRoot().toRealPath();
 
                     SwingUtilities.invokeLater(() -> {
-                        if (worktreeTableModel != null) {
-                            worktreeTableModel.setRowCount(0); // Clear existing rows
-                        }
+                        requireNonNull(worktreeTableModel).setRowCount(0); // Clear existing rows
                         for (IGitRepo.WorktreeInfo wt : worktrees) {
                             String sessionTitle = MainProject.getActiveSessionTitle(wt.path())
                                     .orElse("(no session)");

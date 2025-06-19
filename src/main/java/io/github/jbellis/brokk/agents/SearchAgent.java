@@ -24,6 +24,7 @@ import io.github.jbellis.brokk.util.Messages;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 import org.jetbrains.annotations.Nullable;
+import static java.util.Objects.requireNonNull;
 import scala.Tuple2;
 
 import java.io.IOException;
@@ -70,15 +71,15 @@ public class SearchAgent {
     private final List<Tuple2<String, String>> knowledge = new ArrayList<>();
     private final Set<String> toolCallSignatures = new HashSet<>();
     private final Set<String> trackedClassNames = new HashSet<>();
-    private CompletableFuture<String> initialContextSummary;
+    private @Nullable CompletableFuture<String> initialContextSummary;
 
     private TokenUsage totalUsage = new TokenUsage(0, 0);
 
     public SearchAgent(String query,
-                       ContextManager contextManager,
-                       StreamingChatLanguageModel model,
-                       ToolRegistry toolRegistry,
-                       int ordinal) throws InterruptedException
+                      ContextManager contextManager,
+                      StreamingChatLanguageModel model,
+                      ToolRegistry toolRegistry,
+                      int ordinal) throws InterruptedException
     {
         this.query = query;
         this.contextManager = contextManager;
@@ -191,7 +192,7 @@ public class SearchAgent {
                 logger.warn("Summarization returned null response or AI message.");
                 return "Failed to generate summary.";
             }
-            return chatResponse.aiMessage().text();
+            return requireNonNull(chatResponse.aiMessage()).text();
         });
     }
 
@@ -419,7 +420,11 @@ public class SearchAgent {
                 logger.warn("Initial context summary interrupted for query {}", query, e);
                 return "Initial context summary interrupted."; // Return a placeholder or error message
             }
-            return response.aiMessage().text();
+            if (response == null || response.aiMessage() == null) {
+                logger.warn("Initial context summary returned null response or AI message");
+                return "Failed to generate summary";
+            }
+            return requireNonNull(response.aiMessage()).text();
         });
     }
 
@@ -534,7 +539,7 @@ public class SearchAgent {
      */
     private void trackClassNamesFromToolCall(ToolExecutionRequest request) {
         try {
-            var arguments = new ToolHistoryEntry(request, null).argumentsMap(); // Use helper
+            var arguments = requireNonNull(new ToolHistoryEntry(request, null).argumentsMap()); // Use helper
             String toolName = request.name();
 
             switch (toolName) {
@@ -1213,12 +1218,12 @@ public class SearchAgent {
 
     private static class ToolHistoryEntry {
         final ToolExecutionRequest request;
-        final ToolExecutionResult execResult;
+        final @Nullable ToolExecutionResult execResult;
         @Nullable String compressedResult; // For searchSymbols/getRelatedClasses non-summarized case
         @Nullable String learnings; // Summarization result
         @Nullable CompletableFuture<String> summarizeFuture;
 
-        ToolHistoryEntry(ToolExecutionRequest request, ToolExecutionResult execResult) {
+        ToolHistoryEntry(ToolExecutionRequest request, @Nullable ToolExecutionResult execResult) {
             this.request = request;
             this.execResult = execResult;
         }

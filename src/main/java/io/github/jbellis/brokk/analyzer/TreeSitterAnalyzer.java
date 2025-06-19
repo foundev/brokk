@@ -28,6 +28,7 @@ import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
+import static java.util.Objects.requireNonNull;
 
 /**
  * Generic, language-agnostic skeleton extractor backed by Tree-sitter.
@@ -996,7 +997,7 @@ public abstract class TreeSitterAnalyzer implements IAnalyzer {
                 // Add extra comments determined from the function body
                 CodeUnit tempCuForComments = null;
                 TSNode bodyNodeForComments = nodeForContent.getChildByFieldName(profile.bodyFieldName());
-                List<String> extraComments = getExtraFunctionComments(bodyNodeForComments, src, tempCuForComments);
+                List<String> extraComments = getExtraFunctionComments(bodyNodeForComments, src, requireNonNull(tempCuForComments));
                 for (String comment : extraComments) {
                     if (comment != null && !comment.isBlank()) {
                         signatureLines.add(comment); // Comments are added without indent here; buildSkeletonRecursive adds indent.
@@ -1159,7 +1160,7 @@ public abstract class TreeSitterAnalyzer implements IAnalyzer {
         }
 
         String paramsText = formatParameterList(paramsNode, src); // paramsNode can be null, formatParameterList handles it
-        String returnTypeText = formatReturnType(returnTypeNode, src); // returnTypeNode can be null
+        String returnTypeText = returnTypeNode == null ? "" : formatReturnType(returnTypeNode, src);
 
         String functionLine = assembleFunctionSignature(funcNode, src, exportPrefix, asyncPrefix, functionName, paramsText, returnTypeText, indent);
 

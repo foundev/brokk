@@ -5,6 +5,7 @@ import org.apache.logging.log4j.Logger;
 import org.fife.ui.autocomplete.AutoCompletion;
 import org.fife.ui.autocomplete.Completion;
 import org.fife.ui.autocomplete.ShorthandCompletion;
+import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
 // Java AWT
@@ -47,7 +48,7 @@ public class AutoCompleteUtil {
      * @param autoCompletion The AutoCompletion instance managing the autocomplete popup.
      * @param textComponent The text component that the autocomplete is attached to.
      */
-    public static void bindCtrlEnter(@Nullable AutoCompletion autoCompletion, @Nullable JTextComponent textComponent) {
+    public static void bindCtrlEnter(@NotNull AutoCompletion autoCompletion, @NotNull JTextComponent textComponent) {
         Objects.requireNonNull(autoCompletion, "autoCompletion");
         Objects.requireNonNull(textComponent, "textComponent");
         var ctrlEnter = Objects.requireNonNull(
@@ -103,7 +104,7 @@ public class AutoCompleteUtil {
      * @param textComponent The text component the AutoCompletion is attached to (used for font metrics).
      * @param completions   The list of completions to display.
      */
-    public static void sizePopupWindows(@Nullable AutoCompletion autoCompletion, @Nullable JTextComponent textComponent, @Nullable List<ShorthandCompletion> completions) {
+    public static void sizePopupWindows(@NotNull AutoCompletion autoCompletion, @NotNull JTextComponent textComponent, @NotNull List<ShorthandCompletion> completions) {
         Objects.requireNonNull(autoCompletion, "autoCompletion");
         Objects.requireNonNull(textComponent, "textComponent");
         Objects.requireNonNull(completions, "completions");
@@ -124,7 +125,10 @@ public class AutoCompleteUtil {
         // Calculate Description window width and show it
         var ttFontMetrics = textComponent.getFontMetrics(UIManager.getFont("ToolTip.font"));
         boolean hasDescriptions = completions.stream()
-                .anyMatch(c -> getCompletionDescription(c) != null && !getCompletionDescription(c).isEmpty());
+                .anyMatch(c -> {
+                    var desc = getCompletionDescription(c);
+                    return desc != null && !desc.isEmpty();
+                });
         // disabled for https://github.com/bobbylight/AutoComplete/issues/97
         if (hasDescriptions) {
             int maxDescWidth = completions.stream()
@@ -145,7 +149,7 @@ public class AutoCompleteUtil {
     /**
      * Helper to get the description text, handling ShorthandCompletion.
      */
-    private static @Nullable String getCompletionDescription(@Nullable Completion c) {
+    private static @Nullable String getCompletionDescription(@NotNull Completion c) {
         return c == null ? null
              : c instanceof ShorthandCompletion sc ? sc.getReplacementText()
              : c.getToolTipText();

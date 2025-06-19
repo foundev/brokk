@@ -79,11 +79,11 @@ public final class PhpAnalyzer extends TreeSitterAnalyzer {
     }
 
     @Override
-    protected CodeUnit createCodeUnit(ProjectFile file,
-                                     String captureName, 
-                                     String simpleName,
-                                     String packageName,
-                                     String classChain)
+    protected @Nullable CodeUnit createCodeUnit(ProjectFile file,
+                                              String captureName, 
+                                              String simpleName,
+                                              String packageName,
+                                              String classChain)
     {
         return switch (captureName) {
             case "class.definition", "interface.definition", "trait.definition" -> {
@@ -118,7 +118,7 @@ public final class PhpAnalyzer extends TreeSitterAnalyzer {
         };
     }
 
-    private String computeFilePackageName(ProjectFile file, TSNode rootNode, String src) {
+    private String computeFilePackageName(TSNode rootNode, String src) {
         TSQuery currentPhpNamespaceQuery = this.phpNamespaceQuery.get();
 
         TSQueryCursor cursor = new TSQueryCursor();
@@ -152,7 +152,7 @@ public final class PhpAnalyzer extends TreeSitterAnalyzer {
     @Override
     protected String determinePackageName(ProjectFile file, TSNode definitionNode, TSNode rootNode, String src) {
         // definitionNode is not used here as package is file-scoped
-        return fileScopedPackageNames.computeIfAbsent(file, f -> computeFilePackageName(f, rootNode, src));
+        return fileScopedPackageNames.computeIfAbsent(file, f -> computeFilePackageName(rootNode, src));
     }
 
 

@@ -22,6 +22,7 @@ import java.awt.geom.GeneralPath;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
+import static java.util.Objects.requireNonNull;
 
 /**
  * DiffScrollComponent is responsible for painting the \"curved lines\" or \"connectors\"
@@ -39,7 +40,7 @@ public class DiffScrollComponent extends JComponent implements ChangeListener
     private final int toPanelIndex;
 
     // Holds clickable shapes on the screen, each mapped to a \"command\"
-    private List<Command> commands;
+    private List<Command> commands = new ArrayList<>();
 
     // We keep track of antialias settings for painting
     @Nullable private Object antiAlias;
@@ -50,7 +51,7 @@ public class DiffScrollComponent extends JComponent implements ChangeListener
 
     // SHIFT is sometimes used to append or do a different style of change
     // when the user clicks a triangle. (Optional usage)
-    boolean shift; // TODO: Consider making this private and controlled via methods
+    private boolean shift;
 
     // Tracks which delta the mouse is currently over
     @Nullable private AbstractDelta<?> currentlyHoveredDelta = null;
@@ -69,17 +70,8 @@ public class DiffScrollComponent extends JComponent implements ChangeListener
         this.toPanelIndex = toPanelIndex;
 
         // Listen to viewport changes so we can repaint if user scrolls
-        // getFromPanel() and getToPanel() can return null if panels are not yet set up by BufferDiffPanel.
-        // However, they are called here after diffPanel is constructed, which constructs its FilePanels.
-        // Asserting non-null for safety, as addChangeListener will NPE if scrollPane is null.
-        FilePanel fromP = getFromPanel();
-        FilePanel toP = getToPanel();
-        
-        // Asserting non-null for safety, as addChangeListener will NPE if scrollPane is null.
-        // However, fromPanel and toPanel are expected to be non-null after diffPanel is constructed.
-        // Removed Objects.requireNonNull as it adds unnecessary verbosity for NullAway.
-        assert fromP != null : "FromPanel must be available in DiffScrollComponent constructor";
-        assert toP != null : "ToPanel must be available in DiffScrollComponent constructor";
+        FilePanel fromP = requireNonNull(getFromPanel(), "FromPanel must be available in DiffScrollComponent constructor");
+        FilePanel toP = requireNonNull(getToPanel(), "ToPanel must be available in DiffScrollComponent constructor");
         
         fromP.getScrollPane().getViewport().addChangeListener(this);
         toP.getScrollPane().getViewport().addChangeListener(this);
@@ -201,11 +193,7 @@ public class DiffScrollComponent extends JComponent implements ChangeListener
         g2.setClip(null); // Work with full component area, clipping handled internally
 
         // Retrieve the patch from BufferDiffPanel
-        var patch = diffPanel.getPatch();
-        if (patch == null) {
-            logger.debug("No patch available to paint diffs");
-            return;
-        }
+        var patch = requireNonNull(diffPanel.getPatch(), "Patch must be available to paint diffs");
         if (patch.getDeltas().isEmpty()) {
             return; // No diffs to paint
         }
@@ -213,24 +201,16 @@ public class DiffScrollComponent extends JComponent implements ChangeListener
         commands = new ArrayList<>();
 
         // --- Get necessary info for both panels ---
-        FilePanel fromPanel = getFromPanel();
-        FilePanel toPanel = getToPanel();
-
-        // If either panel is null (should not happen if constructor assertions hold), abort painting.
-        // This null check is redundant if constructor ensures non-null panels or if NullAway handles it.
-        // Removing for conciseness as per style guide.
-        // if (fromPanel == null || toPanel == null) {
-        //     logger.warn("paintDiffs called but FilePanel(s) are null. FromPanel: {}, ToPanel: {}", fromPanel, toPanel);
-        //     return;
-        // }
+        FilePanel fromPanel = requireNonNull(getFromPanel(), "FromPanel must be available to paint diffs");
+        FilePanel toPanel = requireNonNull(getToPanel(), "ToPanel must be available to paint diffs");
         
         var viewportFrom = fromPanel.getScrollPane().getViewport();
         var editorFrom = fromPanel.getEditor();
-        var bdFrom = fromPanel.getBufferDocument();
+        var bdFrom = requireNonNull(fromPanel.getBufferDocument(), "From document must be available");
 
         var viewportTo = toPanel.getScrollPane().getViewport();
         var editorTo = toPanel.getEditor();
-        var bdTo = toPanel.getBufferDocument();
+        var bdTo = requireNonNull(toPanel.getBufferDocument(), "To document must be available");
 
 
         Rectangle viewRectFrom = viewportFrom.getViewRect();
@@ -735,14 +715,11 @@ public class DiffScrollComponent extends JComponent implements ChangeListener
 
     // --- Panel Accessors ---
 
-    @Nullable
     private FilePanel getFromPanel() {
-        // diffPanel.getFilePanel can return null if index is bad or panels not fully set up
-        return diffPanel.getFilePanel(fromPanelIndex);
+        return requireNonNull(diffPanel.getFilePanel(fromPanelIndex), "From panel must exist");
     }
 
-    @Nullable
     private FilePanel getToPanel() {
-        return diffPanel.getFilePanel(toPanelIndex);
+        return requireNonNull(diffPanel.getFilePanel(toPanelIndex), "To panel must exist");
     }
 }

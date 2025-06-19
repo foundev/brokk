@@ -103,26 +103,21 @@ public final class FrozenFragment extends ContextFragment.VirtualFragment {
     }
 
     @Override
-    @Nullable
     public String text() {
         if (isTextFragment) {
-            return textContent;
+            return Objects.requireNonNullElse(textContent, "");
         } else {
             return "[Image content]";
         }
     }
 
     @Override
-    @Nullable
     public Image image() {
         if (isTextFragment) {
             throw new UnsupportedOperationException("This fragment does not contain image content");
         }
-        if (imageBytesContent == null) {
-            return null;
-        }
         try {
-            return bytesToImage(imageBytesContent);
+            return bytesToImage(Objects.requireNonNull(imageBytesContent));
         } catch (IOException e) {
             throw new UncheckedIOException(e);
         }

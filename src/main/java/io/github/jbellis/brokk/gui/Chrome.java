@@ -87,7 +87,8 @@ public class Chrome implements AutoCloseable, IConsoleIO, IContextManager.Contex
 
     private JSplitPane mainHorizontalSplitPane;
     private JSplitPane leftVerticalSplitPane;
-    private @Nullable JSplitPane rightVerticalSplitPane; // Can be null if no git
+    @Nullable
+    private JSplitPane rightVerticalSplitPane; // Can be null if no git
     private HistoryOutputPanel historyOutputPanel;
 
     // Panels:
@@ -1111,9 +1112,9 @@ public class Chrome implements AutoCloseable, IConsoleIO, IContextManager.Contex
 
                 rightVerticalSplitPane.addPropertyChangeListener(JSplitPane.DIVIDER_LOCATION_PROPERTY, e -> {
                     // Add null check before dereferencing
-                    var rvsp = rightVerticalSplitPane;
-                    if (rvsp != null && rvsp.isShowing()) {
-                        var newPos = rightVerticalSplitPane.getDividerLocation();
+                    var rvsp = requireNonNull(rightVerticalSplitPane);
+                    if (rvsp.isShowing()) {
+                        var newPos = rvsp.getDividerLocation();
                         if (newPos > 0) {
                             project.saveRightVerticalSplitPosition(newPos);
                         }

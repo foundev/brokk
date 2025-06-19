@@ -69,11 +69,11 @@ public final class PythonAnalyzer extends TreeSitterAnalyzer {
         return switch (captureName) {
             case "class.definition" -> {
                 var finalShortName = classChain.isEmpty() ? simpleName : classChain + "$" + simpleName;
-                yield CodeUnit.cls(file, packageName, finalShortName);
+                yield CodeUnit.cls(file, packageName != null ? packageName : "", finalShortName);
             }
             case "function.definition" -> {
                 var finalShortName = classChain.isEmpty() ? (moduleName + "." + simpleName) : (classChain + "." + simpleName);
-                yield CodeUnit.fn(file, packageName, finalShortName);
+                yield CodeUnit.fn(file, packageName != null ? packageName : "", finalShortName);
             }
             case "field.definition" -> { // For class attributes or top-level variables
                 if (file.getFileName().equals("vars.py")) {
@@ -86,7 +86,7 @@ public final class PythonAnalyzer extends TreeSitterAnalyzer {
                 if (!classChain.isEmpty()) {
                     assert packageName != null : "Package name should not be null for class member field " + finalShortName;
                 }
-                yield CodeUnit.field(file, packageName, finalShortName);
+                yield CodeUnit.field(file, packageName != null ? packageName : "", finalShortName);
             }
             default -> {
                 log.debug("Ignoring capture: {} with name: {} and classChain: {}", captureName, simpleName, classChain);
