@@ -459,7 +459,6 @@ public class ContextManager implements IContextManager, AutoCloseable {
     }
 
     @Override
-    @Override
     @Nullable
     public Context topContext() {
         return contextHistory.topContext();

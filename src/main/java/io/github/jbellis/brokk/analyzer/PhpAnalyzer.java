@@ -3,6 +3,7 @@ package io.github.jbellis.brokk.analyzer;
 import io.github.jbellis.brokk.IProject;
 import org.jetbrains.annotations.Nullable;
 import org.treesitter.*;
+import java.util.stream.Stream;
 
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;

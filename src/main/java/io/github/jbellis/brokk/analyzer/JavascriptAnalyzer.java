@@ -48,7 +48,6 @@ public class JavascriptAnalyzer extends TreeSitterAnalyzer {
     @Override protected String getQueryResource() { return "treesitter/javascript.scm"; }
 
     @Override
-    @Override
     protected @Nullable CodeUnit createCodeUnit(ProjectFile file,
                                                String captureName, 
                                                String simpleName,

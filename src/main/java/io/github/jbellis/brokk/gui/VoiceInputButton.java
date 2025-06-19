@@ -212,25 +212,6 @@ public class VoiceInputButton extends JButton {
             micLine.close();
         }
         micLine = null;
-        Thread captureThread = micCaptureThread;
-        if (captureThread != null) {
-            if (captureThread.isAlive()) {
-                captureThread.interrupt();
-                try {
-                    // Give thread a chance to clean up
-                    captureThread.join(200);
-                    if (captureThread.isAlive()) {
-                        logger.warn("Mic capture thread did not terminate cleanly after 200ms - forcing shutdown");
-                        captureThread.stop(); // Last resort after graceful attempts fail
-                    }
-                } catch (InterruptedException e) {
-                    Thread.currentThread().interrupt();
-                    logger.warn("Interrupted while waiting for mic capture thread to terminate - forcing shutdown");
-                    captureThread.stop(); // Last resort
-                }
-            }
-            micCaptureThread = null;
-        }
 
         // Change icon back to mic-off and restore background
         if (micOffIcon != null) {

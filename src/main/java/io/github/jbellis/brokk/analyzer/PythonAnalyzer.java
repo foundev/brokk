@@ -1,8 +1,8 @@
 package io.github.jbellis.brokk.analyzer;
 
 import io.github.jbellis.brokk.IProject;
-import org.jetbrains.annotations.Nullable;
-import org.jetbrains.annotations.NonNull;
+import javax.annotation.Nullable;
+import javax.annotation.Nonnull;
 import org.treesitter.TSLanguage;
 import org.treesitter.TSNode;
 import org.treesitter.TreeSitterPython;
@@ -52,11 +52,11 @@ public final class PythonAnalyzer extends TreeSitterAnalyzer {
     }
 
     @Override
-    protected @Nullable CodeUnit createCodeUnit(@NonNull ProjectFile file,
-                                                @NonNull String captureName,
-                                                @NonNull String simpleName,
+    protected @Nullable CodeUnit createCodeUnit(@Nonnull ProjectFile file,
+                                                @Nonnull String captureName,
+                                                @Nonnull String simpleName,
                                                 @Nullable String packageName,
-                                                @NonNull String classChain) {
+                                                @Nonnull String classChain) {
         // The packageName parameter is now supplied by determinePackageName.
         // The classChain parameter is used for Joern-style short name generation.
 

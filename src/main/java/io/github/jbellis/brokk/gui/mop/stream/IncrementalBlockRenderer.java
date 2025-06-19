@@ -464,9 +464,9 @@ public final class IncrementalBlockRenderer {
             if (cd instanceof MarkdownComponentData md) {
                 if (acc == null) {
                     acc = md;
-                    htmlBuf = new StringBuilder(castNonNull(md.html()));
+                    htmlBuf = new StringBuilder(md.html());
                 } else {
-                    castNonNull(htmlBuf).append('\n').append(castNonNull(md.html()));
+                    htmlBuf.append('\n').append(md.html());
                 }
             } else {
                 flush(out, acc, htmlBuf);

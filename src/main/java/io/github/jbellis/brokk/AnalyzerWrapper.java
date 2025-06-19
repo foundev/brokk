@@ -250,7 +250,6 @@ public class AnalyzerWrapper implements AutoCloseable {
         
         if (projectLangs.size() == 1) {
             Language lang = projectLangs.iterator().next();
-            Language lang = projectLangs.iterator().next();
             assert lang != Language.NONE;
 
             Path cpgPath = lang.isCpg() ? lang.getCpgPath(project) : Path.of(""); // Provide non-null default

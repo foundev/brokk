@@ -1,5 +1,7 @@
 package io.github.jbellis.brokk.difftool.doc;
 
+import org.jetbrains.annotations.Nullable;
+
 import javax.swing.event.DocumentEvent;
 import javax.swing.event.DocumentListener;
 import javax.swing.text.DefaultEditorKit;
