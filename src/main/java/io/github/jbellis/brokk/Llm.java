@@ -1093,6 +1093,7 @@ public class Llm {
     }
 
     public void setOutput(IConsoleIO io) {
+        // TODO this should be final but disentanglihg from ContextManager is difficult
         this.io = io;
     }
 

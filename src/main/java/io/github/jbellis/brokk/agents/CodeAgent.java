@@ -350,6 +350,7 @@ public class CodeAgent {
                                         List<ChatMessage> readOnlyMessages)
     {
         var coder = contextManager.getLlm(model, "Code: " + instructions, true);
+        coder.setOutput(io);
 
         String text;
         try {
@@ -687,6 +688,7 @@ public class CodeAgent {
                                    String instructions) throws InterruptedException
     {
         var coder = contextManager.getLlm(model, "QuickEdit: " + instructions);
+        coder.setOutput(io);
 
         // Use up to 5 related classes as context
         // buildAutoContext is an instance method on Context, or a static helper on ContextFragment for SkeletonFragment directly
