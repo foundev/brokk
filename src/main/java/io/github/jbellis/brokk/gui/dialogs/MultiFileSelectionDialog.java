@@ -27,6 +27,8 @@ import java.util.concurrent.Future;
 import java.util.stream.Collectors;
 import org.jetbrains.annotations.Nullable;
 
+import static java.util.Objects.requireNonNull;
+
 /**
  * A selection dialog that presents a tabbed interface for selecting
  * MULTIPLE files and/or MULTIPLE classes.
@@ -48,11 +50,11 @@ public class MultiFileSelectionDialog extends JDialog {
     private final AnalyzerWrapper analyzerWrapper;
 
     // UI Components - Files Tab
-    private FileSelectionPanel fileSelectionPanel; // Use the new panel
+    private @Nullable FileSelectionPanel fileSelectionPanel; // Use the new panel
 
     // UI Components - Classes Tab
-    private JTextArea classInput; // Keep for classes tab
-    private AutoCompletion classAutoCompletion; // Keep for classes tab
+    private @Nullable JTextArea classInput; // Keep for classes tab
+    private @Nullable AutoCompletion classAutoCompletion; // Keep for classes tab
 
     // Common UI Components
     private JTabbedPane tabbedPane;
@@ -154,6 +156,7 @@ public class MultiFileSelectionDialog extends JDialog {
                     if (selectedComponent instanceof FileSelectionPanel fsp) {
                         fsp.getFileInputComponent().requestFocusInWindow();
                     } else if ("ClassesPanel".equals(selectedComponent.getName())) {
+                        requireNonNull(classInput);
                         classInput.requestFocusInWindow();
                     }
                 });
@@ -241,6 +244,7 @@ public class MultiFileSelectionDialog extends JDialog {
         String componentName = selectedComponent.getName();
 
         if ("FilesPanel".equals(componentName)) {
+            requireNonNull(fileSelectionPanel);
             var filesResult = fileSelectionPanel.resolveAndGetSelectedFiles();
             selectionResult = new Selection(filesResult.isEmpty() ? null : List.copyOf(filesResult), null);
             confirmed = !selectionResult.isEmpty();
@@ -250,6 +254,7 @@ public class MultiFileSelectionDialog extends JDialog {
         }
 
         if ("ClassesPanel".equals(componentName)) {
+            requireNonNull(classInput != null);
             var typedClasses = classInput.getText().trim();
             if (!typedClasses.isEmpty()) {
                 okButton.setEnabled(false);

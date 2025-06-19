@@ -486,7 +486,7 @@ public class ArchitectAgent {
                     interrupted = true;
                 } catch (ExecutionException e) {
                     var cause = e.getCause();
-                    var causeMessage = Objects.toString(cause.getMessage(), "Unknown cause");
+                    var causeMessage = cause != null ? Objects.toString(cause.getMessage(), "Unknown cause") : "Unknown cause";
                     logger.warn("Error executing SearchAgent task '{}'", request.name(), cause);
                     if (cause instanceof FatalLlmException) {
                         var errorMessage = "Fatal LLM error executing Search Agent: %s".formatted(causeMessage);

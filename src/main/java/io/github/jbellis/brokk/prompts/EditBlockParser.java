@@ -352,7 +352,7 @@ public class EditBlockParser {
             blocks.add(EditBlock.OutputBlock.plain(plain.toString()));
         }
 
-        return new EditBlock.ExtendedParseResult(blocks, null);
+        return new EditBlock.ExtendedParseResult(blocks, "");
     }
 
     public String repr(EditBlock.SearchReplaceBlock block) {

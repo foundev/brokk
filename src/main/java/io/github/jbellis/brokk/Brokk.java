@@ -15,6 +15,7 @@ import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 import org.bouncycastle.jce.provider.BouncyCastleProvider;
 import org.jetbrains.annotations.Nullable;
+import static org.checkerframework.checker.nullness.util.NullnessUtil.castNonNull;
 
 import javax.swing.*;
 import javax.swing.border.Border;
@@ -184,7 +185,7 @@ public class Brokk {
 
             final Path pathForDialog = currentDialogPath;    // capture for EDT lambda
             Path projectPathFromDialog = SwingUtil.runOnEdt(
-                    () -> StartupDialog.showDialog(null,
+                    () -> StartupDialog.showDialog((JFrame)null,
                                                    MainProject.getBrokkKey(),
                                                    false,
                                                    pathForDialog,
@@ -241,8 +242,8 @@ public class Brokk {
                     return false;
                 }));
 
-        List<Path> mainRepoPaths = partitionedProjects.get(false);
-        List<Path> worktreePaths = partitionedProjects.get(true);
+        List<Path> mainRepoPaths = castNonNull(partitionedProjects.get(false));
+        List<Path> worktreePaths = castNonNull(partitionedProjects.get(true));
 
         boolean successfulOpenOccurred = false;
 
@@ -256,7 +257,7 @@ public class Brokk {
             }
         }
 
-        for (Path worktreePath : worktreePaths) {
+        for (Path worktreePath : castNonNull(worktreePaths)) {
             MainProject parentProject = null;
             if (GitRepo.hasGitRepo(worktreePath)) { // Redundant check, but safe
                 try (GitRepo wtRepo = new GitRepo(worktreePath)) { // isWorktree already confirmed by partitioning
@@ -310,7 +311,7 @@ public class Brokk {
             if (projectsToAttemptOpen.isEmpty()) {
                 SwingUtil.runOnEdt(Brokk::hideSplashScreen); // Hide splash before project selection dialog
                 final Path dialogPathForLambda = currentDialogContextPath;
-                Path selectedPath = SwingUtil.runOnEdt(() -> StartupDialog.showDialog(null, MainProject.getBrokkKey(), true, dialogPathForLambda, StartupDialog.DialogMode.REQUIRE_PROJECT_ONLY), null);
+                @Nullable Path selectedPath = SwingUtil.runOnEdt(() -> StartupDialog.showDialog((JFrame)null, MainProject.getBrokkKey(), true, dialogPathForLambda, StartupDialog.DialogMode.REQUIRE_PROJECT_ONLY), null);
                 if (selectedPath == null) { // User quit dialog
                     logger.info("Startup dialog (project selection) was closed. Shutting down.");
                     System.exit(0);

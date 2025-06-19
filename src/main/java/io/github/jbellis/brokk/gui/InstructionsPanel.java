@@ -33,6 +33,7 @@ import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 import org.eclipse.jgit.api.errors.GitAPIException;
 import org.jetbrains.annotations.Nullable;
+import java.util.Objects;
 
 import javax.swing.*;
 import javax.swing.border.EmptyBorder;
@@ -122,9 +123,9 @@ public class InstructionsPanel extends JPanel implements IContextManager.Context
     private final UndoManager commandInputUndoManager;
     private boolean lowBalanceNotified = false;
     private boolean freeTierNotified = false;
-    private String lastCheckedInputText;
-    private float[][] lastCheckedEmbeddings;
-    private List<FileReferenceData> pendingQuickContext;
+    private @Nullable String lastCheckedInputText;
+    private @Nullable float[][] lastCheckedEmbeddings;
+    private @Nullable List<FileReferenceData> pendingQuickContext;
 
     public InstructionsPanel(Chrome chrome) {
         super(new BorderLayout(2, 2));
@@ -135,6 +136,9 @@ public class InstructionsPanel extends JPanel implements IContextManager.Context
                                                    new Font(Font.DIALOG, Font.BOLD, 12)));
 
         this.chrome = chrome;
+        this.lastCheckedInputText = null;
+        this.lastCheckedEmbeddings = null;
+        this.pendingQuickContext = null;
         this.contextManager = chrome.getContextManager(); // Store potentially null CM
         this.commandInputUndoManager = new UndoManager();
 
@@ -722,11 +726,11 @@ public class InstructionsPanel extends JPanel implements IContextManager.Context
      * it returns an empty string, otherwise it returns the actual text content.
      */
     public String getInstructions() {
-        return SwingUtil.runOnEdt(() -> {
+        return Objects.requireNonNull(SwingUtil.runOnEdt(() -> {
             return instructionsArea.getText().equals(PLACEHOLDER_TEXT)
                    ? ""
                    : instructionsArea.getText();
-        }, "");
+        }, ""));
     }
 
     /**
@@ -897,7 +901,7 @@ public class InstructionsPanel extends JPanel implements IContextManager.Context
             var fileRefs = recommendations.fragments().stream()
                     .flatMap(f -> f.files().stream()) // No analyzer
                     .distinct()
-                    .map(pf -> new FileReferenceData(pf.getFileName(), pf.toString(), (ProjectFile) pf)) // Cast to ProjectFile
+                    .map(pf -> new FileReferenceData(pf.getFileName(), pf.toString(), pf))
                     .toList();
             if (fileRefs.isEmpty()) {
                 logger.debug("Task {} found no relevant files.", myGen);

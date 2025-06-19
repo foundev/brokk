@@ -221,7 +221,7 @@ public class Llm {
             // If no partial text, just return null response
             var partialText = accumulatedTextBuilder.toString();
             if (partialText.isEmpty()) {
-                return new StreamingResult(null, error);
+                return new StreamingResult(null, null, error);
             }
 
             // Construct a ChatResponse from accumulated partial text
@@ -241,7 +241,7 @@ public class Llm {
         if (echo) {
             io.llmOutput("\n", ChatMessageType.AI);
         }
-        return new StreamingResult(response, null);
+        return new StreamingResult(response, response, null);
     }
 
     private static  String formatTokensUsage(ChatResponse response) {
@@ -333,7 +333,7 @@ public class Llm {
             }
 
             // don't retry on bad request errors
-            if (lastError != null && lastError.getMessage().contains("BadRequestError")) {
+            if (lastError != null && Objects.toString(lastError.getMessage(), "").contains("BadRequestError")) {
                 logger.debug("Stopping on BadRequestError", lastError);
                 break;
             }
@@ -369,7 +369,7 @@ public class Llm {
         }
         // Return last error - log error to the current request's file
         var cr = ChatResponse.builder().aiMessage(new AiMessage("Error: " + lastError.getMessage())).build();
-        return new StreamingResult(cr, response.originalResponse(), lastError);
+        return new StreamingResult(cr, castNonNull(response).originalResponse(), lastError);
     }
 
     /**
@@ -1000,7 +1000,7 @@ public class Llm {
     /**
      * Writes history information to task-specific files.
      */
-    private synchronized void logRequest(StreamingChatLanguageModel model, ChatRequest request, StreamingResult result) {
+    private synchronized void logRequest(StreamingChatLanguageModel model, ChatRequest request, @Nullable StreamingResult result) {
         if (taskHistoryDir == null) {
             // History directory creation failed in constructor, do nothing.
             return;

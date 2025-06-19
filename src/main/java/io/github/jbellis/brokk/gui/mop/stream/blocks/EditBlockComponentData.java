@@ -9,6 +9,7 @@ import javax.swing.border.Border;
 import java.awt.*;
 import io.github.jbellis.brokk.gui.mop.util.ComponentUtils;
 import org.jetbrains.annotations.Nullable;
+import static org.checkerframework.checker.nullness.util.NullnessUtil.castNonNull;
 import java.util.List;
 
 /**
@@ -154,16 +155,11 @@ public record EditBlockComponentData(int id, int adds, int dels, int changed, St
             boolean darkTheme = panel.getBackground().equals(ThemeColors.getColor(true, "code_block_background"));
             
             // Find components by name - these must exist since we created them in createComponent()
-            var badgeLabel = findComponentByName(panel, JLabel.class, "badgeLabel");
-            assert badgeLabel != null;
-            var filenameLabel = findComponentByName(panel, JLabel.class, "filenameLabel");
-            assert filenameLabel != null;
-            var addsLabel = findComponentByName(panel, JLabel.class, "addsLabel");
-            assert addsLabel != null;
-            var delsLabel = findComponentByName(panel, JLabel.class, "delsLabel");
-            assert delsLabel != null;
-            var changedLabel = findComponentByName(panel, JLabel.class, "changedLabel");
-            assert changedLabel != null;
+            var badgeLabel = castNonNull(findComponentByName(panel, JLabel.class, "badgeLabel"));
+            var filenameLabel = castNonNull(findComponentByName(panel, JLabel.class, "filenameLabel"));
+            var addsLabel = castNonNull(findComponentByName(panel, JLabel.class, "addsLabel"));
+            var delsLabel = castNonNull(findComponentByName(panel, JLabel.class, "delsLabel"));
+            var changedLabel = castNonNull(findComponentByName(panel, JLabel.class, "changedLabel"));
               
             // Update badge
             badgeLabel.setText(symbolFor(status));

@@ -5,6 +5,7 @@ import io.github.jbellis.brokk.gui.mop.stream.blocks.ComponentData;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 import org.jetbrains.annotations.Nullable;
+import static org.checkerframework.checker.nullness.util.NullnessUtil.castNonNull;
 
 import javax.swing.*;
 import java.util.List;
@@ -44,9 +45,8 @@ final class StreamingWorker {
     private final AtomicBoolean updatePending = new AtomicBoolean(false);
     private final AtomicInteger epochGen = new AtomicInteger();
     private final AtomicInteger lastApplied = new AtomicInteger();
-    @Nullable
     private final AtomicReference<CompletableFuture<Void>> inFlight = 
-            new AtomicReference<>();
+            new AtomicReference<>(CompletableFuture.completedFuture(null));
 
     private final IncrementalBlockRenderer renderer;
 
@@ -101,7 +101,7 @@ final class StreamingWorker {
      */
     CompletableFuture<Void> flushAsync() {
         appendChunk(""); // Ensure pending content gets parsed
-        return inFlight.get();
+        return castNonNull(inFlight.get());
     }
 
     /* ---------------------------------------------------------------------- */
@@ -115,7 +115,7 @@ final class StreamingWorker {
             }
             // if no parse is running and no content added, nothing to do.
             // This prevents scheduling empty parses if appendChunk("") is called multiple times by flush when idle.
-            var currentInFlight = inFlight.get();
+            var currentInFlight = castNonNull(inFlight.get());
             if (currentInFlight != null && !currentInFlight.isDone()) { // If there's an active future (e.g. from a previous flush), let it complete
                 return;
             }
@@ -213,7 +213,7 @@ final class StreamingWorker {
      */
     void shutdown() {
         var future = inFlight.get();
-        if (future != null) {
+        if (!future.isDone()) {
             future.completeExceptionally(new CancellationException("Worker shutdown"));
         }
         exec.shutdownNow();

@@ -1111,7 +1111,8 @@ public class Chrome implements AutoCloseable, IConsoleIO, IContextManager.Contex
 
                 rightVerticalSplitPane.addPropertyChangeListener(JSplitPane.DIVIDER_LOCATION_PROPERTY, e -> {
                     // Add null check before dereferencing
-                    if (rightVerticalSplitPane.isShowing()) {
+                    var rvsp = rightVerticalSplitPane;
+                    if (rvsp != null && rvsp.isShowing()) {
                         var newPos = rightVerticalSplitPane.getDividerLocation();
                         if (newPos > 0) {
                             project.saveRightVerticalSplitPosition(newPos);
@@ -1124,7 +1125,7 @@ public class Chrome implements AutoCloseable, IConsoleIO, IContextManager.Contex
 
     @Override
     public void updateContextHistoryTable() {
-        updateContextHistoryTable(contextManager.selectedContext());
+        updateContextHistoryTable(castNonNull(contextManager.selectedContext()));
     }
 
     @Override

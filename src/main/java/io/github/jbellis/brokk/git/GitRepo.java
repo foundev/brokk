@@ -44,6 +44,8 @@ import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
+import static java.util.Objects.requireNonNull;
+
 /**
  * A Git repository abstraction using JGit.
  * <p>
@@ -137,7 +139,7 @@ public class GitRepo implements Closeable, IGitRepo {
                 if (Files.exists(commondirFile)) {
                     String commonDirContent = Files.readString(commondirFile, StandardCharsets.UTF_8).trim();
                     Path commonDir = gitDir.resolve(commonDirContent).normalize();
-                    this.gitTopLevel = commonDir.getParent().normalize(); // Parent of common dir will not be null
+                    this.gitTopLevel = requireNonNull(commonDir.getParent()).normalize(); // Parent of common dir will not be null
                 } else {
                     // Fallback: try to parse the gitdir file in the working tree
                     Path gitFile = repository.getWorkTree().toPath().resolve(".git");
@@ -150,7 +152,7 @@ public class GitRepo implements Closeable, IGitRepo {
                             if (Files.exists(commondirFile2)) {
                                 String commonDirContent2 = Files.readString(commondirFile2, StandardCharsets.UTF_8).trim();
                                 Path commonDir2 = worktreeGitDir.resolve(commonDirContent2).normalize();
-                                this.gitTopLevel = commonDir2.getParent().normalize(); // Parent of common dir will not be null
+                                this.gitTopLevel = requireNonNull(commonDir2.getParent()).normalize(); // Parent of common dir will not be null
                             } else {
                                 // Ultimate fallback
                                 this.gitTopLevel = repository.getDirectory().getParentFile().toPath().normalize();
@@ -1645,11 +1647,15 @@ public class GitRepo implements Closeable, IGitRepo {
      * Returns the SHA-1 of the merge base between the two rev-specs (or null
      * if none exists).  revA and revB may be branch names, tags, commit IDs, etc.
      */
+    @Nullable
     public String getMergeBase(String revA, String revB) throws GitAPIException {
         var idA = resolve(revA);
         var idB = resolve(revB);
+        if (idA == null || idB == null) {
+            return null;
+        }
         var mb = computeMergeBase(idA, idB);
-        return mb.getName();
+        return mb != null ? mb.getName() : null;
     }
 
     /**

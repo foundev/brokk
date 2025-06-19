@@ -6,6 +6,9 @@ import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 import org.jetbrains.annotations.Nullable;
 
+import static java.util.Objects.requireNonNull;
+import static org.checkerframework.checker.nullness.util.NullnessUtil.castNonNull;
+
 import javax.swing.*;
 import java.awt.KeyboardFocusManager;
 import java.io.IOException;
@@ -156,7 +159,7 @@ public class AnalyzerWrapper implements AutoCloseable {
         }
 
         if (needsGitRefresh) { // The check for this.gitRepoRoot != null is already implied by needsGitRefresh being true
-            assert this.gitRepoRoot != null : "gitRepoRoot should be non-null when needsGitRefresh is true";
+            requireNonNull(this.gitRepoRoot);
             logger.debug("Changes in git metadata directory ({}) detected", this.gitRepoRoot.resolve(".git"));
             if (listener != null) {
                 listener.onRepoChange();

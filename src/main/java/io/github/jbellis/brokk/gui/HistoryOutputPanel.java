@@ -10,6 +10,7 @@ import io.github.jbellis.brokk.gui.mop.MarkdownOutputPanel;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 import org.jetbrains.annotations.Nullable;
+import static org.checkerframework.checker.nullness.util.NullnessUtil.castNonNull;
 
 import javax.swing.*;
 import javax.swing.border.EmptyBorder;
@@ -67,6 +68,11 @@ public class HistoryOutputPanel extends JPanel {
         this.chrome = chrome;
         this.contextManager = contextManager;
         this.instructionsPanel = instructionsPanel;
+        
+        // Initialize non-null fields
+        this.llmStreamArea = new MarkdownOutputPanel();
+        this.llmScrollPane = new JScrollPane(llmStreamArea);
+        this.copyButton = new JButton("Copy");
 
         // commandResultLabel initialization removed
 

@@ -4,6 +4,7 @@ import dev.langchain4j.data.message.ChatMessage;
 import io.github.jbellis.brokk.context.ContextFragment;
 import io.github.jbellis.brokk.util.Messages;
 import org.jetbrains.annotations.Nullable;
+import static org.checkerframework.checker.nullness.util.NullnessUtil.castNonNull;
 
 import java.util.List;
 import java.util.Locale;
@@ -61,11 +62,10 @@ public record TaskEntry(int sequence, @Nullable ContextFragment.TaskFragment log
               <task sequence=%s summarized=true>
               %s
               </task>
-              """.stripIndent().formatted(sequence, summary.indent(2).stripTrailing());
+              """.stripIndent().formatted(sequence, castNonNull(summary).indent(2).stripTrailing());
         }
 
-        // We know `log` is not null if not compressed, thanks to the record's assert and `isCompressed()`
-        var logText = formatMessages(log.messages());
+        var logText = formatMessages(castNonNull(log).messages());
         return """
           <task sequence=%s>
           %s

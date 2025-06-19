@@ -457,8 +457,8 @@ public final class IncrementalBlockRenderer {
      */
     private List<ComponentData> mergeMarkdownBlocks(List<ComponentData> src) {
         var out = new ArrayList<ComponentData>();
-        MarkdownComponentData acc = null;
-        StringBuilder htmlBuf = null;
+        @Nullable MarkdownComponentData acc = null;
+        @Nullable StringBuilder htmlBuf = null;
 
         for (ComponentData cd : src) {
             if (cd instanceof MarkdownComponentData md) {
@@ -466,6 +466,10 @@ public final class IncrementalBlockRenderer {
                     acc = md;
                     htmlBuf = new StringBuilder(md.html());
                 } else {
+                    if (htmlBuf == null) {
+                        logger.warn("Unexpected null htmlBuf when merging markdown blocks");
+                        htmlBuf = new StringBuilder();
+                    }
                     htmlBuf.append('\n').append(md.html());
                 }
             } else {
@@ -491,7 +495,9 @@ public final class IncrementalBlockRenderer {
      * @param htmlBuf The StringBuilder containing the merged HTML content
      */
     private void flush(List<ComponentData> out, @Nullable MarkdownComponentData acc, @Nullable StringBuilder htmlBuf) {
-        if (acc == null || htmlBuf == null) return;
+        if (acc == null || htmlBuf == null) {
+            return;
+        }
         var merged = markdownFactory.fromText(acc.id(), htmlBuf.toString());
         out.add(merged);
     }
@@ -540,7 +546,7 @@ public final class IncrementalBlockRenderer {
     /**
      * Best-effort extraction of inner HTML/text from known Swing components.
      */
-    private static @Nullable String extractHtmlFromComponent(JComponent jc) {
+    private static @Nullable String extractHtmlFromComponent(@Nullable JComponent jc) {
         if (jc instanceof JEditorPane jp) {
             return jp.getText();
         } else if (jc instanceof JLabel lbl) {

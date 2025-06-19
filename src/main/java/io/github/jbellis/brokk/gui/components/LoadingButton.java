@@ -24,7 +24,9 @@ import java.awt.image.BufferedImage;
 public final class LoadingButton extends JButton {
     private static final Logger logger = LogManager.getLogger(LoadingButton.class);
 
+    @Nullable
     private static Icon spinnerDark;
+    @Nullable
     private static Icon spinnerLight;
 
     private final Chrome chrome;

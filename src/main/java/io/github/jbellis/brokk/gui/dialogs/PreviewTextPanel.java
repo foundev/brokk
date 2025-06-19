@@ -41,6 +41,7 @@ import java.awt.event.WindowEvent;
 import java.io.IOException;
 import java.util.*;
 import java.util.List;
+import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.Future;
 import java.util.concurrent.atomic.AtomicBoolean;
@@ -62,15 +63,14 @@ public class PreviewTextPanel extends JPanel implements ThemeAware {
     private JButton saveButton;
     private final ContextManager contextManager;
 
-    // Nullable
-    private final ProjectFile file;
+    private final @Nullable ProjectFile file;
     private final String contentBeforeSave;
     private List<ChatMessage> quickEditMessages = new ArrayList<>();
-    private Future<Set<CodeUnit>> fileDeclarations;
+    private final Future<Set<CodeUnit>> fileDeclarations;
     private final List<JComponent> dynamicMenuItems = new ArrayList<>(); // For usage capture items
 
     public PreviewTextPanel(ContextManager contextManager,
-                            ProjectFile file,
+                            @Nullable ProjectFile file,
                             String content,
                             String syntaxStyle,
                             GuiTheme guiTheme,
@@ -193,13 +193,13 @@ public class PreviewTextPanel extends JPanel implements ThemeAware {
         setupWindowCloseHandler();
 
         // Fetch declarations in the background if it's a project file
-        if (file != null) {
+        if (file == null) {
+            fileDeclarations = CompletableFuture.completedFuture(Set.of());
+        } else {
             fileDeclarations = contextManager.submitBackgroundTask("Fetch Declarations", () -> {
                 var analyzer = contextManager.getAnalyzerUninterrupted();
                 return analyzer.isEmpty() ? Collections.emptySet() : analyzer.getDeclarationsInFile(file);
             });
-        } else {
-            fileDeclarations = null; // Ensure @Nullable field is explicitly null if file is null
         }
     }
 

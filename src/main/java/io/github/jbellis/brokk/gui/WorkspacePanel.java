@@ -1,6 +1,5 @@
 package io.github.jbellis.brokk.gui;
 
-import org.jetbrains.annotations.Nullable;
 import dev.langchain4j.data.message.AiMessage;
 import dev.langchain4j.data.message.ChatMessage;
 import io.github.jbellis.brokk.AnalyzerWrapper;
@@ -27,9 +26,9 @@ import io.github.jbellis.brokk.util.StackTrace;
 import okhttp3.OkHttpClient;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
+import org.jetbrains.annotations.Nullable;
 
 import javax.swing.*;
-import java.util.Arrays;
 import javax.swing.border.EmptyBorder;
 import javax.swing.border.TitledBorder;
 import javax.swing.table.DefaultTableModel;
@@ -51,6 +50,8 @@ import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.stream.Collectors;
+
+import static org.checkerframework.checker.nullness.util.NullnessUtil.castNonNull;
 
 public class WorkspacePanel extends JPanel {
     private static final Logger logger = LogManager.getLogger(WorkspacePanel.class);
@@ -1013,12 +1014,12 @@ public class WorkspacePanel extends JPanel {
      * Gets the list of selected fragments
      */
     public List<ContextFragment> getSelectedFragments() {
-        return SwingUtil.runOnEdt(() -> {
+        return castNonNull(SwingUtil.runOnEdt(() -> {
             var tableModel = (DefaultTableModel) contextTable.getModel();
             return Arrays.stream(contextTable.getSelectedRows())
                     .mapToObj(row -> (ContextFragment) tableModel.getValueAt(row, FRAGMENT_COLUMN))
                     .collect(Collectors.toList());
-        }, List.of());
+        }, List.of()));
     }
 
     /**
@@ -1395,7 +1396,7 @@ public class WorkspacePanel extends JPanel {
     /**
      * Show the symbol selection dialog with a type filter
      */
-    private String showSymbolSelectionDialog(String title, Set<CodeUnitType> typeFilter) {
+    private @Nullable String showSymbolSelectionDialog(String title, Set<CodeUnitType> typeFilter) {
         var analyzer = contextManager.getAnalyzerUninterrupted();
         var dialogRef = new AtomicReference<SymbolSelectionDialog>();
         SwingUtil.runOnEdt(() -> {
@@ -1422,7 +1423,7 @@ public class WorkspacePanel extends JPanel {
     /**
      * Show the call graph dialog for configuring method and depth
      */
-    private CallGraphDialog showCallGraphDialog(String title, boolean isCallerGraph) {
+    private @Nullable CallGraphDialog showCallGraphDialog(String title, boolean isCallerGraph) {
         var analyzer = contextManager.getAnalyzerUninterrupted();
         var dialogRef = new AtomicReference<CallGraphDialog>();
         SwingUtil.runOnEdt(() -> {
@@ -1801,7 +1802,7 @@ public class WorkspacePanel extends JPanel {
      * @param modes              Set of selection modes (FILES, CLASSES) to enable.
      * @return The Selection record containing lists of files and/or classes, or null if cancelled.
      */
-    private MultiFileSelectionDialog.Selection showMultiSourceSelectionDialog(String title, boolean allowExternalFiles, Future<Set<ProjectFile>> projectCompletionsFuture, Set<SelectionMode> modes) {
+    private @Nullable MultiFileSelectionDialog.Selection showMultiSourceSelectionDialog(String title, boolean allowExternalFiles, Future<Set<ProjectFile>> projectCompletionsFuture, Set<SelectionMode> modes) {
         var dialogRef = new AtomicReference<MultiFileSelectionDialog>();
         SwingUtil.runOnEdt(() -> {
             var dialog = new MultiFileSelectionDialog(chrome.getFrame(), contextManager, title, allowExternalFiles, projectCompletionsFuture, modes);

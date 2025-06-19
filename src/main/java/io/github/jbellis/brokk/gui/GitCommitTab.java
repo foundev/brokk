@@ -13,6 +13,7 @@ import io.github.jbellis.brokk.gui.widgets.FileStatusTable;
 import io.github.jbellis.brokk.prompts.CommitPrompts;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
+import static org.checkerframework.checker.nullness.util.NullnessUtil.castNonNull;
 import org.eclipse.jgit.api.errors.GitAPIException;
 import org.jetbrains.annotations.Nullable;
 
@@ -747,7 +748,11 @@ public class GitCommitTab extends JPanel {
             throw new RuntimeException("LLM error during commit message suggestion: " + result.error().getMessage());
         }
 
-        String commitMsg = result.chatResponse().aiMessage().text();
+        if (result.chatResponse() == null) {
+            SwingUtilities.invokeLater(() -> chrome.systemOutput("LLM did not provide a valid response."));
+            return "";
+        }
+        String commitMsg = castNonNull(result.chatResponse()).aiMessage().text();
         if (commitMsg.isBlank()) {
             SwingUtilities.invokeLater(() -> chrome.systemOutput("LLM did not provide a commit message."));
             return "";

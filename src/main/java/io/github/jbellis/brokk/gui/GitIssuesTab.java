@@ -57,10 +57,15 @@ public class GitIssuesTab extends JPanel implements SettingsChangeListener {
     private JButton openInBrowserButton;
     private JButton captureButton;
 
+    @Nullable
     private FilterBox statusFilter;
+    @Nullable
     private FilterBox resolutionFilter;
+    @Nullable
     private FilterBox authorFilter;
+    @Nullable
     private FilterBox labelFilter;
+    @Nullable
     private FilterBox assigneeFilter;
     private JTextField searchField;
     private Timer searchDebounceTimer;
@@ -618,15 +623,15 @@ public class GitIssuesTab extends JPanel implements SettingsChangeListener {
                 final String currentSearchQuery = (searchField != null) ? searchField.getText().strip() : "";
                 final String queryForApi = currentSearchQuery.isBlank() ? null : currentSearchQuery;
 
-                final String statusVal = getBaseFilterValue(statusFilter.getSelected());
-                final String authorVal = getBaseFilterValue(authorFilter.getSelected()); // For GitHub server-side search
-                final String labelVal = getBaseFilterValue(labelFilter.getSelected());   // For GitHub server-side search
-                final String assigneeVal = getBaseFilterValue(assigneeFilter.getSelected());// For GitHub server-side search
+                final String statusVal = statusFilter != null ? getBaseFilterValue(statusFilter.getSelected()) : "";
+                final String authorVal = authorFilter != null ? getBaseFilterValue(authorFilter.getSelected()) : ""; 
+                final String labelVal = labelFilter != null ? getBaseFilterValue(labelFilter.getSelected()) : "";   
+                final String assigneeVal = assigneeFilter != null ? getBaseFilterValue(assigneeFilter.getSelected()) : "";
 
 
                 io.github.jbellis.brokk.issues.FilterOptions apiFilterOptions;
                 if (this.issueService instanceof JiraIssueService) {
-                    String resolutionVal = (resolutionFilter != null) ? getBaseFilterValue(resolutionFilter.getSelected()) : "Unresolved";
+                    String resolutionVal = (resolutionFilter != null) ? Objects.requireNonNull(getBaseFilterValue(resolutionFilter.getSelected())) : "Unresolved";
                     // For Jira, author/label/assignee are client-filtered. Query is passed for server-side text search.
                     apiFilterOptions = new io.github.jbellis.brokk.issues.JiraFilterOptions(statusVal, resolutionVal, null, null, null, queryForApi);
                     logger.debug("Jira API filters: Status='{}', Resolution='{}', Query='{}'", statusVal, resolutionVal, queryForApi);
@@ -816,9 +821,9 @@ public class GitIssuesTab extends JPanel implements SettingsChangeListener {
         return options;
     }
 
-    private String getBaseFilterValue(String displayOptionWithCount) {
+    private @org.checkerframework.checker.nullness.qual.NonNull String getBaseFilterValue(@Nullable String displayOptionWithCount) {
         if (displayOptionWithCount == null) {
-            return null; // This is the "All" case (FilterBox name shown)
+            return ""; // This is the "All" case (FilterBox name shown)
         }
         // For dynamic items like "John Doe (5)"
         int parenthesisIndex = displayOptionWithCount.lastIndexOf(" (");

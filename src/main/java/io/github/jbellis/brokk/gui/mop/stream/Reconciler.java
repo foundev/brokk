@@ -1,6 +1,7 @@
 package io.github.jbellis.brokk.gui.mop.stream;
 
 import io.github.jbellis.brokk.gui.mop.stream.blocks.ComponentData;
+import org.jetbrains.annotations.Nullable;
 
 import javax.swing.*;
 import java.util.HashSet;
@@ -22,7 +23,7 @@ public final class Reconciler {
      * @param comp The Swing component (non-null for valid entries)
      * @param fp The fingerprint of the component's current state
      */
-    public record BlockEntry(JComponent comp, String fp) {
+    public record BlockEntry(@Nullable JComponent comp, String fp) {
     }
 
     /**
@@ -71,7 +72,9 @@ public final class Reconciler {
                 // logger.debug("Removing component with id {}", id);
                 var entry = registry.get(id);
                 assert entry != null : "Missing entry for id " + id;
-                container.remove(entry.comp);
+                var comp = entry.comp();
+                assert comp != null : "Missing component for id " + id;
+                container.remove(comp);
                 return true;
             }
             return false;
@@ -82,9 +85,11 @@ public final class Reconciler {
             var cd = desired.get(i);
             var entry = registry.get(cd.id());
             assert entry != null : "Missing entry for id " + cd.id();
+            var comp = entry.comp();
+            assert comp != null : "Missing component for id " + cd.id();
             var current = (i < container.getComponentCount()) ? container.getComponent(i) : null;
-            if (current != entry.comp()) {
-                container.add(entry.comp(), i); // inserts or moves in-place
+            if (current != comp) {
+                container.add(comp, i); // inserts or moves in-place
             }
         }
         // Trim extras (if any)

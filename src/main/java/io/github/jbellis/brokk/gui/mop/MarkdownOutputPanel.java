@@ -639,7 +639,7 @@ public class MarkdownOutputPanel extends JPanel implements Scrollable, ThemeAwar
      * @return The selected text, or an empty string if no text is selected.
      */
     public String getSelectedText() {
-        return SwingUtil.runOnEdt(() -> {
+        var result = SwingUtil.runOnEdt(() -> {
             var sb = new StringBuilder();
             // Iterate over uiComponents within bubbles
             for (var bubble : bubbles) {
@@ -649,6 +649,7 @@ public class MarkdownOutputPanel extends JPanel implements Scrollable, ThemeAwar
             }
             return sb.toString();
         }, "");
+        return result == null ? "" : result;
     }
 
     /**

@@ -362,7 +362,7 @@ public class EditBlock {
     /**
      * If the search/replace has lines of "..." as placeholders, do naive partial replacements.
      */
-    public static String tryDotdotdots(String whole, String target, String replace) throws NoMatchException {
+    public static @Nullable String tryDotdotdots(String whole, String target, String replace) throws NoMatchException {
         // If there's no "..." in target or whole, skip
         if (!target.contains("...") && !whole.contains("...")) {
             return null;
@@ -517,6 +517,9 @@ public class EditBlock {
     }
 
     private static String[] removeLeadingTrailingEmptyLines(String[] targetLines) {
+        if (targetLines == null || targetLines.length == 0) {
+            return new String[0];
+        }
         int pStart = 0;
         while (pStart < targetLines.length && targetLines[pStart].trim().isEmpty()) {
             pStart++;
@@ -526,7 +529,7 @@ public class EditBlock {
         while (pEnd > pStart && targetLines[pEnd - 1].trim().isEmpty()) {
             pEnd--;
         }
-        return Arrays.copyOfRange(targetLines, pStart, pEnd);
+        return pStart < pEnd ? Arrays.copyOfRange(targetLines, pStart, pEnd) : new String[0];
     }
 
     /**
