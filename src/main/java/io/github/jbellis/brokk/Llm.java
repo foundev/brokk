@@ -143,6 +143,8 @@ public class Llm {
                     r.run();
                 }
             } catch (RuntimeException e) {
+                // litellm is fucking us over again, try to recover
+                logger.error(e);
                 errorRef.set(e);
                 if (latch.getCount() > 0) {
                     latch.countDown(); // Ensure we release the lock if an exception occurs
@@ -254,10 +256,12 @@ public class Llm {
     private static @NotNull String formatTokensUsage(ChatResponse response) {
         var tu = (OpenAiTokenUsage) response.tokenUsage();
         var template = "token usage: %,d input (%s cached), %,d output (%s reasoning)";
+        var inputDetails = tu.inputTokensDetails();
+        var outputDetails = tu.outputTokensDetails();
         return template.formatted(tu.inputTokenCount(),
-                                  (tu.inputTokensDetails() == null) ? "?" : "%,d".formatted(tu.inputTokensDetails().cachedTokens()),
+                                  (inputDetails == null || inputDetails.cachedTokens() == null) ? "?" : "%,d".formatted(inputDetails.cachedTokens()),
                                   tu.outputTokenCount(),
-                                  (tu.outputTokensDetails() == null) ? "?" : "%,d".formatted(tu.outputTokensDetails().reasoningTokens()));
+                                  (outputDetails == null || outputDetails.reasoningTokens() == null) ? "?" : "%,d".formatted(outputDetails.reasoningTokens()));
     }
 
     /**
