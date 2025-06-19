@@ -66,7 +66,7 @@ public class CodeAgent {
         var llmResponse = streamingResult.chatResponse();
         var llmError = streamingResult.error();
 
-        boolean hasUsableContent = llmResponse != null && !Messages.getText(llmResponse.aiMessage()).isBlank();
+        boolean hasUsableContent = llmError != null && llmResponse != null && !Messages.getText(llmResponse.aiMessage()).isBlank();
         if (!hasUsableContent) {
             String message;
             TaskResult.StopDetails stopDetails;
