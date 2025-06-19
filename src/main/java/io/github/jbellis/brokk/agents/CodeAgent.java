@@ -74,7 +74,7 @@ public class CodeAgent {
                 message = "LLM returned an error even after retries: " + llmError.getMessage() + ". Ending task";
                 stopDetails = new TaskResult.StopDetails(TaskResult.StopReason.LLM_ERROR, llmError.getMessage());
             } else {
-                message = "Empty LLM response even after retries. Ending task";
+                message = "Empty LLM response even after retries. Ending task " + llmResponse;
                 stopDetails = new TaskResult.StopDetails(TaskResult.StopReason.EMPTY_RESPONSE);
             }
             io.toolError(message);
