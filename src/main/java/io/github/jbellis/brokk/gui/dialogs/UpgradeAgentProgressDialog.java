@@ -180,7 +180,6 @@ public class UpgradeAgentProgressDialog extends JDialog {
                                                                 %s
                                                                 </per_file_command_output>
                                                                 """.stripIndent().formatted(finalCommand, output);
-                                            dialogConsoleIO.systemOutput("Per-file command executed successfully. Output:\n" + output);
                                         } catch (Environment.SubprocessException ex) {
                                             logger.warn("Per-file command failed for {}: {}", file, finalCommand, ex);
                                             commandOutputText = """
@@ -195,8 +194,7 @@ public class UpgradeAgentProgressDialog extends JDialog {
                                         readOnlyMessages.add(new UserMessage(commandOutputText));
                                     } catch (Exception e) { // Catches errors in Mustache compilation or other setup
                                         logger.error("Error preparing or executing per-file command for {}", file, e);
-                                        String errorForProgress = "Error with per-file command infrastructure: " + e.getMessage();
-                                        errorMessage = errorForProgress;
+                                        errorMessage = "Error with per-file command infrastructure: " + e.getMessage();
                                         dialogConsoleIO.toolError("System error during per-file command setup: " + e.getMessage(), "Command Setup Error");
 
                                         String errorMsgForLlm = """

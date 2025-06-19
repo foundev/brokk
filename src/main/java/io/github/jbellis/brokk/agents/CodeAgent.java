@@ -66,6 +66,8 @@ public class CodeAgent {
         var llmResponse = streamingResult.chatResponse();
         var llmError = streamingResult.error();
 
+        // ????? is this causing problems
+        // it looks like a valid response is getting llmError set to non-null
         boolean hasUsableContent = llmError != null && llmResponse != null && !Messages.getText(llmResponse.aiMessage()).isBlank();
         if (!hasUsableContent) {
             String message;

@@ -1135,8 +1135,12 @@ public class Llm {
         }
 
         public StreamingResult {
-            // Must have either a chatResponse or an error
+            // Must have a chatResponse and/or an error
             assert error != null || chatResponse != null;
+            // Exactly one of {originalReponse, error} can be non-null
+            if ((originalResponse == null) == (error == null)) {
+                throw new AssertionError();
+            }
         }
 
         public String formatted() {
