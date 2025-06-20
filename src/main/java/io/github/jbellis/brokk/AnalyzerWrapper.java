@@ -38,7 +38,7 @@ public class AnalyzerWrapper implements AutoCloseable {
     private volatile boolean paused = false;
 
     private volatile Future<IAnalyzer> future;
-    private volatile IAnalyzer currentAnalyzer = null;
+    private volatile @Nullable IAnalyzer currentAnalyzer = null;
     private volatile boolean rebuildInProgress = false;
     private volatile boolean externalRebuildRequested = false;
     private volatile boolean rebuildPending = false;
@@ -403,7 +403,7 @@ public class AnalyzerWrapper implements AutoCloseable {
     }
 
     /** Load a cached analyzer for a single language, returning both the analyzer and whether it needs rebuilding. */
-    private CachedAnalyzerResult loadSingleCachedAnalyzerForLanguage(Language lang, Path analyzerPath) {
+    private CachedAnalyzerResult loadSingleCachedAnalyzerForLanguage(Language lang, @Nullable Path analyzerPath) {
         if (analyzerPath == null || !Files.exists(analyzerPath)) {
             return new CachedAnalyzerResult(null, false);
         }
@@ -703,6 +703,6 @@ public class AnalyzerWrapper implements AutoCloseable {
     private record FileChangeEvent(EventType type, Path path) {
     }
     
-    private record CachedAnalyzerResult(IAnalyzer analyzer, boolean needsRebuild) {
+    private record CachedAnalyzerResult(@Nullable IAnalyzer analyzer, boolean needsRebuild) {
     }
 }
