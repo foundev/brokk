@@ -51,6 +51,9 @@ public final class TextNodeMarkerCustomizer implements HtmlCustomizer {
      */
     private static final AtomicInteger ID_GEN =
             new AtomicInteger(1);
+    
+    // Unique ID for this customizer type
+    private static final int CUSTOMIZER_ID = 1002;
 
     /**
      * @param term          the term to highlight (must not be empty)
@@ -218,6 +221,11 @@ public final class TextNodeMarkerCustomizer implements HtmlCustomizer {
             ref = n;
         }
         textNode.remove();
+    }
+    
+    @Override
+    public int getCustomizerId() {
+        return CUSTOMIZER_ID;
     }
 
 }

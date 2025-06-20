@@ -717,7 +717,7 @@ public class MarkdownSearchableComponent extends BaseSearchableComponent {
      * This ensures symbol badges are visible even before any search is performed.
      */
     private void applySymbolBadgeCustomizer() {
-        var symbolBadgeCustomizer = new io.github.jbellis.brokk.gui.mop.stream.SymbolBadgeCustomizer(contextManager);
+        var symbolBadgeCustomizer = io.github.jbellis.brokk.gui.mop.stream.SymbolBadgeCustomizer.create(contextManager);
         
         for (MarkdownOutputPanel panel : panels) {
             var existingCustomizer = panel.getHtmlCustomizer();

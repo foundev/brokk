@@ -88,7 +88,7 @@ public class SymbolBadgeCustomizerTest {
     private Element apply(String html) {
         Document doc = Jsoup.parse(html);
         Element body  = doc.body();
-        new SymbolBadgeCustomizer(new MockContextManager()).customize(body);
+        SymbolBadgeCustomizer.create(new MockContextManager()).customize(body);
         return body;
     }
 
@@ -114,5 +114,27 @@ public class SymbolBadgeCustomizerTest {
         var body = apply("<p>Call <code>Foo.bar()</code> now</p>");
         assertEquals(1, body.select("code + span.badge-symbol").size(),
                      "Inline code symbol should be followed by a badge");
+    }
+    
+    @Test
+    public void testFactoryReturnsDefaultWhenAnalyzerWrapperIsNull() {
+        // Create a mock context manager that returns null for analyzer wrapper
+        var mockContextManager = new IContextManager() {
+            @Override
+            public AnalyzerWrapper getAnalyzerWrapper() {
+                return null; // Simulate uninitialized state
+            }
+        };
+        
+        var customizer = SymbolBadgeCustomizer.create(mockContextManager);
+        assertEquals(HtmlCustomizer.DEFAULT, customizer, 
+                     "Should return DEFAULT customizer when analyzer wrapper is null");
+    }
+    
+    @Test
+    public void testFactoryReturnsDefaultWhenContextManagerIsNull() {
+        var customizer = SymbolBadgeCustomizer.create(null);
+        assertEquals(HtmlCustomizer.DEFAULT, customizer, 
+                     "Should return DEFAULT customizer when context manager is null");
     }
 }

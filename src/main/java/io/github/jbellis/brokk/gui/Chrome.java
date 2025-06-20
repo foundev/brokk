@@ -1435,7 +1435,9 @@ public class Chrome implements AutoCloseable, IConsoleIO, IContextManager.Contex
      */
     @Override
     public void disableHistoryPanel() {
-        historyOutputPanel.disableHistory();
+        if (historyOutputPanel != null) {
+            historyOutputPanel.disableHistory();
+        }
     }
 
     /**
@@ -1443,7 +1445,9 @@ public class Chrome implements AutoCloseable, IConsoleIO, IContextManager.Contex
      */
     @Override
     public void enableHistoryPanel() {
-        historyOutputPanel.enableHistory();
+        if (historyOutputPanel != null) {
+            historyOutputPanel.enableHistory();
+        }
     }
 
     /**
@@ -1455,7 +1459,9 @@ public class Chrome implements AutoCloseable, IConsoleIO, IContextManager.Contex
     public void blockLlmOutput(boolean blocked) {
         // Ensure that prev setText calls are processed before blocking => we need the invokeLater
         SwingUtilities.invokeLater(() -> {
-            historyOutputPanel.setMarkdownOutputPanelBlocking(blocked);
+            if (historyOutputPanel != null) {
+                historyOutputPanel.setMarkdownOutputPanelBlocking(blocked);
+            }
         });
     }
 

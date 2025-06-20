@@ -3,48 +3,69 @@ package io.github.jbellis.brokk.gui.mop.stream;
 import org.jsoup.nodes.Element;
 
 import java.util.Arrays;
+import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Set;
+import java.util.stream.Collectors;
 
 /**
  * Composite implementation of HtmlCustomizer that applies multiple customizers in sequence.
  * This allows combining different HTML customization behaviors, such as symbol badges
  * and search highlighting, without conflicts.
+ * 
+ * Automatically deduplicates customizers based on their IDs to prevent redundant processing.
  */
 public class CompositeHtmlCustomizer implements HtmlCustomizer {
     private final List<HtmlCustomizer> customizers;
+    private static final int CUSTOMIZER_ID = 1000; // Reserved ID for composite customizer
 
     /**
      * Creates a composite customizer with the given customizers.
-     * Customizers are applied in the order provided.
+     * Customizers are applied in the order provided, with duplicates automatically removed.
      *
      * @param customizers the customizers to apply in sequence
      */
     public CompositeHtmlCustomizer(HtmlCustomizer... customizers) {
-        this.customizers = Arrays.asList(customizers);
+        this.customizers = deduplicateCustomizers(Arrays.asList(customizers));
     }
 
     /**
      * Creates a composite customizer with the given list of customizers.
-     * Customizers are applied in the order provided.
+     * Customizers are applied in the order provided, with duplicates automatically removed.
      *
      * @param customizers the customizers to apply in sequence
      */
     public CompositeHtmlCustomizer(List<HtmlCustomizer> customizers) {
-        this.customizers = List.copyOf(customizers);
+        this.customizers = deduplicateCustomizers(customizers);
     }
 
     @Override
     public void customize(Element root) {
         for (HtmlCustomizer customizer : customizers) {
             if (customizer != null) {
-                System.out.println("call " + customizer.getClass().getSimpleName() + ".customize()" + " on " + root);
-                try {
-                    customizer.customize(root);
-                } catch (Exception e) {
-                    System.out.println(e.getMessage());
-                }
+                customizer.customize(root);
             }
         }
+    }
+    
+    @Override
+    public int getCustomizerId() {
+        return CUSTOMIZER_ID;
+    }
+    
+    /**
+     * Removes duplicate customizers based on their IDs while preserving order.
+     * The first occurrence of each customizer ID is kept.
+     */
+    private static List<HtmlCustomizer> deduplicateCustomizers(List<HtmlCustomizer> input) {
+        if (input == null || input.isEmpty()) {
+            return List.of();
+        }
+        
+        Set<Integer> seenIds = new LinkedHashSet<>();
+        return input.stream()
+                .filter(customizer -> customizer != null && seenIds.add(customizer.getCustomizerId()))
+                .collect(Collectors.toList());
     }
 
     /**

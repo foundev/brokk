@@ -582,8 +582,7 @@ public class HistoryOutputPanel extends JPanel {
         llmStreamArea = new MarkdownOutputPanel();
         
         // Configure symbol badge customizer
-        System.out.println("-------");
-        var symbolBadgeCustomizer = new SymbolBadgeCustomizer(contextManager);
+        var symbolBadgeCustomizer = SymbolBadgeCustomizer.create(contextManager);
         llmStreamArea.setHtmlCustomizer(new CompositeHtmlCustomizer(symbolBadgeCustomizer));
 
         // Wrap it in a scroll pane so it can scroll if content is large
@@ -830,9 +829,7 @@ public class HistoryOutputPanel extends JPanel {
             outputPanel = new MarkdownOutputPanel();
             
             // Configure symbol badge customizer
-            var symbolBadgeCustomizer = new SymbolBadgeCustomizer(parentPanel.contextManager);
-
-            System.out.println(")))cgcgcg)cgcggc");
+            var symbolBadgeCustomizer = SymbolBadgeCustomizer.create(parentPanel.contextManager);
             outputPanel.setHtmlCustomizer(new CompositeHtmlCustomizer(symbolBadgeCustomizer));
             
             outputPanel.updateTheme(isDark);
