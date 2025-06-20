@@ -1910,7 +1910,7 @@ public class WorkspacePanel extends JPanel {
                 }
                 
                 // Create notification text that supports wrapping
-                JTextArea notificationText = new JTextArea("Rebuilding Code Intelligence, Workspace will automatically update when complete");
+                JTextArea notificationText = new JTextArea("Rebuilding Code Intelligence. Workspace will automatically update");
                 notificationText.setWrapStyleWord(true);
                 notificationText.setLineWrap(true);
                 notificationText.setEditable(false);
