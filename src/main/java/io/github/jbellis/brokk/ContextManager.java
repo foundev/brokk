@@ -1985,16 +1985,27 @@ public class ContextManager implements IContextManager, AutoCloseable {
             logger.debug("Switched to session: {} ({})", sessionName, sessionId);
 
             ContextHistory loadedCh = project.loadHistory(currentSessionId, this);
-            if (loadedCh.getHistory().isEmpty()) {
+
+            if (loadedCh != null) {
+                final ContextHistory nnLoadedCh = loadedCh; // Introduce nnLoadedCh for the non-null scope
+                if (nnLoadedCh.getHistory().isEmpty()) {
+                    // Case: loadedCh exists but its history is empty
+                    liveContext = new Context(this, "Welcome to session: " + sessionName);
+                    contextHistory.setInitialContext(liveContext.freezeAndCleanup().frozenContext());
+                    project.saveHistory(contextHistory, currentSessionId);
+                } else {
+                    // Case: loadedCh exists and has history
+                    contextHistory.setInitialContext(nnLoadedCh.getHistory().getFirst());
+                    for (int i = 1; i < nnLoadedCh.getHistory().size(); i++) {
+                        contextHistory.addFrozenContextAndClearRedo(nnLoadedCh.getHistory().get(i));
+                    }
+                    liveContext = Context.unfreeze(topContext());
+                }
+            } else {
+                // Case: loadedCh is null
                 liveContext = new Context(this, "Welcome to session: " + sessionName);
                 contextHistory.setInitialContext(liveContext.freezeAndCleanup().frozenContext());
-                project.saveHistory(contextHistory, currentSessionId); // Save initial state if it was empty
-            } else {
-                contextHistory.setInitialContext(loadedCh.getHistory().getFirst());
-                for (int i = 1; i < loadedCh.getHistory().size(); i++) {
-                    contextHistory.addFrozenContextAndClearRedo(loadedCh.getHistory().get(i));
-                }
-                liveContext = Context.unfreeze(topContext());
+                project.saveHistory(contextHistory, currentSessionId);
             }
             notifyContextListeners(topContext());
             io.updateContextHistoryTable(topContext());
@@ -2081,12 +2092,13 @@ public class ContextManager implements IContextManager, AutoCloseable {
 
             logger.info("Copied session {} ({}) to {} ({})", originalSessionName, originalSessionId, copiedSessionInfo.name(), copiedSessionInfo.id());
             var loadedCh = project.loadHistory(copiedSessionInfo.id(), this);
-            assert !loadedCh.getHistory().isEmpty();
-            contextHistory.setInitialContext(loadedCh.getHistory().getFirst());
-            for (int i = 1; i < loadedCh.getHistory().size(); i++) {
-                contextHistory.addFrozenContextAndClearRedo(loadedCh.getHistory().get(i));
-            }
-            liveContext = Context.unfreeze(topContext());
+            assert loadedCh != null && !loadedCh.getHistory().isEmpty() : "Copied session history should not be null or empty";
+            final ContextHistory nnLoadedCh = requireNonNull(loadedCh, "Copied session history (loadedCh) should not be null after assertion");
+            contextHistory.setInitialContext(nnLoadedCh.getHistory().getFirst());
+                    for (int i = 1; i < nnLoadedCh.getHistory().size(); i++) {
+                        contextHistory.addFrozenContextAndClearRedo(nnLoadedCh.getHistory().get(i));
+                    }
+                    liveContext = Context.unfreeze(topContext());
             updateActiveSession(copiedSessionInfo.id());
 
             notifyContextListeners(topContext());

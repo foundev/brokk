@@ -974,16 +974,16 @@ public final class Service {
 
             // Supported formats may depend on the specific model/proxy endpoint
             return switch (extension) {
-                case "flac" -> MediaType.parse("audio/flac");
-                case "mp3" -> MediaType.parse("audio/mpeg");
-                case "mp4", "m4a" -> MediaType.parse("audio/mp4");
-                case "mpeg", "mpga" -> MediaType.parse("audio/mpeg");
-                case "oga", "ogg" -> MediaType.parse("audio/ogg");
-                case "wav" -> MediaType.parse("audio/wav");
-                case "webm" -> MediaType.parse("audio/webm");
+                case "flac" -> MediaType.get("audio/flac");
+                case "mp3" -> MediaType.get("audio/mpeg");
+                case "mp4", "m4a" -> MediaType.get("audio/mp4");
+                case "mpeg", "mpga" -> MediaType.get("audio/mpeg");
+                case "oga", "ogg" -> MediaType.get("audio/ogg");
+                case "wav" -> MediaType.get("audio/wav");
+                case "webm" -> MediaType.get("audio/webm");
                 default -> {
-                    logger.warn("Unsupported audio extension '{}', attempting audio/mpeg", extension);
-                    yield MediaType.parse("audio/mpeg"); // Default fallback
+                    logger.warn("Unsupported audio extension '{}', attempting application/octet-stream", extension);
+                    yield MediaType.get("application/octet-stream"); // Guaranteed non-null fallback
                 }
             };
         }

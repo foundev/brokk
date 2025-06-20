@@ -16,6 +16,7 @@ import java.util.concurrent.ExecutionException;
 import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
+import static java.util.Objects.requireNonNull;
 import java.util.stream.Collectors;
 
 public class AnalyzerWrapper implements AutoCloseable {
@@ -145,7 +146,7 @@ public class AnalyzerWrapper implements AutoCloseable {
         // 1) Possibly refresh Git
         boolean needsGitRefresh = false;
         if (this.gitRepoRoot != null) {
-            Path actualGitMetaDir = this.gitRepoRoot.resolve(".git");
+            Path actualGitMetaDir = this.gitRepoRoot.resolve(".git"); // gitRepoRoot is checked non-null
             needsGitRefresh = batch.stream().anyMatch(event ->
                 event.path.startsWith(actualGitMetaDir)
                     && (event.type == EventType.CREATE
@@ -155,7 +156,8 @@ public class AnalyzerWrapper implements AutoCloseable {
         }
 
         if (needsGitRefresh) {
-            logger.debug("Changes in git metadata directory ({}) detected", this.gitRepoRoot.resolve(".git"));
+            // this.gitRepoRoot is already confirmed non-null from the block above
+            logger.debug("Changes in git metadata directory ({}) detected", requireNonNull(this.gitRepoRoot).resolve(".git"));
             if (listener != null) {
                 listener.onRepoChange();
                 listener.onTrackedFileChange(); // not 100% sure this is necessary

@@ -122,12 +122,20 @@ public class SearchAgent {
             } catch (ExecutionException e) {
                 Throwable cause = castNonNull(e.getCause());
                 logger.error("Error waiting for summary for tool {}: {}", step.request.name(), cause.getMessage(), cause);
-                step.learnings = step.execResult.resultText();
+                if (step.execResult != null) {
+                    step.learnings = step.execResult.resultText();
+                } else {
+                    step.learnings = "Error summarizing: Tool execution result was null.";
+                }
             } catch (InterruptedException e) {
                 Thread.currentThread().interrupt();
                 logger.warn("Interrupted while waiting for summary for tool {}", step.request.name());
                 // Store raw result if interrupted
-                step.learnings = requireNonNull(step.execResult).resultText(); // Use text from execResult
+                if (step.execResult != null) {
+                    step.learnings = step.execResult.resultText(); // Use text from execResult
+                } else {
+                    step.learnings = "Summarization interrupted: Tool execution result was null.";
+                }
             } finally {
                 step.summarizeFuture = null; // Clear the future once handled
             }
@@ -324,8 +332,9 @@ public class SearchAgent {
             if (firstToolName.equals("answerSearch")) {
                 logger.debug("Search complete");
                 assert results.size() == 1 : "Answer action should be solitary";
+                ToolExecutionResult execResult = requireNonNull(firstResult.execResult, "execResult should be non-null for answerSearch");
                 // Validate explanation before creating fragment
-                String explanation = firstResult.execResult.resultText();
+                String explanation = execResult.resultText();
                 if (explanation == null || explanation.isBlank() || explanation.split("\\s").length < 5) {
                     logger.error("LLM provided blank explanation for 'answer' tool.");
                     return errorResult(new TaskResult.StopDetails(TaskResult.StopReason.SEARCH_INVALID_ANSWER));
@@ -334,8 +343,9 @@ public class SearchAgent {
             } else if (firstToolName.equals("abortSearch")) {
                 logger.debug("Search aborted by agent");
                 assert results.size() == 1 : "Abort action should be solitary";
+                ToolExecutionResult execResult = requireNonNull(firstResult.execResult, "execResult should be non-null for abortSearch");
                 // Validate explanation before creating fragment
-                String explanation = firstResult.execResult.resultText();
+                String explanation = execResult.resultText();
                 if (explanation == null || explanation.isBlank() || explanation.equals("Success")) {
                     explanation = "No explanation provided by agent.";
                     logger.warn("LLM provided blank explanation for 'abort' tool. Using default.");
@@ -571,8 +581,8 @@ public class SearchAgent {
                     if (symbols != null) {
                         symbols.stream()
                                 .map(this::extractClassNameFromSymbol)
-                                .filter(Optional::isPresent)
-                                .forEach(cu -> trackedClassNames.add(cu.get()));
+                                .flatMap(Optional::stream) // Use flatMap to handle Optional and get value
+                                .forEach(trackedClassNames::add);
                     }
                 }
             }
@@ -858,7 +868,9 @@ public class SearchAgent {
             var entry = new ToolHistoryEntry(request, result);
 
             handlePostExecution(entry);
-            handleToolExecutionResult(entry.execResult); // Pass execResult from entry
+            if (entry.execResult != null) { // Guard the call
+                handleToolExecutionResult(entry.execResult);
+            }
             history.add(entry);
         }
 
@@ -1069,9 +1081,11 @@ public class SearchAgent {
      * Handles agent-specific state updates and logic after a tool executes.
      * This is where the "composition" happens.
      */
-    private void handleToolExecutionResult(ToolExecutionResult execResult) {
-        if (execResult.status() == ToolExecutionResult.Status.FAILURE) {
-            logger.warn("Tool execution failed or returned error: {} - {}", execResult.toolName(), execResult.resultText());
+    private void handleToolExecutionResult(@Nullable ToolExecutionResult execResult) {
+        if (execResult == null || execResult.status() == ToolExecutionResult.Status.FAILURE) {
+            String toolName = execResult == null ? "Unknown tool (null execResult)" : execResult.toolName();
+            String resultText = execResult == null ? "N/A (null execResult)" : execResult.resultText();
+            logger.warn("Tool execution failed, returned error, or execResult was null: {} - {}", toolName, resultText);
             return;
         }
 
@@ -1143,7 +1157,7 @@ public class SearchAgent {
             var validNames = potentialNames.stream()
                     .map(this::extractClassNameFromSymbol)
                     .filter(Optional::isPresent)
-                    .map(Optional::get)
+                    .map(Optional::get) // Safe due to filter
                     .collect(Collectors.toSet());
             if (!validNames.isEmpty()) {
                 logger.debug("Tracking potential class names from result: {}", validNames);
@@ -1159,7 +1173,7 @@ public class SearchAgent {
      */
     private TaskResult createFinalFragment(ToolHistoryEntry finalStep) {
         var request = finalStep.request;
-        var execResult = finalStep.execResult;
+        var execResult = requireNonNull(finalStep.execResult, "execResult must not be null when creating final fragment from answerSearch");
         var explanationText = execResult.resultText();
 
         assert request.name().equals("answerSearch") : "createFinalFragment called with wrong tool: " + request.name();
@@ -1237,6 +1251,7 @@ public class SearchAgent {
         String getDisplayResult() {
             if (learnings != null) return "<learnings>\n%s\n</learnings>".formatted(learnings);
             if (compressedResult != null) return "<result>\n%s\n</result>".formatted(compressedResult);
+            if (execResult == null) return "<error>\nTool execution result was null.\n</error>";
             // Use resultText which holds success output or error message
             String resultKind = (execResult.status() == ToolExecutionResult.Status.SUCCESS) ? "result" : "error";
             return "<%s>\n%s\n</%s>".formatted(resultKind, execResult.resultText(), resultKind);

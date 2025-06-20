@@ -221,7 +221,8 @@ public class Llm {
             // If no partial text, just return null response
             var partialText = accumulatedTextBuilder.toString();
             if (partialText.isEmpty()) {
-                return new StreamingResult(null, error);
+                // Explicitly call canonical constructor
+                return new StreamingResult(null, null, error);
             }
 
             // Construct a ChatResponse from accumulated partial text
@@ -241,7 +242,8 @@ public class Llm {
         if (echo) {
             io.llmOutput("\n", ChatMessageType.AI);
         }
-        return new StreamingResult(response, null);
+        // Explicitly call canonical constructor
+        return new StreamingResult(response, response, null);
     }
 
     private static String formatTokensUsage(ChatResponse response) {
