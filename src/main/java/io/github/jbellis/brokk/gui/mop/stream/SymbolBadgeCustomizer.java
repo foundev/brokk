@@ -1,6 +1,6 @@
 package io.github.jbellis.brokk.gui.mop.stream;
 
-import io.github.jbellis.brokk.ContextManager;
+import io.github.jbellis.brokk.IContextManager;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 import org.jsoup.nodes.Element;
@@ -21,10 +21,10 @@ public final class SymbolBadgeCustomizer implements HtmlCustomizer {
     private static final Logger logger = LogManager.getLogger(SymbolBadgeCustomizer.class);
     private static final Pattern SYMBOL_PATTERN =
             Pattern.compile("[A-Z][A-Za-z0-9_]*(?:\\.[A-Z][A-Za-z0-9_]*)*(?:\\.[a-z][A-Za-z0-9_]+\\(\\))?");
-    
-    private final ContextManager contextManager;
-    
-    public SymbolBadgeCustomizer(ContextManager contextManager) {
+
+    private final IContextManager contextManager;
+
+    public SymbolBadgeCustomizer(IContextManager contextManager) {
         this.contextManager = contextManager;
     }
 
@@ -33,13 +33,13 @@ public final class SymbolBadgeCustomizer implements HtmlCustomizer {
         if (root == null) {
             return;
         }
-        
+
         var analyzerWrapper = contextManager.getAnalyzerWrapper();
         if (!analyzerWrapper.isReady()) {
             logger.debug("[SymbolBadgeCustomizer] Analyzer not ready, skipping badge customization");
             return;
         }
-        
+
         var analyzer = analyzerWrapper.getNonBlocking();
         Elements anchors = root.select("a");
         int anchorsProcessed = 0;
@@ -117,22 +117,22 @@ public final class SymbolBadgeCustomizer implements HtmlCustomizer {
             logger.debug("[SymbolBadgeCustomizer] processed {} anchor(s), injected {} badges (anchors+code)", anchorsProcessed, badgesInjected);
         }
     }
-    
+
     private Element createBadgeForSymbol(io.github.jbellis.brokk.analyzer.CodeUnit symbol) {
         String badgeText = getBadgeText(symbol);
         String badgeClass = getBadgeClass(symbol);
-        
+
         return new Element("span")
                 .addClass("badge")
                 .addClass("badge-symbol")
                 .addClass(badgeClass)
                 .text(badgeText)
-                .attr("title", String.format("%s %s (%s)", 
+                .attr("title", String.format("%s %s (%s)",
                       symbol.kind().name().toLowerCase(Locale.ROOT),
                       symbol.fqName(),
                       symbol.source().toString()));
     }
-    
+
     private String getBadgeText(io.github.jbellis.brokk.analyzer.CodeUnit symbol) {
         return switch (symbol.kind()) {
             case CLASS -> "C";
@@ -141,7 +141,7 @@ public final class SymbolBadgeCustomizer implements HtmlCustomizer {
             case MODULE -> "M";
         };
     }
-    
+
     private String getBadgeClass(io.github.jbellis.brokk.analyzer.CodeUnit symbol) {
         return "badge-" + symbol.kind().name().toLowerCase(Locale.ROOT);
     }

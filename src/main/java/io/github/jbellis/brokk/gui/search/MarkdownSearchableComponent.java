@@ -2,6 +2,7 @@ package io.github.jbellis.brokk.gui.search;
 
 import io.github.jbellis.brokk.difftool.ui.JMHighlightPainter;
 import io.github.jbellis.brokk.gui.mop.MarkdownOutputPanel;
+import io.github.jbellis.brokk.gui.mop.stream.CompositeHtmlCustomizer;
 import io.github.jbellis.brokk.gui.mop.stream.HtmlCustomizer;
 import io.github.jbellis.brokk.gui.mop.stream.IncrementalBlockRenderer;
 import io.github.jbellis.brokk.gui.mop.stream.TextNodeMarkerCustomizer;
@@ -17,6 +18,7 @@ import java.awt.*;
 import java.util.*;
 import java.util.List;
 import java.util.IdentityHashMap;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
@@ -38,6 +40,7 @@ public class MarkdownSearchableComponent extends BaseSearchableComponent {
 
     private final List<MarkdownOutputPanel> panels;
     private final MarkdownSearchDebugger debugger;
+    private final Map<MarkdownOutputPanel, HtmlCustomizer> originalCustomizers = new ConcurrentHashMap<>();
 
     private final List<SearchMatch> allMatches = new ArrayList<>();
     private int currentMatchIndex = -1;
@@ -142,6 +145,18 @@ public class MarkdownSearchableComponent extends BaseSearchableComponent {
 
         // Apply customizer to all panels for Markdown
         for (MarkdownOutputPanel panel : panels) {
+            // Store original customizer before applying search
+            originalCustomizers.put(panel, panel.getHtmlCustomizer());
+            
+            // Create composite customizer that includes both existing and search customizers
+            var existingCustomizer = panel.getHtmlCustomizer();
+            HtmlCustomizer compositeCustomizer;
+            if (existingCustomizer == HtmlCustomizer.DEFAULT) {
+                compositeCustomizer = searchCustomizer;
+            } else {
+                compositeCustomizer = new CompositeHtmlCustomizer(existingCustomizer, searchCustomizer);
+            }
+            
             Runnable processMarkdownSearchResults = () -> {
                 if (remainingMarkdownOperations.decrementAndGet() == 0) {
                     handleSearchComplete(); // All Markdown highlighting done, now consolidate
@@ -150,7 +165,7 @@ public class MarkdownSearchableComponent extends BaseSearchableComponent {
 
             // No render listener needed for initial scroll
             try {
-                panel.setHtmlCustomizerWithCallback(searchCustomizer, processMarkdownSearchResults);
+                panel.setHtmlCustomizerWithCallback(compositeCustomizer, processMarkdownSearchResults);
             } catch (Exception e) {
                 logger.error("Error applying search customizer to panel for Markdown", e);
                 notifySearchError("Search failed during Markdown highlighting: " + e.getMessage());
@@ -164,9 +179,14 @@ public class MarkdownSearchableComponent extends BaseSearchableComponent {
 
     @Override
     public void clearHighlights() {
-        // Clear Markdown highlights
+        // Clear Markdown highlights and restore original customizers
         for (MarkdownOutputPanel panel : panels) {
-            panel.setHtmlCustomizer(HtmlCustomizer.DEFAULT);
+            var originalCustomizer = originalCustomizers.remove(panel);
+            if (originalCustomizer != null) {
+                panel.setHtmlCustomizer(originalCustomizer);
+            } else {
+                panel.setHtmlCustomizer(HtmlCustomizer.DEFAULT);
+            }
         }
         // Clear code highlights
         for (RTextAreaSearchableComponent codeComp : codeSearchComponents) {

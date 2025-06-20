@@ -578,6 +578,10 @@ public class HistoryOutputPanel extends JPanel {
      */
     private JScrollPane buildLLMStreamScrollPane() {
         llmStreamArea = new MarkdownOutputPanel();
+        
+        // Configure symbol badge customizer
+        var symbolBadgeCustomizer = new io.github.jbellis.brokk.gui.mop.stream.SymbolBadgeCustomizer(contextManager);
+        llmStreamArea.setHtmlCustomizer(new io.github.jbellis.brokk.gui.mop.stream.CompositeHtmlCustomizer(symbolBadgeCustomizer));
 
         // Wrap it in a scroll pane so it can scroll if content is large
         var jsp = new JScrollPane(llmStreamArea);
@@ -821,6 +825,11 @@ public class HistoryOutputPanel extends JPanel {
 
             // Create markdown panel with the text
             outputPanel = new MarkdownOutputPanel();
+            
+            // Configure symbol badge customizer
+            var symbolBadgeCustomizer = new io.github.jbellis.brokk.gui.mop.stream.SymbolBadgeCustomizer(parentPanel.contextManager);
+            outputPanel.setHtmlCustomizer(new io.github.jbellis.brokk.gui.mop.stream.CompositeHtmlCustomizer(symbolBadgeCustomizer));
+            
             outputPanel.updateTheme(isDark);
             outputPanel.setText(output);
             

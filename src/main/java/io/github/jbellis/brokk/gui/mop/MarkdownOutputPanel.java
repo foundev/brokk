@@ -417,6 +417,13 @@ public class MarkdownOutputPanel extends JPanel implements Scrollable, ThemeAwar
     }
 
     /**
+     * Gets the current HtmlCustomizer.
+     */
+    public HtmlCustomizer getHtmlCustomizer() {
+        return htmlCustomizer;
+    }
+
+    /**
      * Sets or clears a global HtmlCustomizer for all renderers.
      */
     public void setHtmlCustomizer(HtmlCustomizer customizer) {

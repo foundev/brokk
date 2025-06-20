@@ -6,7 +6,7 @@ import io.github.jbellis.brokk.analyzer.CodeUnit;
 import io.github.jbellis.brokk.analyzer.CodeUnitType;
 import io.github.jbellis.brokk.analyzer.IAnalyzer;
 import io.github.jbellis.brokk.analyzer.ProjectFile;
-import io.github.jbellis.brokk.testutil.TestContextManager;
+import io.github.jbellis.brokk.testutil.TestProject;
 import org.jsoup.Jsoup;
 import org.jsoup.nodes.Document;
 import org.jsoup.nodes.Element;
@@ -25,41 +25,51 @@ public class SymbolBadgeCustomizerTest {
     /**
      * Mock ContextManager that provides a ready analyzer for testing
      */
-    private static class MockContextManager extends TestContextManager {
+    private static class MockContextManager implements IContextManager {
         private final MockAnalyzerWrapper analyzerWrapper = new MockAnalyzerWrapper();
-        
-        public MockContextManager() {
-            super(Path.of("/tmp/test"));
-        }
-        
+
         @Override
         public AnalyzerWrapper getAnalyzerWrapper() {
             return analyzerWrapper;
         }
     }
-    
+
     /**
      * Mock AnalyzerWrapper that simulates a ready state
      */
     private static class MockAnalyzerWrapper extends AnalyzerWrapper {
         private final MockAnalyzer analyzer = new MockAnalyzer();
-        
+
         public MockAnalyzerWrapper() {
-            // We can pass null values since we're overriding the methods we need
-            super(null, null, null);
+            super(createTestProject(), createTaskRunner(), null);
         }
         
+        private static TestProject createTestProject() {
+            return new TestProject(Path.of("/tmp/test"), 
+                                 io.github.jbellis.brokk.analyzer.Language.JAVA);
+        }
+        
+        private static io.github.jbellis.brokk.ContextManager.TaskRunner createTaskRunner() {
+            return new io.github.jbellis.brokk.ContextManager.TaskRunner() {
+                @Override
+                public <T> java.util.concurrent.Future<T> submit(String taskDescription, java.util.concurrent.Callable<T> task) {
+                    // Return a completed future for testing
+                    return java.util.concurrent.CompletableFuture.completedFuture(null);
+                }
+            };
+        }
+
         @Override
         public boolean isReady() {
             return true;
         }
-        
+
         @Override
         public IAnalyzer getNonBlocking() {
             return analyzer;
         }
     }
-    
+
     /**
      * Mock analyzer that returns test symbols
      */
@@ -68,7 +78,7 @@ public class SymbolBadgeCustomizerTest {
         public Optional<CodeUnit> getDefinition(String fqName) {
             // Return a mock symbol for common test patterns
             if (fqName.matches(".*[A-Z].*")) { // Contains uppercase, likely a symbol
-                return Optional.of(CodeUnit.cls(new ProjectFile(Path.of("/tmp/test"), "mock.java"), 
+                return Optional.of(CodeUnit.cls(new ProjectFile(Path.of("/tmp/test"), "mock.java"),
                                                "", fqName));
             }
             return Optional.empty();
