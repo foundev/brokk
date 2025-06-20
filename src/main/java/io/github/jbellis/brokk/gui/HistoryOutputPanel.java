@@ -7,6 +7,8 @@ import io.github.jbellis.brokk.context.Context;
 import io.github.jbellis.brokk.context.ContextFragment;
 import io.github.jbellis.brokk.gui.dialogs.SessionsDialog;
 import io.github.jbellis.brokk.gui.mop.MarkdownOutputPanel;
+import io.github.jbellis.brokk.gui.mop.stream.CompositeHtmlCustomizer;
+import io.github.jbellis.brokk.gui.mop.stream.SymbolBadgeCustomizer;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 import org.jetbrains.annotations.Nullable;
@@ -580,8 +582,9 @@ public class HistoryOutputPanel extends JPanel {
         llmStreamArea = new MarkdownOutputPanel();
         
         // Configure symbol badge customizer
-        var symbolBadgeCustomizer = new io.github.jbellis.brokk.gui.mop.stream.SymbolBadgeCustomizer(contextManager);
-        llmStreamArea.setHtmlCustomizer(new io.github.jbellis.brokk.gui.mop.stream.CompositeHtmlCustomizer(symbolBadgeCustomizer));
+        System.out.println("-------");
+        var symbolBadgeCustomizer = new SymbolBadgeCustomizer(contextManager);
+        llmStreamArea.setHtmlCustomizer(new CompositeHtmlCustomizer(symbolBadgeCustomizer));
 
         // Wrap it in a scroll pane so it can scroll if content is large
         var jsp = new JScrollPane(llmStreamArea);
@@ -827,8 +830,10 @@ public class HistoryOutputPanel extends JPanel {
             outputPanel = new MarkdownOutputPanel();
             
             // Configure symbol badge customizer
-            var symbolBadgeCustomizer = new io.github.jbellis.brokk.gui.mop.stream.SymbolBadgeCustomizer(parentPanel.contextManager);
-            outputPanel.setHtmlCustomizer(new io.github.jbellis.brokk.gui.mop.stream.CompositeHtmlCustomizer(symbolBadgeCustomizer));
+            var symbolBadgeCustomizer = new SymbolBadgeCustomizer(parentPanel.contextManager);
+
+            System.out.println(")))cgcgcg)cgcggc");
+            outputPanel.setHtmlCustomizer(new CompositeHtmlCustomizer(symbolBadgeCustomizer));
             
             outputPanel.updateTheme(isDark);
             outputPanel.setText(output);
@@ -851,7 +856,7 @@ public class HistoryOutputPanel extends JPanel {
             }
             
             // Use shared utility method to create searchable content panel with optional toolbar
-            JPanel contentPanel = Chrome.createSearchableContentPanel(List.of(outputPanel), toolbarPanel);
+            JPanel contentPanel = Chrome.createSearchableContentPanel(List.of(outputPanel), toolbarPanel, parentPanel.contextManager);
 
             // Add the content panel to the frame
             add(contentPanel);

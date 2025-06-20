@@ -41,6 +41,7 @@ public class MarkdownSearchableComponent extends BaseSearchableComponent {
     private final List<MarkdownOutputPanel> panels;
     private final MarkdownSearchDebugger debugger;
     private final Map<MarkdownOutputPanel, HtmlCustomizer> originalCustomizers = new ConcurrentHashMap<>();
+    private final io.github.jbellis.brokk.IContextManager contextManager;
 
     private final List<SearchMatch> allMatches = new ArrayList<>();
     private int currentMatchIndex = -1;
@@ -48,16 +49,22 @@ public class MarkdownSearchableComponent extends BaseSearchableComponent {
     private final List<RTextAreaSearchableComponent> codeSearchComponents = new ArrayList<>();
 
 
-    public MarkdownSearchableComponent(List<MarkdownOutputPanel> panels) {
+    public MarkdownSearchableComponent(List<MarkdownOutputPanel> panels, io.github.jbellis.brokk.IContextManager contextManager) {
         this.panels = panels;
+        this.contextManager = contextManager;
         this.debugger = new MarkdownSearchDebugger(DEBUG_SEARCH_COLLECTION);
+        
+        // Apply SymbolBadgeCustomizer immediately to all panels if contextManager is available
+        if (contextManager != null) {
+            applySymbolBadgeCustomizer();
+        }
     }
 
     /**
      * Creates an adapter for a single MarkdownOutputPanel.
      */
-    public static MarkdownSearchableComponent wrap(MarkdownOutputPanel panel) {
-        return new MarkdownSearchableComponent(List.of(panel));
+    public static MarkdownSearchableComponent wrap(MarkdownOutputPanel panel, io.github.jbellis.brokk.IContextManager contextManager) {
+        return new MarkdownSearchableComponent(List.of(panel), contextManager);
     }
 
     @Override
@@ -148,9 +155,11 @@ public class MarkdownSearchableComponent extends BaseSearchableComponent {
             // Store original customizer before applying search
             originalCustomizers.put(panel, panel.getHtmlCustomizer());
             
-            // Create composite customizer that includes both existing and search customizers
+            // Create composite customizer that adds search highlighting to existing customizers
+            // (SymbolBadgeCustomizer was already applied in constructor if contextManager available)
             var existingCustomizer = panel.getHtmlCustomizer();
             HtmlCustomizer compositeCustomizer;
+            
             if (existingCustomizer == HtmlCustomizer.DEFAULT) {
                 compositeCustomizer = searchCustomizer;
             } else {
@@ -701,5 +710,26 @@ public class MarkdownSearchableComponent extends BaseSearchableComponent {
             }
         }
         return null;
+    }
+    
+    /**
+     * Applies SymbolBadgeCustomizer to all panels immediately upon construction.
+     * This ensures symbol badges are visible even before any search is performed.
+     */
+    private void applySymbolBadgeCustomizer() {
+        var symbolBadgeCustomizer = new io.github.jbellis.brokk.gui.mop.stream.SymbolBadgeCustomizer(contextManager);
+        
+        for (MarkdownOutputPanel panel : panels) {
+            var existingCustomizer = panel.getHtmlCustomizer();
+            HtmlCustomizer newCustomizer;
+            
+            if (existingCustomizer == HtmlCustomizer.DEFAULT) {
+                newCustomizer = symbolBadgeCustomizer;
+            } else {
+                newCustomizer = new CompositeHtmlCustomizer(existingCustomizer, symbolBadgeCustomizer);
+            }
+            
+            panel.setHtmlCustomizer(newCustomizer);
+        }
     }
 }

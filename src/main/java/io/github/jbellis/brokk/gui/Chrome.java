@@ -660,9 +660,10 @@ public class Chrome implements AutoCloseable, IConsoleIO, IContextManager.Contex
      *
      * @param markdownPanels List of MarkdownOutputPanel instances to make searchable
      * @param toolbarPanel Optional panel to add to the right of the search bar
+     * @param contextManager Context manager for symbol badge customization
      * @return A JPanel containing the search bar, optional toolbar, and content
      */
-    public static JPanel createSearchableContentPanel(List<MarkdownOutputPanel> markdownPanels, @Nullable JPanel toolbarPanel) {
+    public static JPanel createSearchableContentPanel(List<MarkdownOutputPanel> markdownPanels, @Nullable JPanel toolbarPanel, IContextManager contextManager) {
         if (markdownPanels.isEmpty()) {
             return new JPanel(); // Return empty panel if no content
         }
@@ -696,7 +697,7 @@ public class Chrome implements AutoCloseable, IConsoleIO, IContextManager.Contex
         componentsWithChatBackground.add(contentPanel);
 
         // Create searchable component adapter and generic search bar
-        var searchableComponent = new MarkdownSearchableComponent(markdownPanels);
+        var searchableComponent = new MarkdownSearchableComponent(markdownPanels, contextManager);
         var searchBar = new GenericSearchBar(searchableComponent);
         componentsWithChatBackground.add(searchBar);
 
@@ -902,7 +903,8 @@ public class Chrome implements AutoCloseable, IConsoleIO, IContextManager.Contex
                 }
 
                 // Use shared utility method to create searchable content panel (without navigation for preview)
-                JPanel previewContentPanel = createSearchableContentPanel(markdownPanels, null);
+                System.out.println("\\\\\\\\\\\\\\    Creating searchable content panel for preview");
+                JPanel previewContentPanel = createSearchableContentPanel(markdownPanels, null, this.contextManager);
 
                 // When all panels are compacted, scroll to the top
                 CompletableFuture
