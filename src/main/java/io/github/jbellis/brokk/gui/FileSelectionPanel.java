@@ -88,6 +88,16 @@ public class FileSelectionPanel extends JPanel {
         autoCompletion.setAutoActivationEnabled(false);
         autoCompletion.setTriggerKey(KeyStroke.getKeyStroke(KeyEvent.VK_SPACE, InputEvent.CTRL_DOWN_MASK));
         autoCompletion.install(fileInputComponent);
+        
+        // Add logging for Ctrl+Space trigger
+        fileInputComponent.addKeyListener(new java.awt.event.KeyAdapter() {
+            @Override
+            public void keyPressed(java.awt.event.KeyEvent e) {
+                if (e.getKeyCode() == KeyEvent.VK_SPACE && e.isControlDown()) {
+                    System.out.println("FileSelectionPanel: Ctrl+Space file autocomplete triggered - text: '" + fileInputComponent.getText() + "'");
+                }
+            }
+        });
         AutoCompleteUtil.bindCtrlEnter(autoCompletion, fileInputComponent); // Ctrl+Enter on input might imply confirmation
 
         // 3. FileTree

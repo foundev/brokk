@@ -212,6 +212,16 @@ public class MultiFileSelectionDialog extends JDialog {
         classAutoCompletion.setAutoActivationEnabled(false);
         classAutoCompletion.setTriggerKey(KeyStroke.getKeyStroke(KeyEvent.VK_SPACE, InputEvent.CTRL_DOWN_MASK));
         classAutoCompletion.install(classInput);
+        
+        // Add logging for Ctrl+Space trigger
+        classInput.addKeyListener(new java.awt.event.KeyAdapter() {
+            @Override
+            public void keyPressed(java.awt.event.KeyEvent e) {
+                if (e.getKeyCode() == KeyEvent.VK_SPACE && e.isControlDown()) {
+                    System.out.println("MultiFileSelectionDialog: Ctrl+Space class autocomplete triggered - text: '" + classInput.getText() + "'");
+                }
+            }
+        });
         AutoCompleteUtil.bindCtrlEnter(classAutoCompletion, classInput);
         classInput.setToolTipText("Enter fully qualified class names (space-separated). Ctrl+Space for autocomplete. Enter/Ctrl+Enter to confirm.");
 
