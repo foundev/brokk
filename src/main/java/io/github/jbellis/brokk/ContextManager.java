@@ -287,7 +287,17 @@ public class ContextManager implements IContextManager, AutoCloseable {
             }
 
             @Override
+            public void beforeEachBuild() {
+                if (io instanceof Chrome chrome) {
+                    chrome.getContextPanel().showAnalyzerRebuildSpinner();
+                }
+            }
+
+            @Override
             public void afterEachBuild(boolean externalRebuildRequested) {
+                if (io instanceof Chrome chrome) {
+                    chrome.getContextPanel().hideAnalyzerRebuildSpinner();
+                }
                 // possible for analyzer build to finish before context load does
                 if (liveContext != null) {
                     var fr = liveContext.freezeAndCleanup();

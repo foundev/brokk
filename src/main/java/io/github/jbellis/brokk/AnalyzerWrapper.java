@@ -234,6 +234,10 @@ public class AnalyzerWrapper implements AutoCloseable {
             return currentAnalyzer;
         }
 
+        if (listener != null) {
+            listener.beforeEachBuild();
+        }
+
         BuildAgent.BuildDetails fetchedBuildDetails = project.awaitBuildDetails();
         if (fetchedBuildDetails.equals(BuildAgent.BuildDetails.EMPTY)) {
             logger.warn("Build details are empty or null. Analyzer functionality may be limited.");
