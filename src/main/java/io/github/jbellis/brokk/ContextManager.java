@@ -294,21 +294,27 @@ public class ContextManager implements IContextManager, AutoCloseable {
             }
 
             @Override
-            public void afterEachBuild(boolean externalRebuildRequested) {
+            public void afterEachBuild(boolean successful, boolean externalRebuildRequested) {
                 if (io instanceof Chrome chrome) {
                     chrome.getContextPanel().hideAnalyzerRebuildSpinner();
                 }
-                // possible for analyzer build to finish before context load does
-                if (liveContext != null) {
-                    var fr = liveContext.freezeAndCleanup();
-                    // we can't rely on pushContext's change detection because here we care about the contents and not the fragment identity
-                    if (!topContext().workspaceEquals(fr.frozenContext())) {
-                        pushContext(ctx -> fr.liveContext().withParsedOutput(null, "Code Intelligence changes"));
+                if (successful) {
+                    // possible for analyzer build to finish before context load does
+                    if (liveContext != null) {
+                        var fr = liveContext.freezeAndCleanup();
+                        // we can't rely on pushContext's change detection because here we care about the contents and not the fragment identity
+                        if (!topContext().workspaceEquals(fr.frozenContext())) {
+                            pushContext(ctx -> fr.liveContext().withParsedOutput(null, "Code Intelligence changes"));
+                        }
+                        io.updateWorkspace();
                     }
-                    io.updateWorkspace();
                 }
                 if (externalRebuildRequested && io instanceof Chrome chrome) {
-                    chrome.notifyActionComplete("Analyzer rebuild completed");
+                    if (successful) {
+                        chrome.notifyActionComplete("Analyzer rebuild completed");
+                    } else {
+                        chrome.notifyActionComplete("Analyzer rebuild failed");
+                    }
                 }
             }
         };

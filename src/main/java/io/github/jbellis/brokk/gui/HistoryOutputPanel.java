@@ -771,7 +771,7 @@ public class HistoryOutputPanel extends JPanel {
     }
 
     /**
-     * Sets the blocking state on the contained MarkdownOutputPanel.
+     * Sets the blocking state on the contained MarkdownOutputPanel .
      *
      * @param blocked true to prevent clear/reset, false otherwise.
      */
