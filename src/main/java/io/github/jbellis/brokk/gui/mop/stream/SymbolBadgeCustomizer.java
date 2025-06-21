@@ -8,6 +8,7 @@ import org.jsoup.select.Elements;
 
 import java.nio.file.Path;
 import java.util.Locale;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.regex.Pattern;
 
 /**
@@ -29,9 +30,12 @@ public final class SymbolBadgeCustomizer implements HtmlCustomizer {
 
     private static final String BADGE_TYPE_SYMBOL = "symbol";
     private static final String BADGE_TYPE_FILE = "file";
-    
+
     // Unique ID for this customizer type
     private static final int CUSTOMIZER_ID = 1001;
+
+    // Global counter for unique badge IDs
+    private static final AtomicInteger BADGE_ID_COUNTER = new AtomicInteger(0);
 
     private final IContextManager contextManager;
     private final io.github.jbellis.brokk.analyzer.IAnalyzer analyzer;
@@ -156,10 +160,9 @@ public final class SymbolBadgeCustomizer implements HtmlCustomizer {
             } else if (BADGE_TYPE_FILE.equals(badgeType)) {
                 // Validate file exists in project
                 if (isFileInProject(codeText)) {
-
                     badge = createBadgeForFile(codeText);
                 } else {
-                    logger.trace("[SymbolBadgeCustomizer] File '{}' not found in project, skipping badge", codeText);
+                    logger.debug("[SymbolBadgeCustomizer] File '{}' not found in project, skipping badge", codeText);
                     continue;
                 }
             }
@@ -209,14 +212,14 @@ public final class SymbolBadgeCustomizer implements HtmlCustomizer {
             io.github.jbellis.brokk.EditBlock.resolveProjectFile(contextManager, filename);
             return true;
         } catch (io.github.jbellis.brokk.EditBlock.SymbolNotFoundException e) {
-            logger.trace("[SymbolBadgeCustomizer] File '{}' not found in project: {}", filename, e.getMessage());
+            logger.debug("[SymbolBadgeCustomizer] File '{}' not found in project: {}", filename, e.getMessage());
             return false;
         } catch (io.github.jbellis.brokk.EditBlock.SymbolAmbiguousException e) {
             // Ambiguous means multiple matches exist, so the file is in the project
-            logger.trace("[SymbolBadgeCustomizer] File '{}' has multiple matches (treating as found): {}", filename, e.getMessage());
+            logger.debug("[SymbolBadgeCustomizer] File '{}' has multiple matches (treating as found): {}", filename, e.getMessage());
             return true;
         } catch (Exception e) {
-            logger.trace("[SymbolBadgeCustomizer] Error checking file '{}': {}", filename, e.getMessage());
+            logger.debug("[SymbolBadgeCustomizer] Error checking file '{}': {}", filename, e.getMessage(), e);
             return false;
         }
     }
@@ -229,27 +232,31 @@ public final class SymbolBadgeCustomizer implements HtmlCustomizer {
         if (contextManager == null) {
             return HtmlCustomizer.DEFAULT;
         }
-        
+
         var analyzerWrapper = contextManager.getAnalyzerWrapper();
         if (analyzerWrapper == null || !analyzerWrapper.isReady()) {
             return HtmlCustomizer.DEFAULT;
         }
-        
+
         var analyzer = analyzerWrapper.getNonBlocking();
         return new SymbolBadgeCustomizer(contextManager, analyzer, true);
     }
-    
+
     @Override
     public int getCustomizerId() {
         return CUSTOMIZER_ID;
     }
 
     private Element createBadgeForFile(String filename) {
+        int badgeId = BADGE_ID_COUNTER.incrementAndGet();
+        // Encode the file information in the title attribute since Swing doesn't preserve data- attributes
+        String encodedTitle = String.format("file:%s:id:%d", filename, badgeId);
         return new Element("span")
                 .addClass("badge")
                 .addClass("badge-symbol")
                 .addClass("badge-file")
+                .addClass("clickable-badge")
                 .text("F")
-                .attr("title", String.format("file %s", filename));
+                .attr("title", encodedTitle);
     }
 }

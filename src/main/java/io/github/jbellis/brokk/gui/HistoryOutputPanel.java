@@ -7,6 +7,7 @@ import io.github.jbellis.brokk.context.Context;
 import io.github.jbellis.brokk.context.ContextFragment;
 import io.github.jbellis.brokk.gui.dialogs.SessionsDialog;
 import io.github.jbellis.brokk.gui.mop.MarkdownOutputPanel;
+import io.github.jbellis.brokk.gui.mop.stream.BadgeClickHandler;
 import io.github.jbellis.brokk.gui.mop.stream.CompositeHtmlCustomizer;
 import io.github.jbellis.brokk.gui.mop.stream.SymbolBadgeCustomizer;
 import org.apache.logging.log4j.LogManager;
@@ -584,6 +585,19 @@ public class HistoryOutputPanel extends JPanel {
         // Configure symbol badge customizer
         var symbolBadgeCustomizer = SymbolBadgeCustomizer.create(contextManager);
         llmStreamArea.setHtmlCustomizer(new CompositeHtmlCustomizer(symbolBadgeCustomizer));
+        
+        // Configure badge click handler
+        BadgeClickHandler badgeClickHandler = (badgeType, badgeData, event, component) -> {
+            System.out.println("=== Badge Clicked in HistoryOutputPanel ===");
+            System.out.println("Type: " + badgeType);
+            System.out.println("Data: " + badgeData);
+            System.out.println("Position: " + event.getPoint());
+            System.out.println("===========================================");
+        };
+        
+        // Set badge click handler for all current and future renderers
+        System.out.println("Setting badge click handler on main llmStreamArea");
+        llmStreamArea.setBadgeClickHandler(badgeClickHandler);
 
         // Wrap it in a scroll pane so it can scroll if content is large
         var jsp = new JScrollPane(llmStreamArea);
@@ -831,6 +845,16 @@ public class HistoryOutputPanel extends JPanel {
             // Configure symbol badge customizer
             var symbolBadgeCustomizer = SymbolBadgeCustomizer.create(parentPanel.contextManager);
             outputPanel.setHtmlCustomizer(new CompositeHtmlCustomizer(symbolBadgeCustomizer));
+            
+            // Configure badge click handler
+            BadgeClickHandler detachedBadgeClickHandler = (badgeType, badgeData, event, component) -> {
+                System.out.println("=== Badge Clicked in Detached Window ===");
+                System.out.println("Type: " + badgeType);
+                System.out.println("Data: " + badgeData);
+                System.out.println("Position: " + event.getPoint());
+                System.out.println("==========================================");
+            };
+            outputPanel.setBadgeClickHandler(detachedBadgeClickHandler);
             
             outputPanel.updateTheme(isDark);
             outputPanel.setText(output);

@@ -25,7 +25,7 @@ public class SymbolBadgeCustomizerTest {
     /**
      * Mock ContextManager that provides a ready analyzer for testing
      */
-    private static class MockContextManager implements IContextManager {
+    public static class MockContextManager implements IContextManager {
         private final MockAnalyzerWrapper analyzerWrapper = new MockAnalyzerWrapper();
 
         @Override
@@ -37,7 +37,7 @@ public class SymbolBadgeCustomizerTest {
     /**
      * Mock AnalyzerWrapper that simulates a ready state
      */
-    private static class MockAnalyzerWrapper extends AnalyzerWrapper {
+    public static class MockAnalyzerWrapper extends AnalyzerWrapper {
         private final MockAnalyzer analyzer = new MockAnalyzer();
 
         public MockAnalyzerWrapper() {
@@ -73,7 +73,7 @@ public class SymbolBadgeCustomizerTest {
     /**
      * Mock analyzer that returns test symbols
      */
-    private static class MockAnalyzer implements IAnalyzer {
+    public static class MockAnalyzer implements IAnalyzer {
         @Override
         public Optional<CodeUnit> getDefinition(String fqName) {
             // Return a mock symbol for common test patterns

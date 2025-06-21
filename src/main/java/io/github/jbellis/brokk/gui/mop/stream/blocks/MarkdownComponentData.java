@@ -59,10 +59,18 @@ public record MarkdownComponentData(int id, String html) implements ComponentDat
     private JEditorPane createHtmlPane(boolean isDarkTheme) {
         var htmlPane = new JEditorPane();
         htmlPane.setContentType("text/html");
-        DefaultCaret caret = (DefaultCaret) htmlPane.getCaret();
-        caret.setUpdatePolicy(DefaultCaret.NEVER_UPDATE);
         htmlPane.setEditable(false);
+        // Don't set NEVER_UPDATE as it can interfere with mouse events
+        // Keep default caret behavior for better mouse event handling
         htmlPane.setAlignmentX(Component.LEFT_ALIGNMENT);
+        
+        // Add a simple mouse listener to test if events are received
+        htmlPane.addMouseListener(new java.awt.event.MouseAdapter() {
+            @Override
+            public void mouseClicked(java.awt.event.MouseEvent e) {
+                System.out.println("DEBUG: Basic mouse click on MarkdownComponentData at " + e.getPoint());
+            }
+        });
         htmlPane.setText("<html><body></body></html>");
 
         var bgColor = ThemeColors.getColor(isDarkTheme, "message_background");
@@ -122,6 +130,21 @@ public record MarkdownComponentData(int id, String html) implements ComponentDat
         
         ss.addRule("." + SearchConstants.SEARCH_HIGHLIGHT_CLASS + " { background-color: " + searchColorHex + "; color: black; }");
         ss.addRule("." + SearchConstants.SEARCH_CURRENT_CLASS + " { background-color: " + currentSearchColorHex + "; color: black; }");
+        
+        // Badge styling
+        ss.addRule(".badge { display: inline-block; padding: 0.15em 0.4em; margin-left: 0.25em; " +
+                   "font-size: 75%; font-weight: 700; line-height: 1; text-align: center; " +
+                   "white-space: nowrap; vertical-align: baseline; border-radius: 0.25rem; }");
+        ss.addRule(".badge-symbol { background-color: #17a2b8; color: white; }");
+        ss.addRule(".badge-file { background-color: #28a745; color: white; }");
+        ss.addRule(".badge-class { background-color: #6610f2; color: white; }");
+        ss.addRule(".badge-function { background-color: #fd7e14; color: white; }");
+        ss.addRule(".badge-field { background-color: #20c997; color: white; }");
+        ss.addRule(".badge-module { background-color: #6f42c1; color: white; }");
+        
+        // Clickable badge styling
+        ss.addRule(".clickable-badge { cursor: pointer; }");
+        ss.addRule(".clickable-badge:hover { opacity: 0.8; text-decoration: none; }");
 
         return htmlPane;
     }
