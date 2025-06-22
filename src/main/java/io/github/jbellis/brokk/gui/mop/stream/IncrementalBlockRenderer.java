@@ -42,7 +42,7 @@ import static java.util.regex.Pattern.*;
  */
 public final class IncrementalBlockRenderer {
     // Compilation flag to enable/disable badge-based click detection
-    private static final boolean ENABLE_BADGE_CLICK_DETECTION = false;
+    private static final boolean ENABLE_BADGE_CLICK_DETECTION = true;
     private static final Logger logger = LogManager.getLogger(IncrementalBlockRenderer.class);
     
     // Performance optimization: cached compiled pattern
@@ -177,6 +177,7 @@ public final class IncrementalBlockRenderer {
      * Register or clear a BadgeClickHandler for handling badge interactions.
      */
     public void setBadgeClickHandler(BadgeClickHandler handler) {
+        logger.debug("Setting badgeClickHandler: {}", handler != null ? "non-null" : "null");
         this.badgeClickHandler = handler;
     }
 
@@ -303,7 +304,10 @@ public final class IncrementalBlockRenderer {
         
         // Add badge click handlers to newly created components
         if (badgeClickHandler != null) {
+            logger.debug("badgeClickHandler is set, adding handlers");
             addBadgeClickHandlers();
+        } else {
+            logger.debug("badgeClickHandler is null, skipping handler setup");
         }
 
         // Notify listener that rendering has finished
@@ -640,6 +644,7 @@ public final class IncrementalBlockRenderer {
      * Adds badge click handlers to all JEditorPane components in the root panel.
      */
     private void addBadgeClickHandlers() {
+        logger.debug("Adding badge click handlers to root panel");
         addBadgeClickHandlersToComponent(root);
     }
     
@@ -658,7 +663,10 @@ public final class IncrementalBlockRenderer {
             }
             
             if (!hasHandler) {
+                logger.info("Adding BadgeMouseListener to JEditorPane");
                 editor.addMouseListener(new BadgeMouseListener(editor));
+            } else {
+                logger.info("BadgeMouseListener already exists on JEditorPane");
             }
         }
         
@@ -677,12 +685,62 @@ public final class IncrementalBlockRenderer {
         
         BadgeMouseListener(JEditorPane editor) {
             this.editor = editor;
+            // Also register as motion listener for hover effects on badges
+            editor.addMouseMotionListener(this);
+        }
+        
+        @Override
+        public void mouseMoved(MouseEvent e) {
+            // Update cursor when hovering over badges
+            int pos = editor.viewToModel2D(e.getPoint());
+            if (pos >= 0 && ENABLE_BADGE_CLICK_DETECTION) {
+                try {
+                    String htmlContent = editor.getText();
+                    String textContent = editor.getDocument().getText(0, editor.getDocument().getLength());
+                    
+                    // Check if hovering over a badge
+                    java.util.regex.Pattern badgePattern = java.util.regex.Pattern.compile(
+                        "<span[^>]*class=\"[^\"]*badge-file[^\"]*\"[^>]*title=\"file:([^:]+):id:(\\d+)\"[^>]*>([^<]+)</span>");
+                    java.util.regex.Matcher badgeMatcher = badgePattern.matcher(htmlContent);
+                    
+                    boolean overBadge = false;
+                    while (badgeMatcher.find()) {
+                        String badgeContent = badgeMatcher.group(3);
+                        int searchStart = 0;
+                        int badgeStart;
+                        while ((badgeStart = textContent.indexOf(badgeContent, searchStart)) >= 0) {
+                            int badgeEnd = badgeStart + badgeContent.length();
+                            if (pos >= badgeStart && pos <= badgeEnd) {
+                                overBadge = true;
+                                break;
+                            }
+                            searchStart = badgeEnd;
+                        }
+                        if (overBadge) break;
+                    }
+                    
+                    // Update cursor
+                    editor.setCursor(overBadge ? 
+                        java.awt.Cursor.getPredefinedCursor(java.awt.Cursor.HAND_CURSOR) : 
+                        java.awt.Cursor.getDefaultCursor());
+                        
+                } catch (Exception ex) {
+                    // Ignore hover errors
+                }
+            }
+        }
+        
+        @Override
+        public void mouseExited(MouseEvent e) {
+            // Reset cursor when leaving the editor
+            editor.setCursor(java.awt.Cursor.getDefaultCursor());
         }
         
         @Override
         public void mouseClicked(MouseEvent e) {
             // Get the character at the click position
             int pos = editor.viewToModel2D(e.getPoint());
+            logger.info("Badge mouse clicked at position: {}", pos);
             if (pos >= 0) {
                 try {
                     // Get HTML content and extract all file references with their positions
@@ -695,57 +753,86 @@ public final class IncrementalBlockRenderer {
                     java.util.List<FileOccurrence> occurrences = new java.util.ArrayList<>();
                     
                     if (ENABLE_BADGE_CLICK_DETECTION) {
-                        // Pattern 1: Files with badges (existing pattern)
-                        java.util.regex.Pattern badgedPattern = java.util.regex.Pattern.compile(
-                            "<code>([^<]+\\.(java|kt|scala|py|js|ts|cpp|c|h|go|rs|rb|php|cs|swift|dart|vue|jsx|tsx))</code><span[^>]*title=\"file:([^:]+):id:(\\d+)\"");
-                        java.util.regex.Matcher badgedMatcher = badgedPattern.matcher(htmlContent);
+                        // Log the HTML content to debug
+                        logger.debug("HTML content length: {}", htmlContent.length());
                         
-                        while (badgedMatcher.find()) {
-                            String codeFileName = badgedMatcher.group(1);  // The filename in <code> tags
-                            String badgeFileName = badgedMatcher.group(3); // The filename from badge title
+                        // Log a sample of HTML that contains "badge-file" to see the actual structure
+                        int badgeIndex = htmlContent.indexOf("badge-file");
+                        if (badgeIndex >= 0) {
+                            int start = Math.max(0, badgeIndex - 100);
+                            int end = Math.min(htmlContent.length(), badgeIndex + 200);
+                            logger.debug("Sample HTML around badge: {}", htmlContent.substring(start, end));
+                        }
+                        
+                        // Pattern for badge spans with file information - handle Swing's HTML transformation
+                        java.util.regex.Pattern badgePattern = java.util.regex.Pattern.compile(
+                            "<span[^>]*class=\"[^\"]*badge-file[^\"]*\"[^>]*title=\"file:([^:]+):id:(\\d+)\"[^>]*>.*?\\[F\\].*?</span>", 
+                            java.util.regex.Pattern.DOTALL);
+                        java.util.regex.Matcher badgeMatcher = badgePattern.matcher(htmlContent);
+                        
+                        int badgeCount = 0;
+                        while (badgeMatcher.find()) {
+                            badgeCount++;
+                            String fileName = badgeMatcher.group(1); // The filename from badge title
+                            String badgeContent = "[F]"; // The badge text we're looking for
+                            logger.debug("Found badge #{}: file='{}', content='{}'", badgeCount, fileName, badgeContent);
                             
-                            // Find all occurrences of this filename in the text content
+                            // Find the position of this badge icon in the text content
                             int searchStart = 0;
-                            int fileNameStart;
-                            while ((fileNameStart = textContent.indexOf(codeFileName, searchStart)) >= 0) {
-                                int fileNameEnd = fileNameStart + codeFileName.length();
-                                occurrences.add(new FileOccurrence(fileNameStart, fileNameEnd, badgeFileName));
-                                searchStart = fileNameEnd;
+                            int badgeStart;
+                            while ((badgeStart = textContent.indexOf(badgeContent, searchStart)) >= 0) {
+                                int badgeEnd = badgeStart + badgeContent.length();
+                                occurrences.add(new FileOccurrence(badgeStart, badgeEnd, fileName));
+                                logger.debug("Badge position: {} to {}", badgeStart, badgeEnd);
+                                searchStart = badgeEnd;
                             }
                         }
+                        logger.debug("Total badges found: {}", badgeCount);
                     }
                     
-                    // Pattern 2: Standalone files in code blocks (always enabled)
-                    java.util.regex.Pattern standalonePattern = java.util.regex.Pattern.compile(
-                        "<code>([^<]+\\.(java|kt|scala|py|js|ts|cpp|c|h|go|rs|rb|php|cs|swift|dart|vue|jsx|tsx))</code>");
-                    java.util.regex.Matcher standaloneMatcher = standalonePattern.matcher(htmlContent);
-                    
-                    while (standaloneMatcher.find()) {
-                        String fileName = standaloneMatcher.group(1);
-                        
-                        // Skip if this filename is already handled by the badged pattern
-                        boolean alreadyAdded = occurrences.stream()
-                            .anyMatch(occ -> occ.fileName.equals(fileName));
-                        
-                        if (!alreadyAdded) {
-                            // Find all occurrences of this filename in the text content
-                            int searchStart = 0;
-                            int fileNameStart;
-                            while ((fileNameStart = textContent.indexOf(fileName, searchStart)) >= 0) {
-                                int fileNameEnd = fileNameStart + fileName.length();
-                                occurrences.add(new FileOccurrence(fileNameStart, fileNameEnd, fileName));
-                                searchStart = fileNameEnd;
-                            }
-                        }
-                    }
                     
                     // Check if the click position is within any filename occurrence
                     for (FileOccurrence occurrence : occurrences) {
                         if (pos >= occurrence.start && pos <= occurrence.end) {
+                            logger.debug("Click matched badge for file: {}", occurrence.fileName);
                             if (badgeClickHandler != null) {
                                 badgeClickHandler.onBadgeClick("file", occurrence.fileName, e, editor);
                             }
                             return;
+                        }
+                    }
+                    
+                    // If no badge found via regex, try element-based detection
+                    logger.debug("No badge found via regex, trying element-based detection");
+                    HTMLDocument doc = (HTMLDocument) editor.getDocument();
+                    javax.swing.text.Element elem = doc.getCharacterElement(pos);
+                    AttributeSet attrs = elem.getAttributes();
+                    
+                    // Check if we clicked on an element with badge attributes
+                    while (elem != null && attrs != null) {
+                        // Check for title attribute
+                        Object titleAttr = attrs.getAttribute(HTML.Attribute.TITLE);
+                        if (titleAttr != null) {
+                            String title = titleAttr.toString();
+                            logger.debug("Found title attribute: {}", title);
+                            if (title.startsWith("file:") && title.contains(":id:")) {
+                                // Extract filename from title
+                                int colonIndex = title.indexOf(':', 5);
+                                if (colonIndex > 5) {
+                                    String fileName = title.substring(5, colonIndex);
+                                    logger.debug("Extracted filename from title: {}", fileName);
+                                    if (badgeClickHandler != null) {
+                                        badgeClickHandler.onBadgeClick("file", fileName, e, editor);
+                                    }
+                                    return;
+                                }
+                            }
+                        }
+                        
+                        // Try parent element
+                        elem = elem.getParentElement();
+                        if (elem != null) {
+                            attrs = elem.getAttributes();
                         }
                     }
                 } catch (Exception ex) {

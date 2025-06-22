@@ -25,13 +25,14 @@ public final class SymbolBadgeCustomizer implements HtmlCustomizer {
     
     // Compilation flags to enable/disable specific badge types
     private static final boolean ENABLE_SYMBOL_BADGES = true;
-    private static final boolean ENABLE_FILE_BADGES = false; // Disabled - filenames are clickable without badges
+    private static final boolean ENABLE_FILE_BADGES = true; // Re-enabled - badges with icons
     
     private static final Pattern SYMBOL_PATTERN =
             Pattern.compile("[A-Z][A-Za-z0-9_]*(?:\\.[A-Z][A-Za-z0-9_]*)*(?:\\.[a-z][A-Za-z0-9_]+\\(\\))?");
 
+    // More flexible pattern that matches common file extensions
     private static final Pattern FILENAME_PATTERN =
-            Pattern.compile("[a-zA-Z0-9_.-]+/[a-zA-Z0-9_./+-]+\\.[a-zA-Z0-9]+|[a-zA-Z0-9_.-]+\\.[a-zA-Z0-9]+");
+            Pattern.compile(".*\\.(java|kt|scala|py|js|ts|jsx|tsx|cpp|c|h|hpp|cc|cxx|go|rs|rb|php|cs|swift|dart|vue|xml|json|yaml|yml|properties|md|txt|html|css|scss|sql|sh|gradle|xml)$");
 
     private static final String BADGE_TYPE_SYMBOL = "symbol";
     private static final String BADGE_TYPE_FILE = "file";
@@ -42,12 +43,10 @@ public final class SymbolBadgeCustomizer implements HtmlCustomizer {
     // Global counter for unique badge IDs
     private static final AtomicInteger BADGE_ID_COUNTER = new AtomicInteger(0);
 
-    private final IContextManager contextManager;
     private final io.github.jbellis.brokk.analyzer.IAnalyzer analyzer;
     private final boolean analyzerReady;
 
-    private SymbolBadgeCustomizer(IContextManager contextManager, io.github.jbellis.brokk.analyzer.IAnalyzer analyzer, boolean analyzerReady) {
-        this.contextManager = contextManager;
+    private SymbolBadgeCustomizer(io.github.jbellis.brokk.analyzer.IAnalyzer analyzer, boolean analyzerReady) {
         this.analyzer = analyzer;
         this.analyzerReady = analyzerReady;
     }
@@ -62,6 +61,10 @@ public final class SymbolBadgeCustomizer implements HtmlCustomizer {
             logger.debug("[SymbolBadgeCustomizer] Analyzer not ready, skipping badge customization");
             return;
         }
+        
+        logger.debug("[SymbolBadgeCustomizer] Starting customization. ENABLE_FILE_BADGES={}, ENABLE_SYMBOL_BADGES={}", 
+                    ENABLE_FILE_BADGES, ENABLE_SYMBOL_BADGES);
+        
         Elements anchors = root.select("a");
         int anchorsProcessed = 0;
         int badgesInjected = 0;
@@ -112,13 +115,9 @@ public final class SymbolBadgeCustomizer implements HtmlCustomizer {
                 }
                 badge = createBadgeForSymbol(definition.get());
             } else if (BADGE_TYPE_FILE.equals(badgeType) && ENABLE_FILE_BADGES) {
-                // Validate file exists in project
-                if (isFileInProject(symbolId)) {
-                    badge = createBadgeForFile(symbolId);
-                } else {
-                    logger.trace("[SymbolBadgeCustomizer] File '{}' not found in project, skipping badge", symbolId);
-                    continue;
-                }
+                // Temporarily skip validation to test if badges appear
+                badge = createBadgeForFile(symbolId);
+                logger.debug("[SymbolBadgeCustomizer] Created file badge for '{}' (validation skipped)", symbolId);
             }
 
             if (badge == null) {
@@ -133,8 +132,13 @@ public final class SymbolBadgeCustomizer implements HtmlCustomizer {
         if (!codeElements.isEmpty()) {
             logger.debug("[SymbolBadgeCustomizer] Found {} 'p code' element(s).", codeElements.size());
         }
+        
+        // Also check for code elements in other contexts
+        Elements allCodeElements = root.select("code");
+        logger.debug("[SymbolBadgeCustomizer] Total code elements found: {}", allCodeElements.size());
 
-        for (Element code : codeElements) {
+        // Process all code elements, not just those in <p> tags
+        for (Element code : allCodeElements) {
             String codeText = code.text();
             String badgeType = null;
             Element badge = null;
@@ -143,6 +147,7 @@ public final class SymbolBadgeCustomizer implements HtmlCustomizer {
                 badgeType = BADGE_TYPE_SYMBOL;
             } else if (FILENAME_PATTERN.matcher(codeText).matches()) {
                 badgeType = BADGE_TYPE_FILE;
+                logger.debug("[SymbolBadgeCustomizer] Found filename in code element: '{}'", codeText);
             } else {
                 continue;
             }
@@ -163,18 +168,15 @@ public final class SymbolBadgeCustomizer implements HtmlCustomizer {
                 }
                 badge = createBadgeForSymbol(definition.get());
             } else if (BADGE_TYPE_FILE.equals(badgeType) && ENABLE_FILE_BADGES) {
-                // Validate file exists in project
-                if (isFileInProject(codeText)) {
-                    badge = createBadgeForFile(codeText);
-                } else {
-                    logger.debug("[SymbolBadgeCustomizer] File '{}' not found in project, skipping badge", codeText);
-                    continue;
-                }
+                // Temporarily skip validation to test if badges appear
+                badge = createBadgeForFile(codeText);
+                logger.debug("[SymbolBadgeCustomizer] Created file badge for '{}' in code element (validation skipped)", codeText);
             }
 
             if (badge != null) {
                 code.after(badge);
                 badgesInjected++;
+                logger.debug("[SymbolBadgeCustomizer] Injected badge after code element: {}", badge.outerHtml());
             }
         }
 
@@ -211,23 +213,6 @@ public final class SymbolBadgeCustomizer implements HtmlCustomizer {
         return "badge-" + symbol.kind().name().toLowerCase(Locale.ROOT);
     }
 
-    private boolean isFileInProject(String filename) {
-        try {
-            // Use the established file resolution pattern from EditBlock
-            io.github.jbellis.brokk.EditBlock.resolveProjectFile(contextManager, filename);
-            return true;
-        } catch (io.github.jbellis.brokk.EditBlock.SymbolNotFoundException e) {
-            logger.debug("[SymbolBadgeCustomizer] File '{}' not found in project: {}", filename, e.getMessage());
-            return false;
-        } catch (io.github.jbellis.brokk.EditBlock.SymbolAmbiguousException e) {
-            // Ambiguous means multiple matches exist, so the file is in the project
-            logger.debug("[SymbolBadgeCustomizer] File '{}' has multiple matches (treating as found): {}", filename, e.getMessage());
-            return true;
-        } catch (Exception e) {
-            logger.debug("[SymbolBadgeCustomizer] Error checking file '{}': {}", filename, e.getMessage(), e);
-            return false;
-        }
-    }
 
     /**
      * Factory method to create a customizer with current analyzer state.
@@ -244,7 +229,7 @@ public final class SymbolBadgeCustomizer implements HtmlCustomizer {
         }
 
         var analyzer = analyzerWrapper.getNonBlocking();
-        return new SymbolBadgeCustomizer(contextManager, analyzer, true);
+        return new SymbolBadgeCustomizer(analyzer, true);
     }
 
     @Override
@@ -261,7 +246,8 @@ public final class SymbolBadgeCustomizer implements HtmlCustomizer {
                 .addClass("badge-symbol")
                 .addClass("badge-file")
                 .addClass("clickable-badge")
-                .text("F")
-                .attr("title", encodedTitle);
+                .text("[F]") // Simple text icon for testing
+                .attr("title", encodedTitle)
+                .attr("style", "cursor: pointer; font-size: 0.8em; margin-left: 2px; color: blue; text-decoration: underline;");
     }
 }
