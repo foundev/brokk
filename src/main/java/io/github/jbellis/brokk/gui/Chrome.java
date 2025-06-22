@@ -14,8 +14,13 @@ import io.github.jbellis.brokk.gui.dialogs.PreviewImagePanel;
 import io.github.jbellis.brokk.gui.dialogs.PreviewTextPanel;
 import io.github.jbellis.brokk.gui.mop.MarkdownOutputPanel;
 import io.github.jbellis.brokk.gui.mop.ThemeColors;
+import io.github.jbellis.brokk.gui.mop.stream.BadgeClickHandler;
+import io.github.jbellis.brokk.gui.mop.stream.CompositeHtmlCustomizer;
+import io.github.jbellis.brokk.gui.mop.stream.SymbolBadgeCustomizer;
 import io.github.jbellis.brokk.gui.search.GenericSearchBar;
 import io.github.jbellis.brokk.gui.search.MarkdownSearchableComponent;
+import io.github.jbellis.brokk.gui.util.ContextMenuUtils;
+import io.github.jbellis.brokk.gui.TableUtils;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 import org.jetbrains.annotations.Nullable;
@@ -893,8 +898,41 @@ public class Chrome implements AutoCloseable, IConsoleIO, IContextManager.Contex
                 var markdownPanels = new ArrayList<MarkdownOutputPanel>();
                 var escapeHtml = outputFragment.isEscapeHtml();
 
+                // Configure badge click handler for file badges
+                BadgeClickHandler badgeClickHandler = (badgeType, badgeData, event, component) -> {
+                    if ("file".equals(badgeType)) {
+                        try {
+                            // Try to resolve the file to get ProjectFile if it exists
+                            var projectFile = EditBlock.resolveProjectFile(contextManager, badgeData);
+                            var fileRefData = new TableUtils.FileReferenceList.FileReferenceData(
+                                    badgeData, // fileName
+                                    projectFile.absPath().toString(), // fullPath
+                                    projectFile // projectFile
+                            );
+                            
+                            // Show the same popup menu as WorkspacePanel file badges
+                            ContextMenuUtils.showFileRefMenu(
+                                    component,
+                                    event.getX(),
+                                    event.getY(),
+                                    fileRefData,
+                                    this,
+                                    () -> {} // onRefreshSuggestions - no-op for now
+                            );
+                        } catch (Exception ex) {
+                            logger.warn("Failed to resolve file for badge: " + badgeData, ex);
+                        }
+                    }
+                };
+
                 for (TaskEntry entry : outputFragment.entries()) {
                     var markdownPanel = new MarkdownOutputPanel(escapeHtml);
+                    markdownPanel.setBadgeClickHandler(badgeClickHandler);
+                    
+                    // Configure symbol badge customizer
+                    var symbolBadgeCustomizer = SymbolBadgeCustomizer.create(contextManager);
+                    markdownPanel.setHtmlCustomizer(new CompositeHtmlCustomizer(symbolBadgeCustomizer));
+                    
                     markdownPanel.updateTheme(themeManager != null && themeManager.isDarkTheme());
                     markdownPanel.setText(entry);
                     markdownPanel.setBorder(BorderFactory.createMatteBorder(0, 0, 1, 0, Color.GRAY));
@@ -904,7 +942,6 @@ public class Chrome implements AutoCloseable, IConsoleIO, IContextManager.Contex
                 }
 
                 // Use shared utility method to create searchable content panel (without navigation for preview)
-                System.out.println("\\\\\\\\\\\\\\    Creating searchable content panel for preview");
                 JPanel previewContentPanel = createSearchableContentPanel(markdownPanels, null, this.contextManager);
 
                 // When all panels are compacted, scroll to the top

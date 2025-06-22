@@ -64,13 +64,7 @@ public record MarkdownComponentData(int id, String html) implements ComponentDat
         // Keep default caret behavior for better mouse event handling
         htmlPane.setAlignmentX(Component.LEFT_ALIGNMENT);
         
-        // Add a simple mouse listener to test if events are received
-        htmlPane.addMouseListener(new java.awt.event.MouseAdapter() {
-            @Override
-            public void mouseClicked(java.awt.event.MouseEvent e) {
-                System.out.println("DEBUG: Basic mouse click on MarkdownComponentData at " + e.getPoint());
-            }
-        });
+        // Mouse events are handled by BadgeMouseListener in IncrementalBlockRenderer
         htmlPane.setText("<html><body></body></html>");
 
         var bgColor = ThemeColors.getColor(isDarkTheme, "message_background");

@@ -448,6 +448,13 @@ public class MarkdownOutputPanel extends JPanel implements Scrollable, ThemeAwar
     }
     
     /**
+     * Gets the current badge click handler.
+     */
+    public BadgeClickHandler getBadgeClickHandler() {
+        return badgeClickHandler;
+    }
+    
+    /**
      * Sets or clears a global HtmlCustomizer for all renderers and executes a callback
      * after the customizer has been applied and rendered.
      */

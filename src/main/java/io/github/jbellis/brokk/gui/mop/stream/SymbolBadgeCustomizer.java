@@ -22,6 +22,11 @@ import java.util.regex.Pattern;
  */
 public final class SymbolBadgeCustomizer implements HtmlCustomizer {
     private static final Logger logger = LogManager.getLogger(SymbolBadgeCustomizer.class);
+    
+    // Compilation flags to enable/disable specific badge types
+    private static final boolean ENABLE_SYMBOL_BADGES = true;
+    private static final boolean ENABLE_FILE_BADGES = false; // Disabled - filenames are clickable without badges
+    
     private static final Pattern SYMBOL_PATTERN =
             Pattern.compile("[A-Z][A-Za-z0-9_]*(?:\\.[A-Z][A-Za-z0-9_]*)*(?:\\.[a-z][A-Za-z0-9_]+\\(\\))?");
 
@@ -98,7 +103,7 @@ public final class SymbolBadgeCustomizer implements HtmlCustomizer {
             }
 
             Element badge = null;
-            if (BADGE_TYPE_SYMBOL.equals(badgeType)) {
+            if (BADGE_TYPE_SYMBOL.equals(badgeType) && ENABLE_SYMBOL_BADGES) {
                 // Validate symbol exists in project
                 var definition = analyzer.getDefinition(symbolId);
                 if (definition.isEmpty()) {
@@ -106,7 +111,7 @@ public final class SymbolBadgeCustomizer implements HtmlCustomizer {
                     continue;
                 }
                 badge = createBadgeForSymbol(definition.get());
-            } else if (BADGE_TYPE_FILE.equals(badgeType)) {
+            } else if (BADGE_TYPE_FILE.equals(badgeType) && ENABLE_FILE_BADGES) {
                 // Validate file exists in project
                 if (isFileInProject(symbolId)) {
                     badge = createBadgeForFile(symbolId);
@@ -149,7 +154,7 @@ public final class SymbolBadgeCustomizer implements HtmlCustomizer {
                 continue;
             }
 
-            if (BADGE_TYPE_SYMBOL.equals(badgeType)) {
+            if (BADGE_TYPE_SYMBOL.equals(badgeType) && ENABLE_SYMBOL_BADGES) {
                 // Validate symbol exists in project
                 var definition = analyzer.getDefinition(codeText);
                 if (definition.isEmpty()) {
@@ -157,7 +162,7 @@ public final class SymbolBadgeCustomizer implements HtmlCustomizer {
                     continue;
                 }
                 badge = createBadgeForSymbol(definition.get());
-            } else if (BADGE_TYPE_FILE.equals(badgeType)) {
+            } else if (BADGE_TYPE_FILE.equals(badgeType) && ENABLE_FILE_BADGES) {
                 // Validate file exists in project
                 if (isFileInProject(codeText)) {
                     badge = createBadgeForFile(codeText);

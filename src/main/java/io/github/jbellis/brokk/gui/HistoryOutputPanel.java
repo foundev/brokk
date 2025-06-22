@@ -8,6 +8,8 @@ import io.github.jbellis.brokk.context.ContextFragment;
 import io.github.jbellis.brokk.gui.dialogs.SessionsDialog;
 import io.github.jbellis.brokk.gui.mop.MarkdownOutputPanel;
 import io.github.jbellis.brokk.gui.mop.stream.BadgeClickHandler;
+import io.github.jbellis.brokk.gui.TableUtils;
+import io.github.jbellis.brokk.gui.util.ContextMenuUtils;
 import io.github.jbellis.brokk.gui.mop.stream.CompositeHtmlCustomizer;
 import io.github.jbellis.brokk.gui.mop.stream.SymbolBadgeCustomizer;
 import org.apache.logging.log4j.LogManager;
@@ -580,7 +582,15 @@ public class HistoryOutputPanel extends JPanel {
      * Builds the LLM streaming area where markdown output is displayed
      */
     private JScrollPane buildLLMStreamScrollPane() {
+        // Store the current handler before creating new panel
+        BadgeClickHandler currentHandler = llmStreamArea != null ? llmStreamArea.getBadgeClickHandler() : null;
+        
         llmStreamArea = new MarkdownOutputPanel();
+        
+        // Restore the handler if we had one
+        if (currentHandler != null) {
+            llmStreamArea.setBadgeClickHandler(currentHandler);
+        }
         
         // Configure symbol badge customizer
         var symbolBadgeCustomizer = SymbolBadgeCustomizer.create(contextManager);
@@ -588,15 +598,46 @@ public class HistoryOutputPanel extends JPanel {
         
         // Configure badge click handler
         BadgeClickHandler badgeClickHandler = (badgeType, badgeData, event, component) -> {
-            System.out.println("=== Badge Clicked in HistoryOutputPanel ===");
-            System.out.println("Type: " + badgeType);
-            System.out.println("Data: " + badgeData);
-            System.out.println("Position: " + event.getPoint());
-            System.out.println("===========================================");
+            if ("file".equals(badgeType)) {
+                try {
+                    // Try to resolve the file to get ProjectFile if it exists
+                    var projectFile = EditBlock.resolveProjectFile(contextManager, badgeData);
+                    var fileRefData = new TableUtils.FileReferenceList.FileReferenceData(
+                            badgeData, // fileName
+                            projectFile.absPath().toString(), // fullPath
+                            projectFile // projectFile
+                    );
+                    
+                    // Show the same popup menu as WorkspacePanel file badges
+                    ContextMenuUtils.showFileRefMenu(
+                            component,
+                            event.getX(),
+                            event.getY(),
+                            fileRefData,
+                            chrome,
+                            () -> {} // onRefreshSuggestions - no-op for now
+                    );
+                } catch (Exception e) {
+                    // If file resolution fails, create a minimal FileReferenceData
+                    var fileRefData = new TableUtils.FileReferenceList.FileReferenceData(
+                            badgeData, // fileName
+                            badgeData, // fullPath (same as fileName)
+                            null // no ProjectFile available
+                    );
+                    
+                    ContextMenuUtils.showFileRefMenu(
+                            component,
+                            event.getX(),
+                            event.getY(),
+                            fileRefData,
+                            chrome,
+                            () -> {} // onRefreshSuggestions - no-op for now
+                    );
+                }
+            }
         };
         
         // Set badge click handler for all current and future renderers
-        System.out.println("Setting badge click handler on main llmStreamArea");
         llmStreamArea.setBadgeClickHandler(badgeClickHandler);
 
         // Wrap it in a scroll pane so it can scroll if content is large
@@ -848,11 +889,43 @@ public class HistoryOutputPanel extends JPanel {
             
             // Configure badge click handler
             BadgeClickHandler detachedBadgeClickHandler = (badgeType, badgeData, event, component) -> {
-                System.out.println("=== Badge Clicked in Detached Window ===");
-                System.out.println("Type: " + badgeType);
-                System.out.println("Data: " + badgeData);
-                System.out.println("Position: " + event.getPoint());
-                System.out.println("==========================================");
+                if ("file".equals(badgeType)) {
+                    try {
+                        // Try to resolve the file to get ProjectFile if it exists
+                        var projectFile = EditBlock.resolveProjectFile(parentPanel.contextManager, badgeData);
+                        var fileRefData = new TableUtils.FileReferenceList.FileReferenceData(
+                                badgeData, // fileName
+                                projectFile.absPath().toString(), // fullPath
+                                projectFile // projectFile
+                        );
+                        
+                        // Show the same popup menu as WorkspacePanel file badges
+                        ContextMenuUtils.showFileRefMenu(
+                                component,
+                                event.getX(),
+                                event.getY(),
+                                fileRefData,
+                                parentPanel.chrome,
+                                () -> {} // onRefreshSuggestions - no-op for now
+                        );
+                    } catch (Exception e) {
+                        // If file resolution fails, create a minimal FileReferenceData
+                        var fileRefData = new TableUtils.FileReferenceList.FileReferenceData(
+                                badgeData, // fileName
+                                badgeData, // fullPath (same as fileName)
+                                null // no ProjectFile available
+                        );
+                        
+                        ContextMenuUtils.showFileRefMenu(
+                                component,
+                                event.getX(),
+                                event.getY(),
+                                fileRefData,
+                                parentPanel.chrome,
+                                () -> {} // onRefreshSuggestions - no-op for now
+                        );
+                    }
+                }
             };
             outputPanel.setBadgeClickHandler(detachedBadgeClickHandler);
             
