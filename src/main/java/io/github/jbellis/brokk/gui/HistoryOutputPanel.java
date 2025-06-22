@@ -8,8 +8,7 @@ import io.github.jbellis.brokk.context.ContextFragment;
 import io.github.jbellis.brokk.gui.dialogs.SessionsDialog;
 import io.github.jbellis.brokk.gui.mop.MarkdownOutputPanel;
 import io.github.jbellis.brokk.gui.mop.stream.BadgeClickHandler;
-import io.github.jbellis.brokk.gui.TableUtils;
-import io.github.jbellis.brokk.gui.util.ContextMenuUtils;
+import io.github.jbellis.brokk.gui.mop.stream.BadgeClickHandlerFactory;
 import io.github.jbellis.brokk.gui.mop.stream.CompositeHtmlCustomizer;
 import io.github.jbellis.brokk.gui.mop.stream.SymbolBadgeCustomizer;
 import org.apache.logging.log4j.LogManager;
@@ -57,6 +56,7 @@ public class HistoryOutputPanel extends JPanel {
     private final List<OutputWindow> activeStreamingWindows = new ArrayList<>();
 
     private String lastSpinnerMessage;
+    private BadgeClickHandler standardBadgeClickHandler;
 
     /**
      * Constructs a new HistoryOutputPane.
@@ -70,6 +70,9 @@ public class HistoryOutputPanel extends JPanel {
         this.chrome = chrome;
         this.contextManager = contextManager;
         this.instructionsPanel = instructionsPanel;
+        
+        // Create the standard badge click handler once and reuse it
+        this.standardBadgeClickHandler = BadgeClickHandlerFactory.createFileClickHandler(contextManager, chrome);
 
         // commandResultLabel initialization removed
 
@@ -582,63 +585,14 @@ public class HistoryOutputPanel extends JPanel {
      * Builds the LLM streaming area where markdown output is displayed
      */
     private JScrollPane buildLLMStreamScrollPane() {
-        // Store the current handler before creating new panel
-        BadgeClickHandler currentHandler = llmStreamArea != null ? llmStreamArea.getBadgeClickHandler() : null;
-        
         llmStreamArea = new MarkdownOutputPanel();
-        
-        // Restore the handler if we had one
-        if (currentHandler != null) {
-            llmStreamArea.setBadgeClickHandler(currentHandler);
-        }
         
         // Configure symbol badge customizer
         var symbolBadgeCustomizer = SymbolBadgeCustomizer.create(contextManager);
         llmStreamArea.setHtmlCustomizer(new CompositeHtmlCustomizer(symbolBadgeCustomizer));
         
-        // Configure badge click handler
-        BadgeClickHandler badgeClickHandler = (badgeType, badgeData, event, component) -> {
-            if ("file".equals(badgeType)) {
-                try {
-                    // Try to resolve the file to get ProjectFile if it exists
-                    var projectFile = EditBlock.resolveProjectFile(contextManager, badgeData);
-                    var fileRefData = new TableUtils.FileReferenceList.FileReferenceData(
-                            badgeData, // fileName
-                            projectFile.absPath().toString(), // fullPath
-                            projectFile // projectFile
-                    );
-                    
-                    // Show the same popup menu as WorkspacePanel file badges
-                    ContextMenuUtils.showFileRefMenu(
-                            component,
-                            event.getX(),
-                            event.getY(),
-                            fileRefData,
-                            chrome,
-                            () -> {} // onRefreshSuggestions - no-op for now
-                    );
-                } catch (Exception e) {
-                    // If file resolution fails, create a minimal FileReferenceData
-                    var fileRefData = new TableUtils.FileReferenceList.FileReferenceData(
-                            badgeData, // fileName
-                            badgeData, // fullPath (same as fileName)
-                            null // no ProjectFile available
-                    );
-                    
-                    ContextMenuUtils.showFileRefMenu(
-                            component,
-                            event.getX(),
-                            event.getY(),
-                            fileRefData,
-                            chrome,
-                            () -> {} // onRefreshSuggestions - no-op for now
-                    );
-                }
-            }
-        };
-        
         // Set badge click handler for all current and future renderers
-        llmStreamArea.setBadgeClickHandler(badgeClickHandler);
+        llmStreamArea.setBadgeClickHandler(standardBadgeClickHandler);
 
         // Wrap it in a scroll pane so it can scroll if content is large
         var jsp = new JScrollPane(llmStreamArea);
@@ -887,47 +841,8 @@ public class HistoryOutputPanel extends JPanel {
             var symbolBadgeCustomizer = SymbolBadgeCustomizer.create(parentPanel.contextManager);
             outputPanel.setHtmlCustomizer(new CompositeHtmlCustomizer(symbolBadgeCustomizer));
             
-            // Configure badge click handler
-            BadgeClickHandler detachedBadgeClickHandler = (badgeType, badgeData, event, component) -> {
-                if ("file".equals(badgeType)) {
-                    try {
-                        // Try to resolve the file to get ProjectFile if it exists
-                        var projectFile = EditBlock.resolveProjectFile(parentPanel.contextManager, badgeData);
-                        var fileRefData = new TableUtils.FileReferenceList.FileReferenceData(
-                                badgeData, // fileName
-                                projectFile.absPath().toString(), // fullPath
-                                projectFile // projectFile
-                        );
-                        
-                        // Show the same popup menu as WorkspacePanel file badges
-                        ContextMenuUtils.showFileRefMenu(
-                                component,
-                                event.getX(),
-                                event.getY(),
-                                fileRefData,
-                                parentPanel.chrome,
-                                () -> {} // onRefreshSuggestions - no-op for now
-                        );
-                    } catch (Exception e) {
-                        // If file resolution fails, create a minimal FileReferenceData
-                        var fileRefData = new TableUtils.FileReferenceList.FileReferenceData(
-                                badgeData, // fileName
-                                badgeData, // fullPath (same as fileName)
-                                null // no ProjectFile available
-                        );
-                        
-                        ContextMenuUtils.showFileRefMenu(
-                                component,
-                                event.getX(),
-                                event.getY(),
-                                fileRefData,
-                                parentPanel.chrome,
-                                () -> {} // onRefreshSuggestions - no-op for now
-                        );
-                    }
-                }
-            };
-            outputPanel.setBadgeClickHandler(detachedBadgeClickHandler);
+            // Use the standard badge click handler from parent panel
+            outputPanel.setBadgeClickHandler(parentPanel.standardBadgeClickHandler);
             
             outputPanel.updateTheme(isDark);
             outputPanel.setText(output);
