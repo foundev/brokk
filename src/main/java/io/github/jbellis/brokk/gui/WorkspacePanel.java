@@ -571,7 +571,7 @@ public class WorkspacePanel extends JPanel {
     private static final String COPY_ALL_ACTION_CMD = "workspace.copyAll";
     private static final String DROP_ALL_ACTION_CMD = "workspace.dropAll";
     private static final String WORKSPACE_TITLE = "Workspace";
-    private static final String WORKSPACE_TITLE_NOT_LIVE = "Workspace (not live Context)";
+    private static final String WORKSPACE_TITLE_NOT_LIVE = "Workspace (read-only)";
 
     /**
      * Primary constructor allowing menu-mode selection
