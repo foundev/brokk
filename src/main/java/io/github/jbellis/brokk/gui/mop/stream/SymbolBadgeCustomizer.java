@@ -99,9 +99,9 @@ public final class SymbolBadgeCustomizer implements HtmlCustomizer {
                 continue;
             }
 
-            // Check if a badge already exists to prevent double-injection
-            if (!anchor.select("> .badge-symbol").isEmpty()) {
-                logger.trace("[SymbolBadgeCustomizer] Skipping anchor, badge already exists for symbolId '{}': {}", symbolId, anchor.outerHtml());
+            // Check if this element is already clickable to prevent double-processing
+            if (anchor.hasClass("clickable-file-badge") || !anchor.select("> .badge-symbol").isEmpty()) {
+                logger.trace("[SymbolBadgeCustomizer] Skipping anchor, already processed for symbolId '{}': {}", symbolId, anchor.outerHtml());
                 continue;
             }
 
@@ -115,9 +115,11 @@ public final class SymbolBadgeCustomizer implements HtmlCustomizer {
                 }
                 badge = createBadgeForSymbol(definition.get());
             } else if (BADGE_TYPE_FILE.equals(badgeType) && ENABLE_FILE_BADGES) {
-                // Temporarily skip validation to test if badges appear
-                badge = createBadgeForFile(symbolId);
-                logger.debug("[SymbolBadgeCustomizer] Created file badge for '{}' (validation skipped)", symbolId);
+                // Replace the anchor content with clickable filename badge
+                replaceWithClickableFilenameBadge(anchor, symbolId);
+                logger.debug("[SymbolBadgeCustomizer] Replaced anchor with clickable filename badge for '{}'", symbolId);
+                badgesInjected++;
+                continue; // Skip the normal badge creation since we replaced the element
             }
 
             if (badge == null) {
@@ -152,7 +154,11 @@ public final class SymbolBadgeCustomizer implements HtmlCustomizer {
                 continue;
             }
 
-            // Skip if a badge already exists as the next sibling
+            // Skip if this code element is already clickable or has a badge
+            if (code.hasClass("clickable-file-badge")) {
+                logger.trace("[SymbolBadgeCustomizer] Skipping code element, already clickable for text '{}': {}", codeText, code.outerHtml());
+                continue;
+            }
             Element nextSibling = code.nextElementSibling();
             if (nextSibling != null && nextSibling.hasClass("badge-symbol")) {
                 logger.trace("[SymbolBadgeCustomizer] Skipping code element, badge already exists for text '{}': {}", codeText, code.outerHtml());
@@ -168,9 +174,11 @@ public final class SymbolBadgeCustomizer implements HtmlCustomizer {
                 }
                 badge = createBadgeForSymbol(definition.get());
             } else if (BADGE_TYPE_FILE.equals(badgeType) && ENABLE_FILE_BADGES) {
-                // Temporarily skip validation to test if badges appear
-                badge = createBadgeForFile(codeText);
-                logger.debug("[SymbolBadgeCustomizer] Created file badge for '{}' in code element (validation skipped)", codeText);
+                // Replace the code element content with clickable filename badge
+                replaceWithClickableFilenameBadge(code, codeText);
+                logger.debug("[SymbolBadgeCustomizer] Replaced code element with clickable filename badge for '{}'", codeText);
+                badgesInjected++;
+                continue; // Skip the normal badge creation since we replaced the element
             }
 
             if (badge != null) {
@@ -237,17 +245,16 @@ public final class SymbolBadgeCustomizer implements HtmlCustomizer {
         return CUSTOMIZER_ID;
     }
 
-    private Element createBadgeForFile(String filename) {
+    private void replaceWithClickableFilenameBadge(Element element, String filename) {
         int badgeId = BADGE_ID_COUNTER.incrementAndGet();
         // Encode the file information in the title attribute since Swing doesn't preserve data- attributes
         String encodedTitle = String.format("file:%s:id:%d", filename, badgeId);
-        return new Element("span")
-                .addClass("badge")
-                .addClass("badge-symbol")
-                .addClass("badge-file")
-                .addClass("clickable-badge")
-                .text("[F]") // Simple text icon for testing
-                .attr("title", encodedTitle)
-                .attr("style", "cursor: pointer; font-size: 0.8em; margin-left: 2px; color: blue; text-decoration: underline;");
+        
+        // Clear the element and replace with clickable filename badge content
+        element.empty();
+        element.addClass("clickable-file-badge")
+               .text(filename)
+               .attr("title", encodedTitle)
+               .attr("style", "cursor: pointer; text-decoration: underline;");
     }
 }

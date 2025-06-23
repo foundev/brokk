@@ -663,10 +663,12 @@ public final class IncrementalBlockRenderer {
             }
             
             if (!hasHandler) {
-                logger.info("Adding BadgeMouseListener to JEditorPane");
-                editor.addMouseListener(new BadgeMouseListener(editor));
+                logger.info("*** ADDING BadgeMouseListener to JEditorPane ***");
+                BadgeMouseListener listener = new BadgeMouseListener(editor);
+                editor.addMouseListener(listener);
+                logger.info("*** BadgeMouseListener added successfully ***");
             } else {
-                logger.info("BadgeMouseListener already exists on JEditorPane");
+                logger.info("*** BadgeMouseListener already exists on JEditorPane ***");
             }
         }
         
@@ -687,40 +689,65 @@ public final class IncrementalBlockRenderer {
             this.editor = editor;
             // Also register as motion listener for hover effects on badges
             editor.addMouseMotionListener(this);
+            logger.info("*** BadgeMouseListener constructor called for editor: {} ***", editor.getClass().getSimpleName());
         }
         
         @Override
         public void mouseMoved(MouseEvent e) {
-            // Update cursor when hovering over badges
+            // Update cursor when hovering over clickable filenames
             int pos = editor.viewToModel2D(e.getPoint());
+            logger.debug("Mouse moved at position: {} (point: {})", pos, e.getPoint());
             if (pos >= 0 && ENABLE_BADGE_CLICK_DETECTION) {
                 try {
                     String htmlContent = editor.getText();
                     String textContent = editor.getDocument().getText(0, editor.getDocument().getLength());
                     
-                    // Check if hovering over a badge
-                    java.util.regex.Pattern badgePattern = java.util.regex.Pattern.compile(
-                        "<span[^>]*class=\"[^\"]*badge-file[^\"]*\"[^>]*title=\"file:([^:]+):id:(\\d+)\"[^>]*>([^<]+)</span>");
-                    java.util.regex.Matcher badgeMatcher = badgePattern.matcher(htmlContent);
+                    // Check if hovering over a clickable filename badge (any element with clickable-file-badge class)
+                    java.util.regex.Pattern clickablePattern = java.util.regex.Pattern.compile(
+                        "<[^>]*class=\"[^\"]*clickable-file-badge[^\"]*\"[^>]*title=\"file:([^:]+):id:(\\d+)\"[^>]*>.*?>([^<]+)<", 
+                        java.util.regex.Pattern.DOTALL);
+                    java.util.regex.Pattern titlePattern = java.util.regex.Pattern.compile(
+                        "title=\"file:([^:]+):id:(\\d+)\"[^>]*>.*?>([^<]+)<", 
+                        java.util.regex.Pattern.DOTALL);
+                    java.util.regex.Matcher clickableMatcher = clickablePattern.matcher(htmlContent);
                     
-                    boolean overBadge = false;
-                    while (badgeMatcher.find()) {
-                        String badgeContent = badgeMatcher.group(3);
+                    boolean overClickableFile = false;
+                    while (clickableMatcher.find()) {
+                        String filenameContent = clickableMatcher.group(3);
                         int searchStart = 0;
-                        int badgeStart;
-                        while ((badgeStart = textContent.indexOf(badgeContent, searchStart)) >= 0) {
-                            int badgeEnd = badgeStart + badgeContent.length();
-                            if (pos >= badgeStart && pos <= badgeEnd) {
-                                overBadge = true;
+                        int filenameStart;
+                        while ((filenameStart = textContent.indexOf(filenameContent, searchStart)) >= 0) {
+                            int filenameEnd = filenameStart + filenameContent.length();
+                            if (pos >= filenameStart && pos <= filenameEnd) {
+                                overClickableFile = true;
                                 break;
                             }
-                            searchStart = badgeEnd;
+                            searchStart = filenameEnd;
                         }
-                        if (overBadge) break;
+                        if (overClickableFile) break;
+                    }
+                    
+                    // If no match with strict pattern, try flexible pattern for hover too
+                    if (!overClickableFile) {
+                        java.util.regex.Matcher titleMatcher = titlePattern.matcher(htmlContent);
+                        while (titleMatcher.find()) {
+                            String filenameContent = titleMatcher.group(3);
+                            int searchStart = 0;
+                            int filenameStart;
+                            while ((filenameStart = textContent.indexOf(filenameContent, searchStart)) >= 0) {
+                                int filenameEnd = filenameStart + filenameContent.length();
+                                if (pos >= filenameStart && pos <= filenameEnd) {
+                                    overClickableFile = true;
+                                    break;
+                                }
+                                searchStart = filenameEnd;
+                            }
+                            if (overClickableFile) break;
+                        }
                     }
                     
                     // Update cursor
-                    editor.setCursor(overBadge ? 
+                    editor.setCursor(overClickableFile ? 
                         java.awt.Cursor.getPredefinedCursor(java.awt.Cursor.HAND_CURSOR) : 
                         java.awt.Cursor.getDefaultCursor());
                         
@@ -740,7 +767,9 @@ public final class IncrementalBlockRenderer {
         public void mouseClicked(MouseEvent e) {
             // Get the character at the click position
             int pos = editor.viewToModel2D(e.getPoint());
-            logger.info("Badge mouse clicked at position: {}", pos);
+            logger.info("=== MOUSE CLICK DEBUG START ===");
+            logger.info("Click detected at position: {} (point: {})", pos, e.getPoint());
+            logger.info("ENABLE_BADGE_CLICK_DETECTION: {}", ENABLE_BADGE_CLICK_DETECTION);
             if (pos >= 0) {
                 try {
                     // Get HTML content and extract all file references with their positions
@@ -754,56 +783,162 @@ public final class IncrementalBlockRenderer {
                     
                     if (ENABLE_BADGE_CLICK_DETECTION) {
                         // Log the HTML content to debug
-                        logger.debug("HTML content length: {}", htmlContent.length());
+                        logger.info("=== CLICK DETECTION ENABLED ===");
+                        logger.info("HTML content length: {}", htmlContent.length());
+                        logger.info("Text content length: {}", textContent.length());
                         
                         // Log a sample of HTML that contains "badge-file" to see the actual structure
-                        int badgeIndex = htmlContent.indexOf("badge-file");
-                        if (badgeIndex >= 0) {
-                            int start = Math.max(0, badgeIndex - 100);
-                            int end = Math.min(htmlContent.length(), badgeIndex + 200);
-                            logger.debug("Sample HTML around badge: {}", htmlContent.substring(start, end));
-                        }
-                        
-                        // Pattern for badge spans with file information - handle Swing's HTML transformation
-                        java.util.regex.Pattern badgePattern = java.util.regex.Pattern.compile(
-                            "<span[^>]*class=\"[^\"]*badge-file[^\"]*\"[^>]*title=\"file:([^:]+):id:(\\d+)\"[^>]*>.*?\\[F\\].*?</span>", 
-                            java.util.regex.Pattern.DOTALL);
-                        java.util.regex.Matcher badgeMatcher = badgePattern.matcher(htmlContent);
-                        
-                        int badgeCount = 0;
-                        while (badgeMatcher.find()) {
-                            badgeCount++;
-                            String fileName = badgeMatcher.group(1); // The filename from badge title
-                            String badgeContent = "[F]"; // The badge text we're looking for
-                            logger.debug("Found badge #{}: file='{}', content='{}'", badgeCount, fileName, badgeContent);
+                        int clickableIndex = htmlContent.indexOf("badge-file");
+                        if (clickableIndex >= 0) {
+                            int start = Math.max(0, clickableIndex - 100);
+                            int end = Math.min(htmlContent.length(), clickableIndex + 200);
+                            logger.info("Sample HTML around clickable file: {}", htmlContent.substring(start, end));
+                        } else {
+                            // Log a larger sample if we don't find badge-file to see what's there
+                            logger.info("No 'badge-file' found in HTML. Sample of HTML content: {}", 
+                                htmlContent.length() > 500 ? htmlContent.substring(0, 500) + "..." : htmlContent);
                             
-                            // Find the position of this badge icon in the text content
-                            int searchStart = 0;
-                            int badgeStart;
-                            while ((badgeStart = textContent.indexOf(badgeContent, searchStart)) >= 0) {
-                                int badgeEnd = badgeStart + badgeContent.length();
-                                occurrences.add(new FileOccurrence(badgeStart, badgeEnd, fileName));
-                                logger.debug("Badge position: {} to {}", badgeStart, badgeEnd);
-                                searchStart = badgeEnd;
+                            // Also search for any title attributes that start with "file:"
+                            if (htmlContent.contains("file:")) {
+                                logger.info("Found 'file:' in HTML, checking structure...");
+                                int fileIndex = htmlContent.indexOf("file:");
+                                int start = Math.max(0, fileIndex - 100);
+                                int end = Math.min(htmlContent.length(), fileIndex + 200);
+                                logger.info("HTML around 'file:': {}", htmlContent.substring(start, end));
                             }
                         }
-                        logger.debug("Total badges found: {}", badgeCount);
+                        
+                        // Simplified pattern - handle nested tags like <u><font>text</font></u>
+                        java.util.regex.Pattern simpleFilePattern = java.util.regex.Pattern.compile(
+                            "<[^>]*title=\"file:([^:]+):id:(\\d+)\"[^>]*>.*?>([^<]+)<", 
+                            java.util.regex.Pattern.DOTALL);
+                        
+                        // Pattern for clickable filename badges - handle nested tags like <u><font>text</font></u>
+                        java.util.regex.Pattern clickablePattern = java.util.regex.Pattern.compile(
+                            "<[^>]*class=\"[^\"]*clickable-file-badge[^\"]*\"[^>]*title=\"file:([^:]+):id:(\\d+)\"[^>]*>.*?>([^<]+)<", 
+                            java.util.regex.Pattern.DOTALL);
+                        
+                        // Also try a more flexible pattern that looks for the title attribute anywhere
+                        java.util.regex.Pattern titlePattern = java.util.regex.Pattern.compile(
+                            "title=\"file:([^:]+):id:(\\d+)\"[^>]*>.*?>([^<]+)<", 
+                            java.util.regex.Pattern.DOTALL);
+                        
+                        // Even simpler pattern - just look for title attribute with file content
+                        java.util.regex.Pattern simplestPattern = java.util.regex.Pattern.compile(
+                            "title=\"file:([^\"]+)\"[^>]*>.*?>([^<]+)<", 
+                            java.util.regex.Pattern.DOTALL);
+                        // Try the simple pattern first
+                        java.util.regex.Matcher simpleMatcher = simpleFilePattern.matcher(htmlContent);
+                        
+                        int clickableCount = 0;
+                        while (simpleMatcher.find()) {
+                            clickableCount++;
+                            String fileName = simpleMatcher.group(1); // The filename from title
+                            String filenameContent = simpleMatcher.group(3); // The actual filename text
+                            logger.info("*** FOUND CLICKABLE FILE #{} (SIMPLE): file='{}', content='{}' ***", clickableCount, fileName, filenameContent);
+                            logger.info("*** Full match (SIMPLE): {} ***", simpleMatcher.group(0));
+                            
+                            // Find the position(s) of this filename in the text content
+                            int searchStart = 0;
+                            int filenameStart;
+                            while ((filenameStart = textContent.indexOf(filenameContent, searchStart)) >= 0) {
+                                int filenameEnd = filenameStart + filenameContent.length();
+                                occurrences.add(new FileOccurrence(filenameStart, filenameEnd, fileName));
+                                logger.info("Clickable filename position (SIMPLE): {} to {}", filenameStart, filenameEnd);
+                                searchStart = filenameEnd;
+                            }
+                        }
+                        
+                        // If simple pattern didn't work, try the complex one
+                        if (clickableCount == 0) {
+                            java.util.regex.Matcher clickableMatcher = clickablePattern.matcher(htmlContent);
+                            while (clickableMatcher.find()) {
+                                clickableCount++;
+                            String fileName = clickableMatcher.group(1); // The filename from title
+                            String filenameContent = clickableMatcher.group(3); // The actual filename text
+                            logger.info("*** FOUND CLICKABLE FILE #{}: file='{}', content='{}' ***", clickableCount, fileName, filenameContent);
+                            logger.info("*** Full match: {} ***", clickableMatcher.group(0));
+                            
+                            // Find the position(s) of this filename in the text content
+                            int searchStart = 0;
+                            int filenameStart;
+                            while ((filenameStart = textContent.indexOf(filenameContent, searchStart)) >= 0) {
+                                int filenameEnd = filenameStart + filenameContent.length();
+                                occurrences.add(new FileOccurrence(filenameStart, filenameEnd, fileName));
+                                logger.debug("Clickable filename position: {} to {}", filenameStart, filenameEnd);
+                                searchStart = filenameEnd;
+                            }
+                        }
+                        }
+                        
+                        // If no matches with the strict pattern, try the more flexible one
+                        if (clickableCount == 0) {
+                            logger.debug("No matches with strict pattern, trying flexible title pattern");
+                            java.util.regex.Matcher titleMatcher = titlePattern.matcher(htmlContent);
+                            while (titleMatcher.find()) {
+                                clickableCount++;
+                                String fileName = titleMatcher.group(1);
+                                String filenameContent = titleMatcher.group(3);
+                                logger.debug("Found clickable file #{} (flexible): file='{}', content='{}'", clickableCount, fileName, filenameContent);
+                                
+                                int searchStart = 0;
+                                int filenameStart;
+                                while ((filenameStart = textContent.indexOf(filenameContent, searchStart)) >= 0) {
+                                    int filenameEnd = filenameStart + filenameContent.length();
+                                    occurrences.add(new FileOccurrence(filenameStart, filenameEnd, fileName));
+                                    logger.debug("Clickable filename position (flexible): {} to {}", filenameStart, filenameEnd);
+                                    searchStart = filenameEnd;
+                                }
+                            }
+                        }
+                        
+                        // If still no matches, try the simplest pattern (just title attribute)
+                        if (clickableCount == 0) {
+                            logger.debug("No matches with flexible pattern, trying simple title pattern");
+                            java.util.regex.Matcher simplestMatcher = simplestPattern.matcher(htmlContent);
+                            while (simplestMatcher.find()) {
+                                clickableCount++;
+                                String titleContent = simplestMatcher.group(1); // The full title content after "file:"
+                                String filenameContent = simplestMatcher.group(2); // The actual filename text
+                                
+                                // Extract filename from title (might have id info)
+                                String fileName = titleContent.contains(":") ? 
+                                    titleContent.substring(0, titleContent.indexOf(":")) : titleContent;
+                                logger.debug("Found clickable file #{} (simple): file='{}', content='{}'", clickableCount, fileName, filenameContent);
+                                
+                                int searchStart = 0;
+                                int filenameStart;
+                                while ((filenameStart = textContent.indexOf(filenameContent, searchStart)) >= 0) {
+                                    int filenameEnd = filenameStart + filenameContent.length();
+                                    occurrences.add(new FileOccurrence(filenameStart, filenameEnd, fileName));
+                                    logger.debug("Clickable filename position (simple): {} to {}", filenameStart, filenameEnd);
+                                    searchStart = filenameEnd;
+                                }
+                            }
+                        }
+                        
+                        logger.debug("Total clickable files found: {}", clickableCount);
                     }
                     
                     
                     // Check if the click position is within any filename occurrence
+                    logger.info("Checking {} occurrences for click at position {}", occurrences.size(), pos);
                     for (FileOccurrence occurrence : occurrences) {
+                        logger.info("Checking occurrence: {} at {}-{}", occurrence.fileName, occurrence.start, occurrence.end);
                         if (pos >= occurrence.start && pos <= occurrence.end) {
-                            logger.debug("Click matched badge for file: {}", occurrence.fileName);
+                            logger.info("*** CLICK MATCH FOUND *** filename: {} at position {}", occurrence.fileName, pos);
                             if (badgeClickHandler != null) {
+                                logger.info("Calling badge click handler for file: {}", occurrence.fileName);
                                 badgeClickHandler.onBadgeClick("file", occurrence.fileName, e, editor);
+                            } else {
+                                logger.warn("Badge click handler is null!");
                             }
                             return;
                         }
                     }
                     
-                    // If no badge found via regex, try element-based detection
-                    logger.debug("No badge found via regex, trying element-based detection");
+                    // If no clickable filename found via regex, try element-based detection
+                    logger.debug("No clickable filename found via regex, trying element-based detection");
                     HTMLDocument doc = (HTMLDocument) editor.getDocument();
                     javax.swing.text.Element elem = doc.getCharacterElement(pos);
                     AttributeSet attrs = elem.getAttributes();
@@ -836,9 +971,12 @@ public final class IncrementalBlockRenderer {
                         }
                     }
                 } catch (Exception ex) {
-                    // Silently ignore click processing errors
+                    logger.error("Error processing click at position {}: {}", pos, ex.getMessage(), ex);
                 }
+            } else {
+                logger.info("Invalid click position: {}", pos);
             }
+            logger.info("=== MOUSE CLICK DEBUG END ===");
         }
         
         // Helper class to store filename occurrence information

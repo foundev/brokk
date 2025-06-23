@@ -130,15 +130,20 @@ public record MarkdownComponentData(int id, String html) implements ComponentDat
                    "font-size: 75%; font-weight: 700; line-height: 1; text-align: center; " +
                    "white-space: nowrap; vertical-align: baseline; border-radius: 0.25rem; }");
         ss.addRule(".badge-symbol { background-color: #17a2b8; color: white; }");
-        ss.addRule(".badge-file { background-color: #28a745; color: white; }");
         ss.addRule(".badge-class { background-color: #6610f2; color: white; }");
         ss.addRule(".badge-function { background-color: #fd7e14; color: white; }");
         ss.addRule(".badge-field { background-color: #20c997; color: white; }");
         ss.addRule(".badge-module { background-color: #6f42c1; color: white; }");
         
+        // Regular file badges (non-clickable)
+        ss.addRule(".badge-file { background-color: #28a745; color: white; }");
+        
         // Clickable badge styling
         ss.addRule(".clickable-badge { cursor: pointer; }");
         ss.addRule(".clickable-badge:hover { opacity: 0.8; text-decoration: none; }");
+        
+        // Clickable file badges should look like code elements, not badges
+        ss.addRule(".clickable-file-badge { color: " + linkColor + "; cursor: pointer; text-decoration: underline; }");
 
         return htmlPane;
     }
