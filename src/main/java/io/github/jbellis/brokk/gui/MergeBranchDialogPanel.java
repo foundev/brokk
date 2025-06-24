@@ -17,7 +17,7 @@ import java.awt.*;
 public class MergeBranchDialogPanel extends JDialog {
     private static final Logger logger = LogManager.getLogger(MergeBranchDialogPanel.class);
 
-    private final JComboBox<GitWorktreeTab.MergeMode> mergeModeComboBox;
+    private final JComboBox<GitRepo.MergeMode> mergeModeComboBox;
     private final JLabel conflictStatusLabel;
     private final String sourceBranch;
     private final String targetBranch;
@@ -32,7 +32,7 @@ public class MergeBranchDialogPanel extends JDialog {
         this.targetBranch = targetBranch;
         
         // Initialize fields
-        this.mergeModeComboBox = new JComboBox<>(GitWorktreeTab.MergeMode.values());
+        this.mergeModeComboBox = new JComboBox<>(GitRepo.MergeMode.values());
         this.conflictStatusLabel = new JLabel(" ");
 
         initializeDialog();
@@ -64,7 +64,7 @@ public class MergeBranchDialogPanel extends JDialog {
         gbc.gridx    = 1;
         gbc.weightx  = 1.0;
         // mergeModeComboBox already initialized in constructor
-        mergeModeComboBox.setSelectedItem(GitWorktreeTab.MergeMode.MERGE_COMMIT);
+        mergeModeComboBox.setSelectedItem(GitRepo.MergeMode.MERGE_COMMIT);
         contentPanel.add(mergeModeComboBox, gbc);
 
         // --- conflict status label ----------------------------------------------
@@ -101,11 +101,11 @@ public class MergeBranchDialogPanel extends JDialog {
      */
     public static class MergeDialogResult {
         private final boolean confirmed;
-        private final GitWorktreeTab.MergeMode mergeMode;
+        private final GitRepo.MergeMode mergeMode;
         private final boolean hasConflicts;
         private final String conflictMessage;
 
-        public MergeDialogResult(boolean confirmed, GitWorktreeTab.MergeMode mergeMode,
+        public MergeDialogResult(boolean confirmed, GitRepo.MergeMode mergeMode,
                                boolean hasConflicts, String conflictMessage) {
             this.confirmed = confirmed;
             this.mergeMode = mergeMode;
@@ -114,7 +114,7 @@ public class MergeBranchDialogPanel extends JDialog {
         }
 
         public boolean isConfirmed() { return confirmed; }
-        public GitWorktreeTab.MergeMode getMergeMode() { return mergeMode; }
+        public GitRepo.MergeMode getMergeMode() { return mergeMode; }
         public boolean hasConflicts() { return hasConflicts; }
         public String getConflictMessage() { return conflictMessage; }
     }
@@ -138,7 +138,7 @@ public class MergeBranchDialogPanel extends JDialog {
         setVisible(true);
 
         // Determine result
-        var selectedMode = (GitWorktreeTab.MergeMode) mergeModeComboBox.getSelectedItem();
+        var selectedMode = (GitRepo.MergeMode) mergeModeComboBox.getSelectedItem();
         String conflictText = conflictStatusLabel.getText();
         boolean hasConflicts = conflictText != null && !conflictText.startsWith("No conflicts detected")
                              && !conflictText.trim().isEmpty() && !conflictText.equals("Checking for conflicts...");
@@ -153,7 +153,7 @@ public class MergeBranchDialogPanel extends JDialog {
         conflictStatusLabel.setText("Checking for conflicts...");
         conflictStatusLabel.setForeground(UIManager.getColor("Label.foreground"));
 
-        var selectedMode = (GitWorktreeTab.MergeMode) mergeModeComboBox.getSelectedItem();
+        var selectedMode = (GitRepo.MergeMode) mergeModeComboBox.getSelectedItem();
 
         contextManager.submitBackgroundTask("Checking merge conflicts", () -> {
             String conflictResult;

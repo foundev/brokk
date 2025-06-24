@@ -36,23 +36,6 @@ import org.jetbrains.annotations.Nullable;
 public class GitWorktreeTab extends JPanel {
     private static final Logger logger = LogManager.getLogger(GitWorktreeTab.class);
 
-    public enum MergeMode {
-        MERGE_COMMIT("Merge commit"),
-        SQUASH_COMMIT("Squash and merge"),
-        REBASE_MERGE("Rebase and merge");
-
-        private final String displayName;
-
-        MergeMode(String displayName) {
-            this.displayName = displayName;
-        }
-
-        @Override
-        public String toString() {
-            return displayName;
-        }
-    }
-
     private final Chrome chrome;
     private final ContextManager contextManager;
     // private final GitPanel gitPanel; // Field is not read
@@ -880,8 +863,8 @@ public class GitWorktreeTab extends JPanel {
 
         gbc.gridwidth = GridBagConstraints.REMAINDER;
         gbc.weightx = 1.0;
-        JComboBox<MergeMode> mergeModeComboBox = new JComboBox<>(MergeMode.values());
-        mergeModeComboBox.setSelectedItem(MergeMode.MERGE_COMMIT);
+        JComboBox<GitRepo.MergeMode> mergeModeComboBox = new JComboBox<>(GitRepo.MergeMode.values());
+        mergeModeComboBox.setSelectedItem(GitRepo.MergeMode.MERGE_COMMIT);
         dialogPanel.add(mergeModeComboBox, gbc);
         gbc.weightx = 0;
 
@@ -1000,7 +983,7 @@ public class GitWorktreeTab extends JPanel {
             // Ensure these are captured before the lambda potentially changes them,
             // or ensure they are final/effectively final.
             final String selectedTargetBranch = (String) targetBranchComboBox.getSelectedItem();
-            final MergeMode selectedMergeMode = (MergeMode) mergeModeComboBox.getSelectedItem();
+            final GitRepo.MergeMode selectedMergeMode = (GitRepo.MergeMode) mergeModeComboBox.getSelectedItem();
 
             String currentConflictText = conflictStatusLabel.getText(); // Check the final state of the label
             if (currentConflictText.startsWith("No conflicts detected") || currentConflictText.startsWith("Checking for conflicts")) {
@@ -1025,13 +1008,13 @@ public class GitWorktreeTab extends JPanel {
         }
     }
 
-    private void checkConflictsAsync(JComboBox<String> targetBranchComboBox, JComboBox<MergeMode> mergeModeComboBox, JLabel conflictStatusLabel, String worktreeBranchName, @Nullable JButton okButton) {
+    private void checkConflictsAsync(JComboBox<String> targetBranchComboBox, JComboBox<GitRepo.MergeMode> mergeModeComboBox, JLabel conflictStatusLabel, String worktreeBranchName, @Nullable JButton okButton) {
         if (okButton != null) {
             okButton.setEnabled(false);
         }
 
         String selectedTargetBranch = (String) targetBranchComboBox.getSelectedItem();
-        MergeMode selectedMergeMode = (MergeMode) mergeModeComboBox.getSelectedItem();
+        GitRepo.MergeMode selectedMergeMode = (GitRepo.MergeMode) mergeModeComboBox.getSelectedItem();
 
         if (selectedTargetBranch == null || selectedTargetBranch.equals("Error loading branches") || selectedTargetBranch.equals("Unsupported parent repo type") || selectedTargetBranch.equals("Parent repo not available") || selectedTargetBranch.equals("Parent project not found") || selectedTargetBranch.equals("Not a worktree project")) {
             conflictStatusLabel.setText("Please select a valid target branch.");
@@ -1050,7 +1033,7 @@ public class GitWorktreeTab extends JPanel {
         IGitRepo gitRepo = parentProject.getRepo();
 
         final String finalSelectedTargetBranch = selectedTargetBranch;
-        final MergeMode finalSelectedMergeMode = selectedMergeMode;
+        final GitRepo.MergeMode finalSelectedMergeMode = selectedMergeMode;
 
         contextManager.submitBackgroundTask("Checking merge conflicts", () -> {
             String conflictResultString;
@@ -1092,7 +1075,7 @@ public class GitWorktreeTab extends JPanel {
         });
     }
 
-    private void performMergeOperation(String worktreeBranchName, String targetBranch, MergeMode mode, boolean deleteWorktree, boolean deleteBranch) {
+    private void performMergeOperation(String worktreeBranchName, String targetBranch, GitRepo.MergeMode mode, boolean deleteWorktree, boolean deleteBranch) {
         var project = contextManager.getProject();
         if (!(project instanceof WorktreeProject worktreeProject)) {
             logger.error("performMergeOperation called on a non-WorktreeProject: {}", project.getClass().getSimpleName());
@@ -1117,8 +1100,7 @@ public class GitWorktreeTab extends JPanel {
                 logger.info("Performing {} of {} into {}", mode, worktreeBranchName, targetBranch);
                 MergeResult mergeResult = parentGitRepo.performMerge(worktreeBranchName, mode);
                 
-                if (!mergeResult.getMergeStatus().isSuccessful() && 
-                    !(mode == MergeMode.SQUASH_COMMIT && mergeResult.getMergeStatus() == MergeResult.MergeStatus.MERGED_SQUASHED_NOT_COMMITTED)) {
+                if (!GitRepo.isMergeSuccessful(mergeResult, mode)) {
                     String conflictDetails = mergeResult.getConflicts() != null
                                              ? String.join(", ", mergeResult.getConflicts().keySet())
                                              : "unknown conflicts";

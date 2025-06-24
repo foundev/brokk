@@ -126,7 +126,7 @@ public interface IGitRepo {
      * @return A string describing conflicts if any, or null/empty if no conflicts.
      * @throws GitAPIException if a Git error occurs during the check.
      */
-    default @Nullable String checkMergeConflicts(String worktreeBranch, String targetBranch, GitWorktreeTab.MergeMode mode) throws GitAPIException {
+    default @Nullable String checkMergeConflicts(String worktreeBranch, String targetBranch, GitRepo.MergeMode mode) throws GitAPIException {
         throw new UnsupportedOperationException("checkMergeConflicts not implemented");
     }
 
@@ -142,7 +142,7 @@ public interface IGitRepo {
         throw new UnsupportedOperationException("rebaseMergeIntoHead not implemented");
     }
 
-    default MergeResult performMerge(String branchName, GitWorktreeTab.MergeMode mode) throws GitAPIException {
+    default MergeResult performMerge(String branchName, GitRepo.MergeMode mode) throws GitAPIException {
         throw new UnsupportedOperationException("performMerge not implemented");
     }
 

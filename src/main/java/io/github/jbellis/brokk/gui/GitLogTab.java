@@ -5,7 +5,7 @@ import io.github.jbellis.brokk.ContextManager;
 import io.github.jbellis.brokk.git.CommitInfo;
 import io.github.jbellis.brokk.git.GitRepo;
 import io.github.jbellis.brokk.git.ICommitInfo;
-import io.github.jbellis.brokk.gui.GitWorktreeTab.MergeMode;
+import io.github.jbellis.brokk.git.GitRepo.MergeMode;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 import org.eclipse.jgit.api.MergeResult;
@@ -611,8 +611,7 @@ public class GitLogTab extends JPanel {
                 var mergeResult = repo.performMerge(branchName, mode);
                 var status = mergeResult.getMergeStatus();
 
-                if (status.isSuccessful() || 
-                    (mode == MergeMode.SQUASH_COMMIT && status == MergeResult.MergeStatus.MERGED_SQUASHED_NOT_COMMITTED)) {
+                if (GitRepo.isMergeSuccessful(mergeResult, mode)) {
                     String modeDescription = switch (mode) {
                         case MERGE_COMMIT -> "merged";
                         case SQUASH_COMMIT -> "squash merged";

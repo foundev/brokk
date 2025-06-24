@@ -1,6 +1,5 @@
 package io.github.jbellis.brokk.git;
 
-import io.github.jbellis.brokk.gui.GitWorktreeTab;
 import org.eclipse.jgit.api.Git;
 import org.eclipse.jgit.api.errors.GitAPIException;
 import org.junit.jupiter.api.AfterEach;
@@ -72,7 +71,7 @@ public class GitRepoMergeConflictTest {
         git.commit().setMessage("Add file2").call();
         
         // Test merge conflict check - should be null (no conflicts)
-        String result = gitRepo.checkMergeConflicts("branch1", "branch2", GitWorktreeTab.MergeMode.MERGE_COMMIT);
+        String result = gitRepo.checkMergeConflicts("branch1", "branch2", GitRepo.MergeMode.MERGE_COMMIT);
         assertNull(result, "No conflicts should be detected for non-conflicting branches");
     }
 
@@ -93,7 +92,7 @@ public class GitRepoMergeConflictTest {
         git.commit().setMessage("Branch2 changes shared file").call();
         
         // Test merge conflict check - should detect conflicts
-        String result = gitRepo.checkMergeConflicts("branch1", "branch2", GitWorktreeTab.MergeMode.MERGE_COMMIT);
+        String result = gitRepo.checkMergeConflicts("branch1", "branch2", GitRepo.MergeMode.MERGE_COMMIT);
         assertNotNull(result, "Conflicts should be detected");
         assertTrue(result.contains("shared.txt"), "Conflict message should mention the conflicting file");
         assertTrue(result.contains("Merge conflicts detected"), "Should indicate merge conflicts");
@@ -117,7 +116,7 @@ public class GitRepoMergeConflictTest {
         git.commit().setMessage("Add file2").call();
         
         // Test squash merge conflict check - should be null (no conflicts)
-        String result = gitRepo.checkMergeConflicts("branch1", "branch2", GitWorktreeTab.MergeMode.SQUASH_COMMIT);
+        String result = gitRepo.checkMergeConflicts("branch1", "branch2", GitRepo.MergeMode.SQUASH_COMMIT);
         assertNull(result, "No conflicts should be detected for non-conflicting branches in squash mode");
     }
 
@@ -138,7 +137,7 @@ public class GitRepoMergeConflictTest {
         git.commit().setMessage("Branch2 changes shared file").call();
         
         // Test squash merge conflict check - should detect conflicts
-        String result = gitRepo.checkMergeConflicts("branch1", "branch2", GitWorktreeTab.MergeMode.SQUASH_COMMIT);
+        String result = gitRepo.checkMergeConflicts("branch1", "branch2", GitRepo.MergeMode.SQUASH_COMMIT);
         assertNotNull(result, "Conflicts should be detected in squash mode");
         assertTrue(result.contains("shared.txt"), "Conflict message should mention the conflicting file");
         assertTrue(result.contains("Merge conflicts detected"), "Should indicate merge conflicts");
@@ -162,7 +161,7 @@ public class GitRepoMergeConflictTest {
         git.commit().setMessage("Add file2").call();
         
         // Test rebase conflict check - should be null (no conflicts)
-        String result = gitRepo.checkMergeConflicts("branch1", "branch2", GitWorktreeTab.MergeMode.REBASE_MERGE);
+        String result = gitRepo.checkMergeConflicts("branch1", "branch2", GitRepo.MergeMode.REBASE_MERGE);
         assertNull(result, "No conflicts should be detected for non-conflicting rebase");
     }
 
@@ -183,7 +182,7 @@ public class GitRepoMergeConflictTest {
         git.commit().setMessage("Branch2 changes shared file").call();
         
         // Test rebase conflict check - should detect conflicts
-        String result = gitRepo.checkMergeConflicts("branch1", "branch2", GitWorktreeTab.MergeMode.REBASE_MERGE);
+        String result = gitRepo.checkMergeConflicts("branch1", "branch2", GitRepo.MergeMode.REBASE_MERGE);
         assertNotNull(result, "Conflicts should be detected in rebase mode");
         assertTrue(result.contains("Rebase conflicts detected") || result.contains("Rebase stopped"), 
                   "Should indicate rebase conflicts or stoppage");
@@ -208,7 +207,7 @@ public class GitRepoMergeConflictTest {
         String originalBranch = gitRepo.getCurrentBranch();
         
         // Test conflict check (should detect conflicts but restore state)
-        gitRepo.checkMergeConflicts("branch1", "branch2", GitWorktreeTab.MergeMode.MERGE_COMMIT);
+        gitRepo.checkMergeConflicts("branch1", "branch2", GitRepo.MergeMode.MERGE_COMMIT);
         
         // Verify we're back on the original branch
         assertEquals(originalBranch, gitRepo.getCurrentBranch(), 
@@ -232,7 +231,7 @@ public class GitRepoMergeConflictTest {
         git.commit().setMessage("Add feature").call();
         
         // Test merge conflict check for fast-forward case
-        String result = gitRepo.checkMergeConflicts("feature", "master", GitWorktreeTab.MergeMode.MERGE_COMMIT);
+        String result = gitRepo.checkMergeConflicts("feature", "master", GitRepo.MergeMode.MERGE_COMMIT);
         assertNull(result, "Fast-forward merge should not have conflicts");
         
         // Verify the merge would actually create a merge commit (NO_FF mode)

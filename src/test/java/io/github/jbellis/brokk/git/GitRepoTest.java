@@ -1,6 +1,5 @@
 package io.github.jbellis.brokk.git;
 
-import io.github.jbellis.brokk.gui.GitWorktreeTab;
 import org.eclipse.jgit.api.Git;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Assertions;
@@ -509,7 +508,7 @@ public class GitRepoTest {
     @Test
     void testCheckMergeConflicts_NoConflict_MergeCommit() throws Exception {
         setupBranchesForNoConflictTest_FeatureAhead();
-        String result = repo.checkMergeConflicts("feature", repo.getCurrentBranch(), GitWorktreeTab.MergeMode.MERGE_COMMIT);
+        String result = repo.checkMergeConflicts("feature", repo.getCurrentBranch(), GitRepo.MergeMode.MERGE_COMMIT);
         assertNull(result, "Should be no conflict for MERGE_COMMIT: " + result);
         assertEquals(repo.getCurrentBranch(), repo.getGit().getRepository().getBranch(), "Repository should remain on original branch");
     }
@@ -517,7 +516,7 @@ public class GitRepoTest {
     @Test
     void testCheckMergeConflicts_Conflict_MergeCommit() throws Exception {
         setupBranchesForConflictTest();
-        String result = repo.checkMergeConflicts("feature", repo.getCurrentBranch(), GitWorktreeTab.MergeMode.MERGE_COMMIT);
+        String result = repo.checkMergeConflicts("feature", repo.getCurrentBranch(), GitRepo.MergeMode.MERGE_COMMIT);
         assertNotNull(result, "Should be a conflict for MERGE_COMMIT");
         assertTrue(result.contains("common.txt"), "Conflict message should mention common.txt");
         assertEquals(repo.getCurrentBranch(), repo.getGit().getRepository().getBranch(), "Repository should remain on original branch");
@@ -530,7 +529,7 @@ public class GitRepoTest {
         setupBranchesForNoConflictTest_MainAhead(); // main has C1_main, feature is at Initial
         // Rebase feature (at Initial) onto main (at C1_main). No new commits on feature, so it should be fast-forward or up-to-date like.
         String currentMainBranch = repo.getCurrentBranch();
-        String result = repo.checkMergeConflicts("feature", currentMainBranch, GitWorktreeTab.MergeMode.REBASE_MERGE);
+        String result = repo.checkMergeConflicts("feature", currentMainBranch, GitRepo.MergeMode.REBASE_MERGE);
         assertNull(result, "Should be no conflict for REBASE_MERGE when feature is ancestor: " + result);
         assertEquals(currentMainBranch, repo.getGit().getRepository().getBranch(), "Repository should remain on original branch");
         assertFalse(repo.getGit().getRepository().getRepositoryState().isRebasing(), "Repository should not be in rebasing state");
@@ -539,7 +538,7 @@ public class GitRepoTest {
         tearDown(); setUp(); // Reset repo
         setupBranchesForNoConflictTest_FeatureAhead(); // feature has C1, C2; main is at Initial + main_base
         currentMainBranch = repo.getCurrentBranch();
-        result = repo.checkMergeConflicts("feature", currentMainBranch, GitWorktreeTab.MergeMode.REBASE_MERGE);
+        result = repo.checkMergeConflicts("feature", currentMainBranch, GitRepo.MergeMode.REBASE_MERGE);
         assertNull(result, "Should be no conflict for REBASE_MERGE with non-conflicting feature commits: " + result);
         assertEquals(currentMainBranch, repo.getGit().getRepository().getBranch(), "Repository should remain on original branch");
         assertFalse(repo.getGit().getRepository().getRepositoryState().isRebasing(), "Repository should not be in rebasing state");
@@ -548,7 +547,7 @@ public class GitRepoTest {
     @Test
     void testCheckMergeConflicts_Conflict_RebaseMerge() throws Exception {
         setupBranchesForConflictTest();
-        String result = repo.checkMergeConflicts("feature", repo.getCurrentBranch(), GitWorktreeTab.MergeMode.REBASE_MERGE);
+        String result = repo.checkMergeConflicts("feature", repo.getCurrentBranch(), GitRepo.MergeMode.REBASE_MERGE);
         assertNotNull(result, "Should be a conflict for REBASE_MERGE: " + result);
         // JGit's RebaseResult with STOPPED status might not always populate getConflicts().
         // The method returns a generic message in that case.
@@ -564,7 +563,7 @@ public class GitRepoTest {
     @Test
     void testCheckMergeConflicts_NoConflict_SquashCommit() throws Exception {
         setupBranchesForNoConflictTest_FeatureAhead();
-        String result = repo.checkMergeConflicts("feature", repo.getCurrentBranch(), GitWorktreeTab.MergeMode.SQUASH_COMMIT);
+        String result = repo.checkMergeConflicts("feature", repo.getCurrentBranch(), GitRepo.MergeMode.SQUASH_COMMIT);
         assertNull(result, "Should be no conflict for SQUASH_COMMIT: " + result);
         assertEquals(repo.getCurrentBranch(), repo.getGit().getRepository().getBranch(), "Repository should remain on original branch");
         org.eclipse.jgit.lib.RepositoryState stateSquashNoConflict = repo.getGit().getRepository().getRepositoryState();
@@ -574,7 +573,7 @@ public class GitRepoTest {
     @Test
     void testCheckMergeConflicts_Conflict_SquashCommit() throws Exception {
         setupBranchesForConflictTest();
-        String result = repo.checkMergeConflicts("feature", repo.getCurrentBranch(), GitWorktreeTab.MergeMode.SQUASH_COMMIT);
+        String result = repo.checkMergeConflicts("feature", repo.getCurrentBranch(), GitRepo.MergeMode.SQUASH_COMMIT);
         assertNotNull(result, "Should be a conflict for SQUASH_COMMIT");
         assertTrue(result.contains("common.txt"), "Conflict message should mention common.txt for squash: " + result);
         assertEquals(repo.getCurrentBranch(), repo.getGit().getRepository().getBranch(), "Repository should remain on original branch");
@@ -586,14 +585,14 @@ public class GitRepoTest {
     void testCheckMergeConflicts_InvalidWorktreeBranch() throws Exception {
         String mainBranch = repo.getCurrentBranch();
         assertThrows(GitRepo.GitRepoException.class,
-                     () -> repo.checkMergeConflicts("nonexistent-feature", mainBranch, GitWorktreeTab.MergeMode.MERGE_COMMIT));
+                     () -> repo.checkMergeConflicts("nonexistent-feature", mainBranch, GitRepo.MergeMode.MERGE_COMMIT));
     }
 
     @Test
     void testCheckMergeConflicts_InvalidTargetBranch() throws Exception {
         repo.getGit().branchCreate().setName("feature-exists").call();
         assertThrows(GitRepo.GitRepoException.class,
-                     () -> repo.checkMergeConflicts("feature-exists", "nonexistent-target", GitWorktreeTab.MergeMode.MERGE_COMMIT));
+                     () -> repo.checkMergeConflicts("feature-exists", "nonexistent-target", GitRepo.MergeMode.MERGE_COMMIT));
     }
 
     @Test
