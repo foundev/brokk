@@ -2095,12 +2095,13 @@ public class GitRepo implements Closeable, IGitRepo {
                     MergeCommand mergeCmd = git.merge().include(worktreeBranchId);
                     if (mode == io.github.jbellis.brokk.gui.GitWorktreeTab.MergeMode.SQUASH_COMMIT) {
                         mergeCmd.setSquash(true);
+                        // JGit defaults to commit=false when squash=true. We'll set it explicitly anyway.
                     } else { // MERGE_COMMIT
                         mergeCmd.setSquash(false);
-                        mergeCmd.setCommit(true);
-                        mergeCmd.setMessage("Temporary merge for conflict check");
+                        // No longer attempting a commit, so setMessage is not needed.
                         mergeCmd.setFastForward(MergeCommand.FastForwardMode.NO_FF);
                     }
+                    mergeCmd.setCommit(false); // Ensure no commit (and thus no signing) during conflict check
                     MergeResult mergeResult = mergeCmd.call();
                     MergeResult.MergeStatus status = mergeResult.getMergeStatus();
                     logger.debug("Merge simulation result: {}", status);
@@ -2111,6 +2112,7 @@ public class GitRepo implements Closeable, IGitRepo {
                     } else if (status.isSuccessful()) {
                         return null; // MERGED, FAST_FORWARD, MERGED_SQUASHED, ALREADY_UP_TO_DATE
                     } else {
+                        // This case handles things like FAILED, NOT_SUPPORTED etc.
                         return "Merge pre-check failed: " + status.toString();
                     }
                 } finally {
@@ -2118,6 +2120,9 @@ public class GitRepo implements Closeable, IGitRepo {
                     if (repoState == RepositoryState.MERGING || repoState == RepositoryState.MERGING_RESOLVED) {
                         logger.warn("Merge was still active during cleanup for {}. Resetting HARD.", tempMergeBranchName);
                         try {
+                            // A merge operation that was set with .setCommit(false) should not leave the repo in MERGING state
+                            // if it was successful. If it's CONFLICTING, it might.
+                            // However, a reset is a safe cleanup if the state is unexpected.
                             git.reset().setMode(ResetCommand.ResetType.HARD).call();
                         } catch (GitAPIException e) {
                             logger.error("Failed to reset hard during merge cleanup", e);

@@ -5,10 +5,15 @@ import io.github.jbellis.brokk.ContextManager;
 import io.github.jbellis.brokk.git.CommitInfo;
 import io.github.jbellis.brokk.git.GitRepo;
 import io.github.jbellis.brokk.git.ICommitInfo;
+import io.github.jbellis.brokk.gui.GitWorktreeTab.MergeMode;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 import org.eclipse.jgit.api.MergeResult;
+import org.eclipse.jgit.api.RebaseCommand;
+import org.eclipse.jgit.api.RebaseResult;
 import org.eclipse.jgit.api.errors.GitAPIException;
+import org.eclipse.jgit.lib.ObjectId;
+import org.jetbrains.annotations.Nullable;
 
 import javax.swing.*;
 import javax.swing.table.DefaultTableModel;
@@ -269,8 +274,12 @@ public class GitLogTab extends JPanel {
         mergeItem.addActionListener(e -> {
             int selectedRow = branchTable.getSelectedRow();
             if (selectedRow != -1) {
-                String branchDisplay = (String) branchTableModel.getValueAt(selectedRow, 1);
-                mergeBranchIntoHead(branchDisplay);
+                String branchToMerge = (String) branchTableModel.getValueAt(selectedRow, 1);
+                if ("stashes".equals(branchToMerge)) {
+                    chrome.toolError("Cannot merge the 'stashes' virtual entry.", "Merge Error");
+                    return;
+                }
+                showMergeDialog(branchToMerge);
             }
         });
         captureDiffVsBranchItem.addActionListener(e -> {
@@ -561,40 +570,280 @@ public class GitLogTab extends JPanel {
         });
     }
 
-    /**
-     * Merge a branch into HEAD.
-     */
-    private void mergeBranchIntoHead(String branchName) {
-        contextManager.submitUserTask("Merging branch: " + branchName, () -> {
-            try {
-                MergeResult mergeResult = getRepo().mergeIntoHead(branchName);
-                MergeResult.MergeStatus status = mergeResult.getMergeStatus();
+    private void showMergeDialog(String branchToMerge) {
+        String currentBranch;
+        try {
+            currentBranch = getRepo().getCurrentBranch();
+        } catch (GitAPIException e) {
+            logger.error("Could not get current branch for merge dialog", e);
+            chrome.toolError("Could not determine current branch: " + e.getMessage(), "Merge Error");
+            return;
+        }
 
-                if (status.isSuccessful()) {
-                    if (status == MergeResult.MergeStatus.ALREADY_UP_TO_DATE) {
-                        chrome.systemOutput("Branch '" + branchName + "' is already up-to-date with HEAD.");
-                    } else {
-                        chrome.systemOutput("Branch '" + branchName + "' was successfully merged into HEAD.");
+        if (branchToMerge.equals(currentBranch)) {
+            chrome.systemNotify("Cannot merge '" + branchToMerge + "' into itself.", "Merge Info", JOptionPane.INFORMATION_MESSAGE);
+            return;
+        }
+
+        JPanel dialogPanel = new JPanel(new GridBagLayout());
+        GridBagConstraints gbc = new GridBagConstraints();
+        gbc.gridwidth = GridBagConstraints.REMAINDER;
+        gbc.fill = GridBagConstraints.HORIZONTAL;
+        gbc.anchor = GridBagConstraints.WEST;
+        gbc.insets = new Insets(5, 5, 5, 5);
+        gbc.weightx = 1.0;
+
+        JLabel titleLabel = new JLabel(String.format("Merge branch '%s' into '%s'", branchToMerge, currentBranch));
+        titleLabel.setFont(titleLabel.getFont().deriveFont(Font.BOLD));
+        dialogPanel.add(titleLabel, gbc);
+
+        gbc.gridwidth = 1;
+        gbc.weightx = 0;
+        dialogPanel.add(new JLabel("Merge strategy:"), gbc);
+
+        gbc.gridx = 1;
+        gbc.weightx = 1.0;
+        JComboBox<MergeMode> mergeModeComboBox = new JComboBox<>(MergeMode.values());
+        mergeModeComboBox.setSelectedItem(MergeMode.MERGE_COMMIT);
+        dialogPanel.add(mergeModeComboBox, gbc);
+
+        gbc.gridx = 0;
+        gbc.gridy = 2;
+        gbc.gridwidth = GridBagConstraints.REMAINDER;
+        gbc.weightx = 1.0;
+        JLabel conflictStatusLabel = new JLabel(" "); // Start with a non-empty string for layout
+        conflictStatusLabel.setForeground(UIManager.getColor("Label.foreground"));
+        dialogPanel.add(conflictStatusLabel, gbc);
+
+        JOptionPane optionPane = new JOptionPane(dialogPanel, JOptionPane.PLAIN_MESSAGE, JOptionPane.OK_CANCEL_OPTION);
+        JDialog dialog = optionPane.createDialog(this, "Merge Options");
+
+        JButton okButton = null;
+        // Attempt to find the OK button, similar to GitWorktreeTab logic
+        for (Component comp : optionPane.getComponents()) {
+            if (comp instanceof JPanel buttonBar) {
+                for (Component btnComp : buttonBar.getComponents()) {
+                    if (btnComp instanceof JButton jButton && jButton.getText().equals(UIManager.getString("OptionPane.okButtonText"))) {
+                        okButton = jButton;
+                        break;
                     }
-                } else if (status == MergeResult.MergeStatus.CONFLICTING) {
-                    String conflictingFiles = mergeResult.getConflicts().keySet().stream()
-                            .map(s -> "  - " + s)
-                            .collect(Collectors.joining("\n"));
-                    chrome.toolError("Merge conflicts detected for branch '" + branchName + "'.\n" +
-                                        "Please resolve conflicts manually and then commit.\n" +
-                                        "Conflicting files:\n" + conflictingFiles, "Merge Conflict");
-                } else {
-                    // For other non-successful statuses like FAILED, ABORTED etc.
-                    chrome.toolError("Merge of branch '" + branchName + "' failed with error: " + status, "Merge Error");
                 }
-                update(); // Refresh UI to reflect new state (merged, conflicting, or failed)
-            } catch (GitAPIException e) {
-                logger.error("Error merging branch: {}", branchName, e);
-                chrome.toolError("Error merging branch '" + branchName + "': " + e.getMessage(), "Merge Error");
-                update(); // Refresh UI to show current state after error
+                if (okButton != null) break;
             }
+        }
+        if (okButton == null) {
+            Component[] components = optionPane.getComponents();
+            for (int i = components.length - 1; i >= 0; i--) {
+                if (components[i] instanceof JPanel panel) {
+                    for (Component c : panel.getComponents()) {
+                        if (c instanceof JButton jButton && jButton.getText().equals(UIManager.getString("OptionPane.okButtonText"))) {
+                            okButton = jButton;
+                            break;
+                        }
+                    }
+                } else if (components[i] instanceof JButton jButton && jButton.getText().equals(UIManager.getString("OptionPane.okButtonText"))) {
+                    okButton = jButton;
+                }
+                if (okButton != null) break;
+            }
+        }
+        final JButton finalOkButtonRef = okButton; // Effectively final reference for lambda
+
+        if (finalOkButtonRef != null) {
+            Runnable conflictChecker = () -> checkConflictsAsync(branchToMerge, currentBranch, mergeModeComboBox, conflictStatusLabel, finalOkButtonRef);
+            mergeModeComboBox.addActionListener(e -> conflictChecker.run());
+            conflictChecker.run(); // Initial check
+        } else {
+            logger.warn("Could not find OK button in merge dialog. State management will be limited.");
+            // Perform initial check without button control
+            checkConflictsAsync(branchToMerge, currentBranch, mergeModeComboBox, conflictStatusLabel, null);
+        }
+
+        dialog.setVisible(true);
+        Object selectedValue = optionPane.getValue();
+        dialog.dispose();
+
+        if (selectedValue != null && selectedValue.equals(JOptionPane.OK_OPTION)) {
+            MergeMode selectedMode = (MergeMode) mergeModeComboBox.getSelectedItem();
+            String conflictText = conflictStatusLabel.getText();
+            if (finalOkButtonRef == null || finalOkButtonRef.isEnabled() || conflictText.startsWith("No conflicts detected")) { // Allow if OK enabled or no conflicts
+                mergeBranchIntoHead(branchToMerge, selectedMode);
+            } else {
+                chrome.toolError("Merge cancelled due to conflicts or error: " + conflictText, "Merge Cancelled");
+            }
+        }
+    }
+
+    private void checkConflictsAsync(String branchToMerge, String currentBranch,
+                                     JComboBox<MergeMode> mergeModeComboBox, JLabel conflictStatusLabel,
+                                     @Nullable JButton okButton) {
+        if (okButton != null) {
+            okButton.setEnabled(false);
+        }
+        conflictStatusLabel.setText("Checking for conflicts...");
+        conflictStatusLabel.setForeground(UIManager.getColor("Label.foreground"));
+
+        MergeMode selectedMode = (MergeMode) mergeModeComboBox.getSelectedItem();
+
+        contextManager.submitBackgroundTask("Checking merge conflicts", () -> {
+            String conflictResult;
+            try {
+                conflictResult = getRepo().checkMergeConflicts(branchToMerge, currentBranch, selectedMode);
+            } catch (GitAPIException e) {
+                logger.error("Error checking merge conflicts", e);
+                conflictResult = "Error: " + e.getMessage();
+            }
+
+            final String finalConflictResult = conflictResult;
+            SwingUtilities.invokeLater(() -> {
+                if (finalConflictResult != null && !finalConflictResult.isBlank()) {
+                    conflictStatusLabel.setText(finalConflictResult);
+                    conflictStatusLabel.setForeground(Color.RED);
+                    if (okButton != null) {
+                        okButton.setEnabled(false);
+                    }
+                } else {
+                    conflictStatusLabel.setText("No conflicts detected.");
+                    conflictStatusLabel.setForeground(new Color(0, 128, 0)); // Green
+                    if (okButton != null) {
+                        okButton.setEnabled(true);
+                    }
+                }
+            });
+            return null;
         });
     }
+
+
+    /**
+     * Merge a branch into HEAD using the specified mode.
+     */
+    private void mergeBranchIntoHead(String branchName, MergeMode mode) {
+        contextManager.submitUserTask("Merging branch: " + branchName + " (" + mode + ")", () -> {
+            var repo = getRepo();
+            String targetBranch = null;
+            String originalBranchBeforeAnyCheckout = null; // For robust restoration in rebase
+
+            try {
+                targetBranch = repo.getCurrentBranch();
+                originalBranchBeforeAnyCheckout = targetBranch; // Capture current state
+
+                if (mode == MergeMode.MERGE_COMMIT) {
+                    MergeResult mergeResult = repo.mergeIntoHead(branchName);
+                    MergeResult.MergeStatus status = mergeResult.getMergeStatus();
+                    if (status.isSuccessful()) {
+                        chrome.systemOutput("Branch '" + branchName + "' successfully merged into '" + targetBranch + "'.");
+                    } else if (status == MergeResult.MergeStatus.CONFLICTING) {
+                        String conflictingFiles = Objects.requireNonNull(mergeResult.getConflicts()).keySet().stream()
+                                .map(s -> "  - " + s)
+                                .collect(Collectors.joining("\n"));
+                        chrome.toolError("Merge conflicts for '" + branchName + "' into '" + targetBranch + "'.\n" +
+                                         "Resolve manually and commit.\nConflicting files:\n" + conflictingFiles, "Merge Conflict");
+                    } else {
+                        chrome.toolError("Merge of '" + branchName + "' into '" + targetBranch + "' failed: " + status, "Merge Error");
+                    }
+                } else if (mode == MergeMode.SQUASH_COMMIT) {
+                    List<String> commitMessages = repo.getCommitMessagesBetween(branchName, targetBranch);
+                    var squashCommitMessage = new StringBuilder("Squash merge branch '").append(branchName).append("' into '").append(targetBranch).append("'\n\n");
+                    if (commitMessages.isEmpty()) {
+                        squashCommitMessage.append("- No individual commit messages found between ").append(branchName).append(" and ").append(targetBranch).append(".");
+                    } else {
+                        for (String msg : commitMessages) {
+                            squashCommitMessage.append("- ").append(msg).append("\n");
+                        }
+                    }
+
+                    ObjectId resolvedBranch = repo.resolve(branchName);
+                    MergeResult squashResult = repo.getGit().merge()
+                            .setSquash(true)
+                            .include(resolvedBranch)
+                            .call();
+
+                    if (!squashResult.getMergeStatus().isSuccessful()) {
+                        String conflictDetails = squashResult.getConflicts() != null
+                                ? String.join(", ", squashResult.getConflicts().keySet())
+                                : "unknown conflicts";
+                        chrome.toolError("Squash merge of '" + branchName + "' into '" + targetBranch + "' failed: " + squashResult.getMergeStatus() +
+                                         ". Conflicts: " + conflictDetails, "Squash Merge Failed");
+                        return null;
+                    }
+                    repo.getGit().commit().setMessage(squashCommitMessage.toString()).call();
+                    chrome.systemOutput("Successfully squash merged '" + branchName + "' into '" + targetBranch + "'.");
+                } else if (mode == MergeMode.REBASE_MERGE) {
+                    String tempRebaseBranchName = null;
+                    try {
+                        tempRebaseBranchName = "__brokk_rebase_temp_" + branchName.replaceAll("[^a-zA-Z0-9-_]", "_") + "_" + System.currentTimeMillis();
+                        repo.createBranch(tempRebaseBranchName, branchName);
+                        repo.checkout(tempRebaseBranchName);
+
+                        ObjectId resolvedTarget = repo.resolve(targetBranch);
+                        RebaseResult rebaseResult = repo.getGit().rebase()
+                                .setUpstream(resolvedTarget)
+                                .call();
+
+                        if (!rebaseResult.getStatus().isSuccessful()) {
+                            chrome.toolError("Rebase of '" + branchName + "' (as " + tempRebaseBranchName + ") onto '" + targetBranch + "' failed: " + rebaseResult.getStatus(), "Rebase Failed");
+                            // Attempt to abort rebase
+                            try {
+                                if (!repo.getCurrentBranch().equals(tempRebaseBranchName)) { // Ensure on correct branch for abort
+                                   repo.checkout(tempRebaseBranchName);
+                                }
+                                repo.getGit().rebase().setOperation(RebaseCommand.Operation.ABORT).call();
+                            } catch (GitAPIException abortEx) {
+                                logger.error("Failed to abort rebase for {}", tempRebaseBranchName, abortEx);
+                            }
+                            return null;
+                        }
+
+                        // Rebase successful, now merge temp branch (fast-forward)
+                        repo.checkout(targetBranch); // Switch to the target branch
+                        MergeResult ffMergeResult = repo.mergeIntoHead(tempRebaseBranchName); // This should be a fast-forward
+
+                        if (!ffMergeResult.getMergeStatus().isSuccessful()) {
+                            chrome.toolError("Fast-forward merge of rebased '" + tempRebaseBranchName + "' into '" + targetBranch + "' failed: " + ffMergeResult.getMergeStatus(), "Rebase Merge Failed");
+                            return null;
+                        }
+                        chrome.systemOutput("Successfully rebase-merged '" + branchName + "' into '" + targetBranch + "'.");
+                    } finally {
+                        // Cleanup: switch back to original target branch if necessary and delete temp branch
+                        try {
+                            if (!repo.getCurrentBranch().equals(targetBranch)) {
+                                repo.checkout(targetBranch);
+                            }
+                        } catch (GitAPIException e) {
+                            logger.error("Error ensuring checkout to target branch '{}' during rebase cleanup", targetBranch, e);
+                        }
+                        if (tempRebaseBranchName != null) {
+                            try {
+                                repo.forceDeleteBranch(tempRebaseBranchName);
+                            } catch (GitAPIException e) {
+                                logger.error("Failed to delete temporary rebase branch {}", tempRebaseBranchName, e);
+                            }
+                        }
+                    }
+                }
+                update(); // Refresh UI to reflect new state
+            } catch (GitAPIException e) {
+                logger.error("Error merging branch '{}' into '{}' with mode {}: {}", branchName, targetBranch, mode, e.getMessage(), e);
+                chrome.toolError("Error merging branch: " + e.getMessage(), "Merge Error");
+                update(); // Refresh UI
+            } finally {
+                 // Ensure we are back on the original branch if a checkout happened during rebase and an error occurred before restoring
+                try {
+                    if (originalBranchBeforeAnyCheckout != null && !repo.getCurrentBranch().equals(originalBranchBeforeAnyCheckout)) {
+                        logger.warn("Restoring original branch {} after merge operation concluded or failed.", originalBranchBeforeAnyCheckout);
+                        repo.checkout(originalBranchBeforeAnyCheckout);
+                        update(); // Re-update if branch changed
+                    }
+                } catch (GitAPIException e) {
+                    logger.error("Critical: Failed to restore original branch {} after merge operation.", originalBranchBeforeAnyCheckout, e);
+                    chrome.toolError("Critical error: Failed to restore original branch state. Please check your Git repository.", "Repository State Error");
+                }
+            }
+            return null;
+        });
+    }
+
 
     /**
      * Creates a new branch from an existing one and checks it out.
