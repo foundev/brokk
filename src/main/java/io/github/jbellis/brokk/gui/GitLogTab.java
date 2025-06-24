@@ -18,6 +18,7 @@ import org.jetbrains.annotations.Nullable;
 import javax.swing.*;
 import javax.swing.table.DefaultTableModel;
 import javax.swing.table.TableCellRenderer;
+import io.github.jbellis.brokk.gui.MergeBranchDialogPanel;
 import java.awt.*;
 import java.awt.event.MouseAdapter;
 import java.awt.event.MouseEvent;
@@ -585,35 +586,9 @@ public class GitLogTab extends JPanel {
             return;
         }
 
-        JPanel dialogPanel = new JPanel(new GridBagLayout());
-        GridBagConstraints gbc = new GridBagConstraints();
-        gbc.gridwidth = GridBagConstraints.REMAINDER;
-        gbc.fill = GridBagConstraints.HORIZONTAL;
-        gbc.anchor = GridBagConstraints.WEST;
-        gbc.insets = new Insets(5, 5, 5, 5);
-        gbc.weightx = 1.0;
-
-        JLabel titleLabel = new JLabel(String.format("Merge branch '%s' into '%s'", branchToMerge, currentBranch));
-        titleLabel.setFont(titleLabel.getFont().deriveFont(Font.BOLD));
-        dialogPanel.add(titleLabel, gbc);
-
-        gbc.gridwidth = 1;
-        gbc.weightx = 0;
-        dialogPanel.add(new JLabel("Merge strategy:"), gbc);
-
-        gbc.gridx = 1;
-        gbc.weightx = 1.0;
-        JComboBox<MergeMode> mergeModeComboBox = new JComboBox<>(MergeMode.values());
-        mergeModeComboBox.setSelectedItem(MergeMode.MERGE_COMMIT);
-        dialogPanel.add(mergeModeComboBox, gbc);
-
-        gbc.gridx = 0;
-        gbc.gridy = 2;
-        gbc.gridwidth = GridBagConstraints.REMAINDER;
-        gbc.weightx = 1.0;
-        JLabel conflictStatusLabel = new JLabel(" "); // Start with a non-empty string for layout
-        conflictStatusLabel.setForeground(UIManager.getColor("Label.foreground"));
-        dialogPanel.add(conflictStatusLabel, gbc);
+        MergeBranchDialogPanel dialogPanel = new MergeBranchDialogPanel(branchToMerge, currentBranch);
+        JComboBox<MergeMode> mergeModeComboBox = dialogPanel.getMergeModeComboBox();
+        JLabel conflictStatusLabel        = dialogPanel.getConflictStatusLabel();
 
         JOptionPane optionPane = new JOptionPane(dialogPanel, JOptionPane.PLAIN_MESSAGE, JOptionPane.OK_CANCEL_OPTION);
         JDialog dialog = optionPane.createDialog(this, "Merge Options");
