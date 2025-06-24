@@ -586,9 +586,9 @@ public class GitLogTab extends JPanel {
             return;
         }
 
-        Frame parentFrame = (Frame) SwingUtilities.getWindowAncestor(this);
-        MergeBranchDialogPanel dialogPanel = new MergeBranchDialogPanel(parentFrame, branchToMerge, currentBranch);
-        MergeBranchDialogPanel.MergeDialogResult result = dialogPanel.showDialog(getRepo(), contextManager);
+        var parentFrame = (Frame) SwingUtilities.getWindowAncestor(this);
+        var dialogPanel = new MergeBranchDialogPanel(parentFrame, branchToMerge, currentBranch);
+        var result = dialogPanel.showDialog(getRepo(), contextManager);
 
         if (result.isConfirmed()) {
             if (!result.hasConflicts()) {
@@ -605,12 +605,12 @@ public class GitLogTab extends JPanel {
     private void mergeBranchIntoHead(String branchName, MergeMode mode) {
         contextManager.submitUserTask("Merging branch: " + branchName + " (" + mode + ")", () -> {
             var repo = getRepo();
-            
+
             try {
                 String targetBranch = repo.getCurrentBranch();
-                MergeResult mergeResult = repo.performMerge(branchName, mode);
-                MergeResult.MergeStatus status = mergeResult.getMergeStatus();
-                
+                var mergeResult = repo.performMerge(branchName, mode);
+                var status = mergeResult.getMergeStatus();
+
                 if (status.isSuccessful()) {
                     String modeDescription = switch (mode) {
                         case MERGE_COMMIT -> "merged";
@@ -627,7 +627,7 @@ public class GitLogTab extends JPanel {
                 } else {
                     chrome.toolError("Merge of '" + branchName + "' into '" + targetBranch + "' failed: " + status, "Merge Error");
                 }
-                
+
                 update(); // Refresh UI to reflect new state
             } catch (GitAPIException e) {
                 logger.error("Error merging branch '{}' with mode {}: {}", branchName, mode, e.getMessage(), e);

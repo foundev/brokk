@@ -848,7 +848,7 @@ public class GitRepo implements Closeable, IGitRepo {
         String targetBranch = getCurrentBranch();
 
         // Build squash commit message
-        List<String> commitMessages = getCommitMessagesBetween(branchName, targetBranch);
+        var commitMessages = getCommitMessagesBetween(branchName, targetBranch);
         String header = "Squash merge branch '" + branchName + "' into '" + targetBranch + "'\n\n";
         String body = commitMessages.isEmpty()
                 ? "- No individual commit messages found between " + branchName + " and " + targetBranch + "."
@@ -859,7 +859,7 @@ public class GitRepo implements Closeable, IGitRepo {
 
         // Perform squash merge
         ObjectId resolvedBranch = resolve(branchName);
-        MergeResult squashResult = git.merge()
+        var squashResult = git.merge()
                 .setSquash(true)
                 .include(resolvedBranch)
                 .call();

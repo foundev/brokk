@@ -42,8 +42,8 @@ public class MergeBranchDialogPanel extends JDialog {
         setLayout(new BorderLayout());
 
         // Create main content panel
-        JPanel contentPanel = new JPanel(new GridBagLayout());
-        GridBagConstraints gbc = new GridBagConstraints();
+        var contentPanel = new JPanel(new GridBagLayout());
+        var gbc = new GridBagConstraints();
         gbc.gridwidth = GridBagConstraints.REMAINDER;
         gbc.fill = GridBagConstraints.HORIZONTAL;
         gbc.anchor = GridBagConstraints.WEST;
@@ -80,7 +80,7 @@ public class MergeBranchDialogPanel extends JDialog {
         add(contentPanel, BorderLayout.CENTER);
 
         // Create button panel
-        JPanel buttonPanel = new JPanel(new FlowLayout(FlowLayout.RIGHT));
+        var buttonPanel = new JPanel(new FlowLayout(FlowLayout.RIGHT));
         okButton = new JButton("OK");
         cancelButton = new JButton("Cancel");
 
@@ -138,7 +138,7 @@ public class MergeBranchDialogPanel extends JDialog {
         setVisible(true);
 
         // Determine result
-        GitWorktreeTab.MergeMode selectedMode = (GitWorktreeTab.MergeMode) mergeModeComboBox.getSelectedItem();
+        var selectedMode = (GitWorktreeTab.MergeMode) mergeModeComboBox.getSelectedItem();
         String conflictText = conflictStatusLabel.getText();
         boolean hasConflicts = conflictText != null && !conflictText.startsWith("No conflicts detected")
                              && !conflictText.trim().isEmpty() && !conflictText.equals("Checking for conflicts...");
@@ -153,7 +153,7 @@ public class MergeBranchDialogPanel extends JDialog {
         conflictStatusLabel.setText("Checking for conflicts...");
         conflictStatusLabel.setForeground(UIManager.getColor("Label.foreground"));
 
-        GitWorktreeTab.MergeMode selectedMode = (GitWorktreeTab.MergeMode) mergeModeComboBox.getSelectedItem();
+        var selectedMode = (GitWorktreeTab.MergeMode) mergeModeComboBox.getSelectedItem();
 
         contextManager.submitBackgroundTask("Checking merge conflicts", () -> {
             String conflictResult;
