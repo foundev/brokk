@@ -864,7 +864,8 @@ public class GitRepo implements Closeable, IGitRepo {
                 .include(resolvedBranch)
                 .call();
 
-        if (!squashResult.getMergeStatus().isSuccessful()) {
+        if (!squashResult.getMergeStatus().isSuccessful() && 
+            squashResult.getMergeStatus() != MergeResult.MergeStatus.MERGED_SQUASHED_NOT_COMMITTED) {
             refresh();
             return squashResult;
         }
@@ -2238,7 +2239,7 @@ public class GitRepo implements Closeable, IGitRepo {
                     if (status == MergeResult.MergeStatus.CONFLICTING) {
                         var conflicts = requireNonNull(mergeResult.getConflicts());
                         return "Merge conflicts detected in: " + String.join(", ", conflicts.keySet());
-                    } else if (status.isSuccessful()) {
+                    } else if (status.isSuccessful() || status == MergeResult.MergeStatus.MERGED_SQUASHED_NOT_COMMITTED) {
                         return null; // MERGED, FAST_FORWARD, MERGED_SQUASHED, ALREADY_UP_TO_DATE
                     } else {
                         return "Merge pre-check failed: " + status.toString();

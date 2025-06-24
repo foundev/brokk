@@ -611,7 +611,8 @@ public class GitLogTab extends JPanel {
                 var mergeResult = repo.performMerge(branchName, mode);
                 var status = mergeResult.getMergeStatus();
 
-                if (status.isSuccessful()) {
+                if (status.isSuccessful() || 
+                    (mode == MergeMode.SQUASH_COMMIT && status == MergeResult.MergeStatus.MERGED_SQUASHED_NOT_COMMITTED)) {
                     String modeDescription = switch (mode) {
                         case MERGE_COMMIT -> "merged";
                         case SQUASH_COMMIT -> "squash merged";

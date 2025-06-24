@@ -1117,7 +1117,8 @@ public class GitWorktreeTab extends JPanel {
                 logger.info("Performing {} of {} into {}", mode, worktreeBranchName, targetBranch);
                 MergeResult mergeResult = parentGitRepo.performMerge(worktreeBranchName, mode);
                 
-                if (!mergeResult.getMergeStatus().isSuccessful()) {
+                if (!mergeResult.getMergeStatus().isSuccessful() && 
+                    !(mode == MergeMode.SQUASH_COMMIT && mergeResult.getMergeStatus() == MergeResult.MergeStatus.MERGED_SQUASHED_NOT_COMMITTED)) {
                     String conflictDetails = mergeResult.getConflicts() != null
                                              ? String.join(", ", mergeResult.getConflicts().keySet())
                                              : "unknown conflicts";
