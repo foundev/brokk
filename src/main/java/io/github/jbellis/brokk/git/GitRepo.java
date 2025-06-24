@@ -471,33 +471,31 @@ public class GitRepo implements Closeable, IGitRepo {
                                           .setRemote("origin") // Default to "origin"
                                           .setRefSpecs(refSpec)
                                           .call();
-        var rejectionMessages = new StringBuilder();
+        List<String> rejectionMessages = new ArrayList<>();
 
         for (var result : results) {
             for (var rru : result.getRemoteUpdates()) {
                 var status = rru.getStatus();
                 // Consider any status other than OK or UP_TO_DATE as a failure for that ref.
                 if (status != RemoteRefUpdate.Status.OK && status != RemoteRefUpdate.Status.UP_TO_DATE) {
-                    if (rejectionMessages.length() > 0) {
-                        rejectionMessages.append("\n");
-                    }
-                    rejectionMessages.append("Ref '").append(rru.getRemoteName()).append("' (local '").append(branchName).append("') update failed: ");
+                    String message = "Ref '" + rru.getRemoteName() + "' (local '" + branchName + "') update failed: ";
                     if (status == RemoteRefUpdate.Status.REJECTED_NONFASTFORWARD ||
                         status == RemoteRefUpdate.Status.REJECTED_REMOTE_CHANGED) {
-                        rejectionMessages.append("The remote contains work that you do not have locally. ")
-                                .append("Pull and merge from the remote (or rebase) before pushing.");
+                        message += "The remote contains work that you do not have locally. " +
+                                "Pull and merge from the remote (or rebase) before pushing.";
                     } else {
-                        rejectionMessages.append(status.toString());
+                        message += status.toString();
                         if (rru.getMessage() != null) {
-                            rejectionMessages.append(" (").append(rru.getMessage()).append(")");
+                            message += " (" + rru.getMessage() + ")";
                         }
                     }
+                    rejectionMessages.add(message);
                 }
             }
         }
 
-        if (rejectionMessages.length() > 0) {
-            throw new GitPushRejectedException("Push rejected by remote:\n" + rejectionMessages.toString());
+        if (!rejectionMessages.isEmpty()) {
+            throw new GitPushRejectedException("Push rejected by remote:\n" + String.join("\n", rejectionMessages));
         }
         // If loop completes without rejections, push was successful or refs were up-to-date.
     }
@@ -527,31 +525,29 @@ public class GitRepo implements Closeable, IGitRepo {
                                           .setRefSpecs(refSpec)
                                           .call();
 
-        var rejectionMessages = new StringBuilder();
+        List<String> rejectionMessages = new ArrayList<>();
         for (var result : results) {
             for (var rru : result.getRemoteUpdates()) {
                 var status = rru.getStatus();
                 if (status != RemoteRefUpdate.Status.OK && status != RemoteRefUpdate.Status.UP_TO_DATE) {
-                    if (!rejectionMessages.isEmpty()) {
-                        rejectionMessages.append("\n");
-                    }
-                    rejectionMessages.append("Ref '").append(rru.getRemoteName()).append("' (local '").append(localBranchName).append("') update failed: ");
+                    String message = "Ref '" + rru.getRemoteName() + "' (local '" + localBranchName + "') update failed: ";
                     if (status == RemoteRefUpdate.Status.REJECTED_NONFASTFORWARD ||
                         status == RemoteRefUpdate.Status.REJECTED_REMOTE_CHANGED) {
-                        rejectionMessages.append("The remote contains work that you do not have locally. ")
-                                .append("Pull and merge from the remote (or rebase) before pushing.");
+                        message += "The remote contains work that you do not have locally. " +
+                                "Pull and merge from the remote (or rebase) before pushing.";
                     } else {
-                        rejectionMessages.append(status.toString());
+                        message += status.toString();
                         if (rru.getMessage() != null) {
-                            rejectionMessages.append(" (").append(rru.getMessage()).append(")");
+                            message += " (" + rru.getMessage() + ")";
                         }
                     }
+                    rejectionMessages.add(message);
                 }
             }
         }
 
         if (!rejectionMessages.isEmpty()) {
-            throw new GitPushRejectedException("Push rejected by remote:\n" + rejectionMessages.toString());
+            throw new GitPushRejectedException("Push rejected by remote:\n" + String.join("\n", rejectionMessages));
         }
 
         // 2. Record upstream info in config only if push was successful
@@ -853,14 +849,13 @@ public class GitRepo implements Closeable, IGitRepo {
 
         // Build squash commit message
         List<String> commitMessages = getCommitMessagesBetween(branchName, targetBranch);
-        var squashCommitMessage = new StringBuilder("Squash merge branch '").append(branchName).append("' into '").append(targetBranch).append("'\n\n");
-        if (commitMessages.isEmpty()) {
-            squashCommitMessage.append("- No individual commit messages found between ").append(branchName).append(" and ").append(targetBranch).append(".");
-        } else {
-            for (String msg : commitMessages) {
-                squashCommitMessage.append("- ").append(msg).append("\n");
-            }
-        }
+        String header = "Squash merge branch '" + branchName + "' into '" + targetBranch + "'\n\n";
+        String body = commitMessages.isEmpty()
+                ? "- No individual commit messages found between " + branchName + " and " + targetBranch + "."
+                : commitMessages.stream()
+                        .map(msg -> "- " + msg)
+                        .collect(Collectors.joining("\n"));
+        String squashCommitMessage = header + body;
 
         // Perform squash merge
         ObjectId resolvedBranch = resolve(branchName);
@@ -875,7 +870,7 @@ public class GitRepo implements Closeable, IGitRepo {
         }
 
         // Commit the squashed changes
-        git.commit().setMessage(squashCommitMessage.toString()).call();
+        git.commit().setMessage(squashCommitMessage).call();
         refresh();
         return squashResult;
     }
