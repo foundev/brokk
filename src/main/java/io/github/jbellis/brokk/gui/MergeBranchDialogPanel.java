@@ -97,27 +97,10 @@ public class MergeBranchDialogPanel extends JDialog {
     }
 
     /**
-     * Result class for the merge dialog interaction.
+     * Result record for the merge dialog interaction.
      */
-    public static class MergeDialogResult {
-        private final boolean confirmed;
-        private final GitRepo.MergeMode mergeMode;
-        private final boolean hasConflicts;
-        private final String conflictMessage;
-
-        public MergeDialogResult(boolean confirmed, GitRepo.MergeMode mergeMode,
-                               boolean hasConflicts, String conflictMessage) {
-            this.confirmed = confirmed;
-            this.mergeMode = mergeMode;
-            this.hasConflicts = hasConflicts;
-            this.conflictMessage = conflictMessage;
-        }
-
-        public boolean isConfirmed() { return confirmed; }
-        public GitRepo.MergeMode getMergeMode() { return mergeMode; }
-        public boolean hasConflicts() { return hasConflicts; }
-        public String getConflictMessage() { return conflictMessage; }
-    }
+    public record MergeDialogResult(boolean confirmed, GitRepo.MergeMode mergeMode, 
+                                  boolean hasConflicts, String conflictMessage) {}
 
     /**
      * Shows the merge dialog and returns the user's choice.

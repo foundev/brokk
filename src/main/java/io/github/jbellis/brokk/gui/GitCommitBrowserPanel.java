@@ -32,6 +32,7 @@ import static java.util.Objects.requireNonNull;
 public class GitCommitBrowserPanel extends JPanel {
 
     private static final Logger logger = LogManager.getLogger(GitCommitBrowserPanel.class);
+    private static final String STASHES_VIRTUAL_BRANCH = "stashes";
 
     private static final int COL_ID = 3;
     private static final int COL_UNPUSHED = 4;
@@ -167,7 +168,7 @@ public class GitCommitBrowserPanel extends JPanel {
         createPrButton.setEnabled(false);
         createPrButton.addActionListener(e -> {
             String branch = currentBranchOrContextName;
-            if (branch != null && (branch.startsWith("Search:") || "stashes".equals(branch))) { // Also disable for remote branches
+            if (branch != null && (branch.startsWith("Search:") || STASHES_VIRTUAL_BRANCH.equals(branch))) { // Also disable for remote branches
                 chrome.toolError("Select a branch before creating a PR.");
                 return;
             }
@@ -786,7 +787,7 @@ public class GitCommitBrowserPanel extends JPanel {
     }
 
     private void pullBranchInternal(String branchName) {
-        if (branchName.equals("stashes") || branchName.contains("/")) {
+        if (branchName.equals(STASHES_VIRTUAL_BRANCH) || branchName.contains("/")) {
             logger.warn("Pull attempted on invalid context: {}", branchName);
             return;
         }
@@ -815,7 +816,7 @@ public class GitCommitBrowserPanel extends JPanel {
     }
 
     private void pushBranchInternal(String branchName) {
-         if (branchName.equals("stashes")) {
+         if (branchName.equals(STASHES_VIRTUAL_BRANCH)) {
             logger.warn("Push attempted on invalid context: {}", branchName);
             return;
         }
@@ -857,7 +858,7 @@ public class GitCommitBrowserPanel extends JPanel {
             // Re-fetch and display commits for the current context.
             // This is a simplified call; actual parameters for unpushed, canPush/Pull might need re-evaluation.
             // For now, assume a simple refresh of the commit list.
-            if ("stashes".equals(currentBranchOrContextName)) {
+            if (STASHES_VIRTUAL_BRANCH.equals(currentBranchOrContextName)) {
                 loadStashesInPanel();
             } else {
                 loadCommitsForBranchInPanel(currentBranchOrContextName);
@@ -869,7 +870,7 @@ public class GitCommitBrowserPanel extends JPanel {
         contextManager.submitBackgroundTask("Fetching stashes", () -> {
             try {
                 var stashes = getRepo().listStashes();
-                setCommits(stashes, Collections.emptySet(), false, false, "stashes");
+                setCommits(stashes, Collections.emptySet(), false, false, STASHES_VIRTUAL_BRANCH);
             } catch (Exception e) {
                 logger.error("Error fetching stashes for panel", e);
                 SwingUtil.runOnEdt(() -> {
@@ -974,7 +975,7 @@ public class GitCommitBrowserPanel extends JPanel {
             changesRootNode.removeAllChildren();
             changesTreeModel.reload();
 
-            boolean isStashView = "stashes".equals(activeBranchOrContextName); // boolean preferred by style guide
+            boolean isStashView = STASHES_VIRTUAL_BRANCH.equals(activeBranchOrContextName); // boolean preferred by style guide
             boolean isSearchView = activeBranchOrContextName.startsWith("Search:"); // boolean preferred by style guide
             boolean isRemoteBranchView;
             try {

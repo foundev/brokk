@@ -38,6 +38,7 @@ public class GitLogTab extends JPanel {
     // Methods to expose to GitPanel for finding and selecting commits by ID
 
     private static final Logger logger = LogManager.getLogger(GitLogTab.class);
+    private static final String STASHES_VIRTUAL_BRANCH = "stashes";
 
     private final Chrome chrome;
     private final ContextManager contextManager;
@@ -113,7 +114,7 @@ public class GitLogTab extends JPanel {
                 Component c = super.prepareRenderer(renderer, row, column);
                 if (column == 1 && row >= 0 && row < getRowCount()) {
                     String branchName = (String) getValueAt(row, 1);
-                    if ("stashes".equals(branchName)) {
+                    if (STASHES_VIRTUAL_BRANCH.equals(branchName)) {
                         c.setFont(new Font(Font.MONOSPACED, Font.ITALIC, 13));
                     } else {
                         c.setFont(new Font(Font.MONOSPACED, Font.PLAIN, 13));
@@ -276,8 +277,8 @@ public class GitLogTab extends JPanel {
             int selectedRow = branchTable.getSelectedRow();
             if (selectedRow != -1) {
                 String branchToMerge = (String) branchTableModel.getValueAt(selectedRow, 1);
-                if ("stashes".equals(branchToMerge)) {
-                    chrome.toolError("Cannot merge the 'stashes' virtual entry.", "Merge Error");
+                if (STASHES_VIRTUAL_BRANCH.equals(branchToMerge)) {
+                    chrome.toolError("Cannot merge the '" + STASHES_VIRTUAL_BRANCH + "' virtual entry.", "Merge Error");
                     return;
                 }
                 showMergeDialog(branchToMerge);
@@ -287,7 +288,7 @@ public class GitLogTab extends JPanel {
             int row = branchTable.getSelectedRow();
             if (row != -1) {
                 String selectedBranch = (String) branchTableModel.getValueAt(row, 1);
-                if ("stashes".equals(selectedBranch)) return;
+                if (STASHES_VIRTUAL_BRANCH.equals(selectedBranch)) return;
 
                 String currentActualBranch;
                 try {
@@ -395,15 +396,15 @@ public class GitLogTab extends JPanel {
                 int targetSelectionIndex = -1; // Index to select after update
                 String targetBranchToSelect = previouslySelectedBranch; // Prioritize previous selection
 
-                // Add virtual "stashes" entry first if stashes exist
+                // Add virtual stashes entry first if stashes exist
                 boolean hasStashes = false;
                 try {
                     // Just check if the list is non-empty, avoid fetching full info yet
                     hasStashes = !getRepo().listStashes().isEmpty();
                     if (hasStashes) {
-                        localBranchRows.add(new Object[]{"", "stashes"});
-                        if ("stashes".equals(targetBranchToSelect)) {
-                            targetSelectionIndex = 0; // If 'stashes' was selected, mark its index
+                        localBranchRows.add(new Object[]{"", STASHES_VIRTUAL_BRANCH});
+                        if (STASHES_VIRTUAL_BRANCH.equals(targetBranchToSelect)) {
+                            targetSelectionIndex = 0; // If stashes was selected, mark its index
                         }
                     }
                 } catch (GitAPIException e) {
@@ -500,7 +501,7 @@ public class GitLogTab extends JPanel {
                 boolean canPull = false;
 
                 // Special handling for stashes virtual branch
-                if ("stashes".equals(branchName)) {
+                if (STASHES_VIRTUAL_BRANCH.equals(branchName)) {
                     try {
                         // Directly call listStashes which now returns List<CommitInfo>
                         commits = getRepo().listStashes();
@@ -590,11 +591,11 @@ public class GitLogTab extends JPanel {
         var dialogPanel = new MergeBranchDialogPanel(parentFrame, branchToMerge, currentBranch);
         var result = dialogPanel.showDialog(getRepo(), contextManager);
 
-        if (result.isConfirmed()) {
+        if (result.confirmed()) {
             if (!result.hasConflicts()) {
-                mergeBranchIntoHead(branchToMerge, result.getMergeMode());
+                mergeBranchIntoHead(branchToMerge, result.mergeMode());
             } else {
-                chrome.toolError("Merge cancelled due to conflicts or error: " + result.getConflictMessage(), "Merge Cancelled");
+                chrome.toolError("Merge cancelled due to conflicts or error: " + result.conflictMessage(), "Merge Cancelled");
             }
         }
     }
@@ -842,7 +843,7 @@ public class GitLogTab extends JPanel {
         }
 
         // renameItem and deleteItem checks
-        boolean isStashesSelected = "stashes".equals(selectedBranchName);
+        boolean isStashesSelected = STASHES_VIRTUAL_BRANCH.equals(selectedBranchName);
         menu.getComponent(4).setEnabled(isAnyItemSelected && !isStashesSelected); // renameItem
         menu.getComponent(5).setEnabled(isAnyItemSelected && !isCurrentBranch && !isStashesSelected); // deleteItem
 
