@@ -586,109 +586,18 @@ public class GitLogTab extends JPanel {
             return;
         }
 
-        MergeBranchDialogPanel dialogPanel = new MergeBranchDialogPanel(branchToMerge, currentBranch);
-        JComboBox<MergeMode> mergeModeComboBox = dialogPanel.getMergeModeComboBox();
-        JLabel conflictStatusLabel        = dialogPanel.getConflictStatusLabel();
+        Frame parentFrame = (Frame) SwingUtilities.getWindowAncestor(this);
+        MergeBranchDialogPanel dialogPanel = new MergeBranchDialogPanel(parentFrame, branchToMerge, currentBranch);
+        MergeBranchDialogPanel.MergeDialogResult result = dialogPanel.showDialog(getRepo(), contextManager);
 
-        JOptionPane optionPane = new JOptionPane(dialogPanel, JOptionPane.PLAIN_MESSAGE, JOptionPane.OK_CANCEL_OPTION);
-        JDialog dialog = optionPane.createDialog(this, "Merge Options");
-
-        JButton okButton = null;
-        // Attempt to find the OK button, similar to GitWorktreeTab logic
-        for (Component comp : optionPane.getComponents()) {
-            if (comp instanceof JPanel buttonBar) {
-                for (Component btnComp : buttonBar.getComponents()) {
-                    if (btnComp instanceof JButton jButton && jButton.getText().equals(UIManager.getString("OptionPane.okButtonText"))) {
-                        okButton = jButton;
-                        break;
-                    }
-                }
-                if (okButton != null) break;
-            }
-        }
-        if (okButton == null) {
-            Component[] components = optionPane.getComponents();
-            for (int i = components.length - 1; i >= 0; i--) {
-                if (components[i] instanceof JPanel panel) {
-                    for (Component c : panel.getComponents()) {
-                        if (c instanceof JButton jButton && jButton.getText().equals(UIManager.getString("OptionPane.okButtonText"))) {
-                            okButton = jButton;
-                            break;
-                        }
-                    }
-                } else if (components[i] instanceof JButton jButton && jButton.getText().equals(UIManager.getString("OptionPane.okButtonText"))) {
-                    okButton = jButton;
-                }
-                if (okButton != null) break;
-            }
-        }
-        final JButton finalOkButtonRef = okButton; // Effectively final reference for lambda
-
-        if (finalOkButtonRef != null) {
-            Runnable conflictChecker = () -> checkConflictsAsync(branchToMerge, currentBranch, mergeModeComboBox, conflictStatusLabel, finalOkButtonRef);
-            mergeModeComboBox.addActionListener(e -> conflictChecker.run());
-            conflictChecker.run(); // Initial check
-        } else {
-            logger.warn("Could not find OK button in merge dialog. State management will be limited.");
-            // Perform initial check without button control
-            checkConflictsAsync(branchToMerge, currentBranch, mergeModeComboBox, conflictStatusLabel, null);
-        }
-
-        dialog.setVisible(true);
-        Object selectedValue = optionPane.getValue();
-        dialog.dispose();
-
-        if (selectedValue != null && selectedValue.equals(JOptionPane.OK_OPTION)) {
-            MergeMode selectedMode = (MergeMode) mergeModeComboBox.getSelectedItem();
-            String conflictText = conflictStatusLabel.getText();
-            if (finalOkButtonRef == null || finalOkButtonRef.isEnabled() || conflictText.startsWith("No conflicts detected")) { // Allow if OK enabled or no conflicts
-                mergeBranchIntoHead(branchToMerge, selectedMode);
+        if (result.isConfirmed()) {
+            if (!result.hasConflicts()) {
+                mergeBranchIntoHead(branchToMerge, result.getMergeMode());
             } else {
-                chrome.toolError("Merge cancelled due to conflicts or error: " + conflictText, "Merge Cancelled");
+                chrome.toolError("Merge cancelled due to conflicts or error: " + result.getConflictMessage(), "Merge Cancelled");
             }
         }
     }
-
-    private void checkConflictsAsync(String branchToMerge, String currentBranch,
-                                     JComboBox<MergeMode> mergeModeComboBox, JLabel conflictStatusLabel,
-                                     @Nullable JButton okButton) {
-        if (okButton != null) {
-            okButton.setEnabled(false);
-        }
-        conflictStatusLabel.setText("Checking for conflicts...");
-        conflictStatusLabel.setForeground(UIManager.getColor("Label.foreground"));
-
-        MergeMode selectedMode = (MergeMode) mergeModeComboBox.getSelectedItem();
-
-        contextManager.submitBackgroundTask("Checking merge conflicts", () -> {
-            String conflictResult;
-            try {
-                conflictResult = getRepo().checkMergeConflicts(branchToMerge, currentBranch, selectedMode);
-            } catch (GitAPIException e) {
-                logger.error("Error checking merge conflicts", e);
-                conflictResult = "Error: " + e.getMessage();
-            }
-
-            final String finalConflictResult = conflictResult;
-            SwingUtilities.invokeLater(() -> {
-                if (finalConflictResult != null && !finalConflictResult.isBlank()) {
-                    conflictStatusLabel.setText(finalConflictResult);
-                    conflictStatusLabel.setForeground(Color.RED);
-                    if (okButton != null) {
-                        okButton.setEnabled(false);
-                    }
-                } else {
-                    conflictStatusLabel.setText("No conflicts detected.");
-                    conflictStatusLabel.setForeground(new Color(0, 128, 0)); // Green
-                    if (okButton != null) {
-                        okButton.setEnabled(true);
-                    }
-                }
-            });
-            return null;
-        });
-    }
-
 
     /**
      * Merge a branch into HEAD using the specified mode.
@@ -747,7 +656,7 @@ public class GitLogTab extends JPanel {
                 } else if (mode == MergeMode.REBASE_MERGE) {
                     String tempRebaseBranchName = null;
                     try {
-                        tempRebaseBranchName = "__brokk_rebase_temp_" + branchName.replaceAll("[^a-zA-Z0-9-_]", "_") + "_" + System.currentTimeMillis();
+                        tempRebaseBranchName = GitRepo.createTempRebaseBranchName(branchName);
                         repo.createBranch(tempRebaseBranchName, branchName);
                         repo.checkout(tempRebaseBranchName);
 

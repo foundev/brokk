@@ -358,7 +358,7 @@ public class GitRepo implements Closeable, IGitRepo {
                 .map(file -> PathFilter.create(toRepoRelativePath(file)))
                 .collect(Collectors.toCollection(ArrayList::new));
         var filterGroup = PathFilterGroup.create(filters);
-        
+
         return performDiffWithFilter(filterGroup);
     }
 
@@ -566,7 +566,7 @@ public class GitRepo implements Closeable, IGitRepo {
         }
 
         refresh();
-        
+
         return results;
     }
 
@@ -875,22 +875,22 @@ public class GitRepo implements Closeable, IGitRepo {
         if (files.isEmpty()) {
             throw new IllegalArgumentException("No files specified for checkout");
         }
-        
+
         logger.debug("Checking out {} files from commit {}", files.size(), commitId);
-        
+
         var checkoutCommand = git.checkout()
                 .setStartPoint(commitId);
-        
+
         // Add each file path to the checkout command
         for (ProjectFile file : files) {
             var relativePath = file.toString();
             checkoutCommand.addPath(relativePath);
             logger.trace("Adding file to checkout: {}", relativePath);
         }
-        
+
         checkoutCommand.call();
         refresh();
-        
+
         logger.debug("Successfully checked out {} files from commit {}", files.size(), commitId);
     }
 
@@ -2015,19 +2015,27 @@ public class GitRepo implements Closeable, IGitRepo {
         return modifiedFiles;
     }
 
+    private static String createTempBranchName(String prefix) {
+        return prefix + "_" + System.currentTimeMillis();
+    }
+
+    public static String createTempRebaseBranchName(String sourceBranchName) {
+        String sanitized = sourceBranchName.replaceAll("[^a-zA-Z0-9-_]", "_");
+        return createTempBranchName("brokk_temp_rebase_" + sanitized);
+    }
+
     @Override
     public @Nullable String checkMergeConflicts(String worktreeBranchName, String targetBranchName, io.github.jbellis.brokk.gui.GitWorktreeTab.MergeMode mode) throws GitAPIException {
         ObjectId worktreeBranchId = resolve(worktreeBranchName); // Can throw GitAPIException
         ObjectId targetBranchId = resolve(targetBranchName); // Can throw GitAPIException
 
         String originalBranch = null;
-        String tempBranchNameSuffix = "_" + System.currentTimeMillis();
 
         try {
             originalBranch = getCurrentBranch();
 
             if (mode == io.github.jbellis.brokk.gui.GitWorktreeTab.MergeMode.REBASE_MERGE) {
-                String tempRebaseBranchName = "brokk_temp_rebase_check" + tempBranchNameSuffix;
+                String tempRebaseBranchName = createTempBranchName("brokk_temp_rebase_check");
                 logger.debug("Checking rebase conflicts: {} onto {} (using temp branch {})", worktreeBranchName, targetBranchName, tempRebaseBranchName);
 
                 try {
@@ -2085,7 +2093,7 @@ public class GitRepo implements Closeable, IGitRepo {
                     }
                 }
             } else { // MERGE_COMMIT or SQUASH_COMMIT
-                String tempMergeBranchName = "brokk_temp_merge_check" + tempBranchNameSuffix;
+                String tempMergeBranchName = createTempBranchName("brokk_temp_merge_check");
                 logger.debug("Checking merge conflicts: {} into {} (using temp branch {}) with mode {}", worktreeBranchName, targetBranchName, tempMergeBranchName, mode);
 
                 try {
@@ -2093,15 +2101,14 @@ public class GitRepo implements Closeable, IGitRepo {
                     git.checkout().setName(tempMergeBranchName).call();
 
                     MergeCommand mergeCmd = git.merge().include(worktreeBranchId);
+                    mergeCmd.setCommit(false); // Ensure no commit (and thus no signing) during conflict check
+
                     if (mode == io.github.jbellis.brokk.gui.GitWorktreeTab.MergeMode.SQUASH_COMMIT) {
                         mergeCmd.setSquash(true);
-                        // JGit defaults to commit=false when squash=true. We'll set it explicitly anyway.
                     } else { // MERGE_COMMIT
                         mergeCmd.setSquash(false);
-                        // No longer attempting a commit, so setMessage is not needed.
                         mergeCmd.setFastForward(MergeCommand.FastForwardMode.NO_FF);
                     }
-                    mergeCmd.setCommit(false); // Ensure no commit (and thus no signing) during conflict check
                     MergeResult mergeResult = mergeCmd.call();
                     MergeResult.MergeStatus status = mergeResult.getMergeStatus();
                     logger.debug("Merge simulation result: {}", status);
@@ -2112,7 +2119,6 @@ public class GitRepo implements Closeable, IGitRepo {
                     } else if (status.isSuccessful()) {
                         return null; // MERGED, FAST_FORWARD, MERGED_SQUASHED, ALREADY_UP_TO_DATE
                     } else {
-                        // This case handles things like FAILED, NOT_SUPPORTED etc.
                         return "Merge pre-check failed: " + status.toString();
                     }
                 } finally {
