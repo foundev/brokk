@@ -841,6 +841,133 @@ public class GitRepo implements Closeable, IGitRepo {
     }
 
     /**
+     * Perform a squash merge of the specified branch into HEAD.
+     *
+     * @param branchName The branch to squash merge
+     * @return The result of the squash merge operation
+     * @throws GitAPIException if the squash merge fails
+     */
+    @Override
+    public MergeResult squashMergeIntoHead(String branchName) throws GitAPIException {
+        String targetBranch = getCurrentBranch();
+
+        // Build squash commit message
+        List<String> commitMessages = getCommitMessagesBetween(branchName, targetBranch);
+        var squashCommitMessage = new StringBuilder("Squash merge branch '").append(branchName).append("' into '").append(targetBranch).append("'\n\n");
+        if (commitMessages.isEmpty()) {
+            squashCommitMessage.append("- No individual commit messages found between ").append(branchName).append(" and ").append(targetBranch).append(".");
+        } else {
+            for (String msg : commitMessages) {
+                squashCommitMessage.append("- ").append(msg).append("\n");
+            }
+        }
+
+        // Perform squash merge
+        ObjectId resolvedBranch = resolve(branchName);
+        MergeResult squashResult = git.merge()
+                .setSquash(true)
+                .include(resolvedBranch)
+                .call();
+
+        if (!squashResult.getMergeStatus().isSuccessful()) {
+            refresh();
+            return squashResult;
+        }
+
+        // Commit the squashed changes
+        git.commit().setMessage(squashCommitMessage.toString()).call();
+        refresh();
+        return squashResult;
+    }
+
+    /**
+     * Perform a rebase merge of the specified branch into HEAD.
+     * This creates a temporary branch, rebases it onto the target, then fast-forward merges.
+     *
+     * @param branchName The branch to rebase merge
+     * @return The result of the final fast-forward merge
+     * @throws GitAPIException if any step of the rebase merge fails
+     */
+    @Override
+    public MergeResult rebaseMergeIntoHead(String branchName) throws GitAPIException {
+        String targetBranch = getCurrentBranch();
+        String originalBranch = targetBranch;
+        String tempRebaseBranchName = null;
+
+        try {
+            // Create temporary branch for rebase
+            tempRebaseBranchName = createTempRebaseBranchName(branchName);
+            createBranch(tempRebaseBranchName, branchName);
+            checkout(tempRebaseBranchName);
+
+            // Rebase the temporary branch onto target
+            ObjectId resolvedTarget = resolve(targetBranch);
+            var rebaseResult = git.rebase()
+                    .setUpstream(resolvedTarget)
+                    .call();
+
+            if (!rebaseResult.getStatus().isSuccessful()) {
+                // Attempt to abort rebase
+                try {
+                    if (!getCurrentBranch().equals(tempRebaseBranchName)) {
+                        checkout(tempRebaseBranchName);
+                    }
+                    git.rebase().setOperation(org.eclipse.jgit.api.RebaseCommand.Operation.ABORT).call();
+                } catch (GitAPIException abortEx) {
+                    logger.error("Failed to abort rebase for {}", tempRebaseBranchName, abortEx);
+                }
+                throw new GitAPIException("Rebase of '" + branchName + "' onto '" + targetBranch + "' failed: " + rebaseResult.getStatus()) {};
+            }
+
+            // Switch back to target branch and fast-forward merge
+            checkout(targetBranch);
+            MergeResult ffMergeResult = mergeIntoHead(tempRebaseBranchName);
+
+            if (!ffMergeResult.getMergeStatus().isSuccessful()) {
+                throw new GitAPIException("Fast-forward merge of rebased '" + tempRebaseBranchName + "' into '" + targetBranch + "' failed: " + ffMergeResult.getMergeStatus()) {};
+            }
+
+            refresh();
+            return ffMergeResult;
+
+        } finally {
+            // Cleanup: ensure we're on the original branch and delete temp branch
+            try {
+                if (!getCurrentBranch().equals(originalBranch)) {
+                    checkout(originalBranch);
+                }
+            } catch (GitAPIException e) {
+                logger.error("Error ensuring checkout to target branch '{}' during rebase cleanup", originalBranch, e);
+            }
+
+            if (tempRebaseBranchName != null) {
+                try {
+                    forceDeleteBranch(tempRebaseBranchName);
+                } catch (GitAPIException e) {
+                    logger.error("Failed to delete temporary rebase branch {}", tempRebaseBranchName, e);
+                }
+            }
+        }
+    }
+
+    /**
+     * Perform a merge operation with the specified mode.
+     *
+     * @param branchName The branch to merge
+     * @param mode The merge mode (MERGE_COMMIT, SQUASH_COMMIT, or REBASE_MERGE)
+     * @return The result of the merge operation
+     * @throws GitAPIException if the merge fails
+     */
+    @Override
+    public MergeResult performMerge(String branchName, io.github.jbellis.brokk.gui.GitWorktreeTab.MergeMode mode) throws GitAPIException {
+        return switch (mode) {
+            case MERGE_COMMIT -> mergeIntoHead(branchName);
+            case SQUASH_COMMIT -> squashMergeIntoHead(branchName);
+            case REBASE_MERGE -> rebaseMergeIntoHead(branchName);
+        };
+    }
+
+    /**
      * Revert a specific commit
      */
     public void revertCommit(String commitId) throws GitAPIException {

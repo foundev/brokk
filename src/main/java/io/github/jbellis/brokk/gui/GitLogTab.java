@@ -605,124 +605,34 @@ public class GitLogTab extends JPanel {
     private void mergeBranchIntoHead(String branchName, MergeMode mode) {
         contextManager.submitUserTask("Merging branch: " + branchName + " (" + mode + ")", () -> {
             var repo = getRepo();
-            String targetBranch = null;
-            String originalBranchBeforeAnyCheckout = null; // For robust restoration in rebase
-
+            
             try {
-                targetBranch = repo.getCurrentBranch();
-                originalBranchBeforeAnyCheckout = targetBranch; // Capture current state
-
-                if (mode == MergeMode.MERGE_COMMIT) {
-                    MergeResult mergeResult = repo.mergeIntoHead(branchName);
-                    MergeResult.MergeStatus status = mergeResult.getMergeStatus();
-                    if (status.isSuccessful()) {
-                        chrome.systemOutput("Branch '" + branchName + "' successfully merged into '" + targetBranch + "'.");
-                    } else if (status == MergeResult.MergeStatus.CONFLICTING) {
-                        String conflictingFiles = Objects.requireNonNull(mergeResult.getConflicts()).keySet().stream()
-                                .map(s -> "  - " + s)
-                                .collect(Collectors.joining("\n"));
-                        chrome.toolError("Merge conflicts for '" + branchName + "' into '" + targetBranch + "'.\n" +
-                                         "Resolve manually and commit.\nConflicting files:\n" + conflictingFiles, "Merge Conflict");
-                    } else {
-                        chrome.toolError("Merge of '" + branchName + "' into '" + targetBranch + "' failed: " + status, "Merge Error");
-                    }
-                } else if (mode == MergeMode.SQUASH_COMMIT) {
-                    List<String> commitMessages = repo.getCommitMessagesBetween(branchName, targetBranch);
-                    var squashCommitMessage = new StringBuilder("Squash merge branch '").append(branchName).append("' into '").append(targetBranch).append("'\n\n");
-                    if (commitMessages.isEmpty()) {
-                        squashCommitMessage.append("- No individual commit messages found between ").append(branchName).append(" and ").append(targetBranch).append(".");
-                    } else {
-                        for (String msg : commitMessages) {
-                            squashCommitMessage.append("- ").append(msg).append("\n");
-                        }
-                    }
-
-                    ObjectId resolvedBranch = repo.resolve(branchName);
-                    MergeResult squashResult = repo.getGit().merge()
-                            .setSquash(true)
-                            .include(resolvedBranch)
-                            .call();
-
-                    if (!squashResult.getMergeStatus().isSuccessful()) {
-                        String conflictDetails = squashResult.getConflicts() != null
-                                ? String.join(", ", squashResult.getConflicts().keySet())
-                                : "unknown conflicts";
-                        chrome.toolError("Squash merge of '" + branchName + "' into '" + targetBranch + "' failed: " + squashResult.getMergeStatus() +
-                                         ". Conflicts: " + conflictDetails, "Squash Merge Failed");
-                        return null;
-                    }
-                    repo.getGit().commit().setMessage(squashCommitMessage.toString()).call();
-                    chrome.systemOutput("Successfully squash merged '" + branchName + "' into '" + targetBranch + "'.");
-                } else if (mode == MergeMode.REBASE_MERGE) {
-                    String tempRebaseBranchName = null;
-                    try {
-                        tempRebaseBranchName = GitRepo.createTempRebaseBranchName(branchName);
-                        repo.createBranch(tempRebaseBranchName, branchName);
-                        repo.checkout(tempRebaseBranchName);
-
-                        ObjectId resolvedTarget = repo.resolve(targetBranch);
-                        RebaseResult rebaseResult = repo.getGit().rebase()
-                                .setUpstream(resolvedTarget)
-                                .call();
-
-                        if (!rebaseResult.getStatus().isSuccessful()) {
-                            chrome.toolError("Rebase of '" + branchName + "' (as " + tempRebaseBranchName + ") onto '" + targetBranch + "' failed: " + rebaseResult.getStatus(), "Rebase Failed");
-                            // Attempt to abort rebase
-                            try {
-                                if (!repo.getCurrentBranch().equals(tempRebaseBranchName)) { // Ensure on correct branch for abort
-                                   repo.checkout(tempRebaseBranchName);
-                                }
-                                repo.getGit().rebase().setOperation(RebaseCommand.Operation.ABORT).call();
-                            } catch (GitAPIException abortEx) {
-                                logger.error("Failed to abort rebase for {}", tempRebaseBranchName, abortEx);
-                            }
-                            return null;
-                        }
-
-                        // Rebase successful, now merge temp branch (fast-forward)
-                        repo.checkout(targetBranch); // Switch to the target branch
-                        MergeResult ffMergeResult = repo.mergeIntoHead(tempRebaseBranchName); // This should be a fast-forward
-
-                        if (!ffMergeResult.getMergeStatus().isSuccessful()) {
-                            chrome.toolError("Fast-forward merge of rebased '" + tempRebaseBranchName + "' into '" + targetBranch + "' failed: " + ffMergeResult.getMergeStatus(), "Rebase Merge Failed");
-                            return null;
-                        }
-                        chrome.systemOutput("Successfully rebase-merged '" + branchName + "' into '" + targetBranch + "'.");
-                    } finally {
-                        // Cleanup: switch back to original target branch if necessary and delete temp branch
-                        try {
-                            if (!repo.getCurrentBranch().equals(targetBranch)) {
-                                repo.checkout(targetBranch);
-                            }
-                        } catch (GitAPIException e) {
-                            logger.error("Error ensuring checkout to target branch '{}' during rebase cleanup", targetBranch, e);
-                        }
-                        if (tempRebaseBranchName != null) {
-                            try {
-                                repo.forceDeleteBranch(tempRebaseBranchName);
-                            } catch (GitAPIException e) {
-                                logger.error("Failed to delete temporary rebase branch {}", tempRebaseBranchName, e);
-                            }
-                        }
-                    }
+                String targetBranch = repo.getCurrentBranch();
+                MergeResult mergeResult = repo.performMerge(branchName, mode);
+                MergeResult.MergeStatus status = mergeResult.getMergeStatus();
+                
+                if (status.isSuccessful()) {
+                    String modeDescription = switch (mode) {
+                        case MERGE_COMMIT -> "merged";
+                        case SQUASH_COMMIT -> "squash merged";
+                        case REBASE_MERGE -> "rebase-merged";
+                    };
+                    chrome.systemOutput("Branch '" + branchName + "' successfully " + modeDescription + " into '" + targetBranch + "'.");
+                } else if (status == MergeResult.MergeStatus.CONFLICTING) {
+                    String conflictingFiles = Objects.requireNonNull(mergeResult.getConflicts()).keySet().stream()
+                            .map(s -> "  - " + s)
+                            .collect(Collectors.joining("\n"));
+                    chrome.toolError("Merge conflicts for '" + branchName + "' into '" + targetBranch + "'.\n" +
+                                     "Resolve manually and commit.\nConflicting files:\n" + conflictingFiles, "Merge Conflict");
+                } else {
+                    chrome.toolError("Merge of '" + branchName + "' into '" + targetBranch + "' failed: " + status, "Merge Error");
                 }
+                
                 update(); // Refresh UI to reflect new state
             } catch (GitAPIException e) {
-                logger.error("Error merging branch '{}' into '{}' with mode {}: {}", branchName, targetBranch, mode, e.getMessage(), e);
+                logger.error("Error merging branch '{}' with mode {}: {}", branchName, mode, e.getMessage(), e);
                 chrome.toolError("Error merging branch: " + e.getMessage(), "Merge Error");
                 update(); // Refresh UI
-            } finally {
-                 // Ensure we are back on the original branch if a checkout happened during rebase and an error occurred before restoring
-                try {
-                    if (originalBranchBeforeAnyCheckout != null && !repo.getCurrentBranch().equals(originalBranchBeforeAnyCheckout)) {
-                        logger.warn("Restoring original branch {} after merge operation concluded or failed.", originalBranchBeforeAnyCheckout);
-                        repo.checkout(originalBranchBeforeAnyCheckout);
-                        update(); // Re-update if branch changed
-                    }
-                } catch (GitAPIException e) {
-                    logger.error("Critical: Failed to restore original branch {} after merge operation.", originalBranchBeforeAnyCheckout, e);
-                    chrome.toolError("Critical error: Failed to restore original branch state. Please check your Git repository.", "Repository State Error");
-                }
             }
             return null;
         });
