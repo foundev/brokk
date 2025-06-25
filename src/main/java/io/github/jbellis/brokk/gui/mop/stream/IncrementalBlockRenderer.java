@@ -804,8 +804,13 @@ public final class IncrementalBlockRenderer {
         
         @Override
         public void mouseClicked(MouseEvent e) {
+            // Only handle right clicks for context menu
+            if (!SwingUtilities.isRightMouseButton(e)) {
+                return;
+            }
+            
             int pos = editor.viewToModel2D(e.getPoint());
-            logger.info("Click detected at position: {} (point: {})", pos, e.getPoint());
+            logger.info("Right-click detected at position: {} (point: {})", pos, e.getPoint());
             
             if (pos < 0) {
                 logger.info("Invalid click position: {}", pos);

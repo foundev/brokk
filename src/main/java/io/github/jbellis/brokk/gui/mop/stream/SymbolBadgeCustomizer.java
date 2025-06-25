@@ -1,6 +1,9 @@
 package io.github.jbellis.brokk.gui.mop.stream;
 
 import io.github.jbellis.brokk.IContextManager;
+import io.github.jbellis.brokk.MainProject;
+import io.github.jbellis.brokk.gui.GuiTheme;
+import io.github.jbellis.brokk.gui.mop.ThemeColors;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 import org.jsoup.nodes.Element;
@@ -266,6 +269,10 @@ public final class SymbolBadgeCustomizer implements HtmlCustomizer {
         // Encode the file information in the title attribute since Swing doesn't preserve data- attributes
         String encodedTitle = String.format("file:%s:id:%d", filename, badgeId);
         
+        // Get theme-aware color for file badges - use a lighter, more visible color
+        boolean isDarkTheme = isDarkTheme();
+        String linkColor = isDarkTheme ? "#89a9d1" : "#5a7fb8"; // Lighter colors for better visibility
+        
         // Clear the element and replace with clickable filename badge content
         element.empty();
         element.addClass("badge")
@@ -275,6 +282,15 @@ public final class SymbolBadgeCustomizer implements HtmlCustomizer {
                .addClass("clickable-file-badge") // Keep for backward compatibility
                .text(filename)
                .attr("title", encodedTitle)
-               .attr("style", "cursor: pointer; text-decoration: underline; color: blue; font-size: 0.9em; margin-left: 2px;");
+               .attr("style", "cursor: pointer; text-decoration: underline; color: " + linkColor + "; font-size: 0.9em; margin-left: 2px;");
+    }
+    
+    /**
+     * Determines if the current theme is dark mode.
+     * @return true if dark theme is active, false otherwise
+     */
+    private boolean isDarkTheme() {
+        String currentTheme = MainProject.getTheme();
+        return GuiTheme.THEME_DARK.equalsIgnoreCase(currentTheme);
     }
 }

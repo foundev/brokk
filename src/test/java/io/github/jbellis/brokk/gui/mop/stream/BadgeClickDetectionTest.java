@@ -24,7 +24,7 @@ class BadgeClickDetectionTest {
                 .addClass("clickable-badge")
                 .text("README.md")
                 .attr("title", "file:README.md:id:1")
-                .attr("style", "cursor: pointer; text-decoration: underline; color: blue; font-size: 0.9em; margin-left: 2px;");
+                .attr("style", "cursor: pointer; text-decoration: underline; color: #5a7fb8; font-size: 0.9em; margin-left: 2px;");
         
         // Verify the badge has all the expected attributes for click detection
         assertTrue(filenameBadge.hasClass("badge-file"), "Badge should have badge-file class");
@@ -34,7 +34,7 @@ class BadgeClickDetectionTest {
         assertTrue(filenameBadge.attr("title").contains("README.md"), "Title should contain filename");
         assertTrue(filenameBadge.attr("style").contains("underline"), "Style should include underline");
         assertTrue(filenameBadge.attr("style").contains("pointer"), "Style should include pointer cursor");
-        assertTrue(filenameBadge.attr("style").contains("blue"), "Style should include blue color");
+        assertTrue(filenameBadge.attr("style").matches(".*color:\\s*#[0-9a-fA-F]{6}.*"), "Style should include a hex color");
         
         System.out.println("Expected clickable filename badge HTML: " + filenameBadge.outerHtml());
         
@@ -89,7 +89,7 @@ class BadgeClickDetectionTest {
         assertTrue(codeElement.attr("title").startsWith("file:"), "Title should start with 'file:'");
         assertTrue(codeElement.attr("title").contains("README.md"), "Title should contain filename");
         assertTrue(codeElement.attr("style").contains("underline"), "Style should include underline");
-        assertTrue(codeElement.attr("style").contains("blue"), "Style should include blue color");
+        assertTrue(codeElement.attr("style").matches(".*color:\\s*#[0-9a-fA-F]{6}.*"), "Style should include a hex color");
         assertEquals("README.md", codeElement.text(), "Element should show the filename");
         
         System.out.println("Processed clickable filename: " + body.html());
