@@ -30,12 +30,7 @@ public final class BadgeClickHandlerFactory {
      * @return A BadgeClickHandler that handles file badge clicks
      */
     public static BadgeClickHandler createFileClickHandler(IContextManager contextManager, Chrome chrome) {
-        return (badgeType, badgeData, event, component) -> {
-            if ("file".equals(badgeType)) {
-                handleFileClick(badgeData, event, component, contextManager, chrome);
-            }
-            // Future: Add handlers for other badge types (symbol, class, etc.)
-        };
+        return createFileClickHandler(contextManager, chrome, () -> {});
     }
     
     /**
@@ -53,22 +48,12 @@ public final class BadgeClickHandlerFactory {
             if ("file".equals(badgeType)) {
                 handleFileClick(badgeData, event, component, contextManager, chrome, onRefresh);
             }
+            // Future: Add handlers for other badge types (symbol, class, etc.)
         };
     }
     
     /**
-     * Common implementation for handling file badge clicks.
-     */
-    private static void handleFileClick(String fileName, 
-                                       MouseEvent event, 
-                                       JComponent component,
-                                       IContextManager contextManager, 
-                                       Chrome chrome) {
-        handleFileClick(fileName, event, component, contextManager, chrome, () -> {});
-    }
-    
-    /**
-     * Common implementation for handling file badge clicks with refresh callback.
+     * Common implementation for handling file badge clicks with optional refresh callback.
      */
     private static void handleFileClick(String fileName, 
                                        MouseEvent event, 

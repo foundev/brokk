@@ -41,8 +41,8 @@ public final class SymbolBadgeCustomizer implements HtmlCustomizer {
     // Unique ID for this customizer type
     private static final int CUSTOMIZER_ID = 1001;
 
-    // Global counter for unique badge IDs
-    private static final AtomicInteger BADGE_ID_COUNTER = new AtomicInteger(0);
+    // Local counter for unique badge IDs within this customizer instance
+    private final AtomicInteger badgeIdCounter = new AtomicInteger(0);
 
     private final io.github.jbellis.brokk.analyzer.IAnalyzer analyzer;
     private final boolean analyzerReady;
@@ -66,131 +66,146 @@ public final class SymbolBadgeCustomizer implements HtmlCustomizer {
         logger.debug("[SymbolBadgeCustomizer] Starting customization. ENABLE_FILE_BADGES={}, ENABLE_SYMBOL_BADGES={}", 
                     ENABLE_FILE_BADGES, ENABLE_SYMBOL_BADGES);
         
-        Elements anchors = root.select("a");
-        int anchorsProcessed = 0;
-        int badgesInjected = 0;
-
-        if (!anchors.isEmpty()) {
-            logger.debug("[SymbolBadgeCustomizer] Found {} anchor(s) to process.", anchors.size());
-        }
-
-        for (Element anchor : anchors) {
-            anchorsProcessed++;
-            String symbolId = anchor.attr("data-symbol-id");
-            String badgeType = null;
-
-            if (symbolId.isBlank()) {
-                String candidate = anchor.text();
-                if (SYMBOL_PATTERN.matcher(candidate).matches()) {
-                    symbolId = candidate;
-                    badgeType = BADGE_TYPE_SYMBOL;
-                    // write back so other customizers can rely on it later
-                    anchor.attr("data-symbol-id", symbolId);
-                } else if (FILENAME_PATTERN.matcher(candidate).matches()) {
-                    symbolId = candidate;
-                    badgeType = BADGE_TYPE_FILE;
-                    anchor.attr("data-file-id", symbolId);
-                }
-            } else {
-                badgeType = BADGE_TYPE_SYMBOL;
-            }
-
-            if (symbolId.isBlank()) {
-                // not a symbol or file anchor
-                continue;
-            }
-
-            // Check if this element is already clickable to prevent double-processing
-            if (anchor.hasClass("clickable-file-badge") || !anchor.select("> .badge-symbol").isEmpty()) {
-                logger.trace("[SymbolBadgeCustomizer] Skipping anchor, already processed for symbolId '{}': {}", symbolId, anchor.outerHtml());
-                continue;
-            }
-
-            Element badge = null;
-            if (BADGE_TYPE_SYMBOL.equals(badgeType) && ENABLE_SYMBOL_BADGES) {
-                // Validate symbol exists in project
-                var definition = analyzer.getDefinition(symbolId);
-                if (definition.isEmpty()) {
-                    logger.trace("[SymbolBadgeCustomizer] Symbol '{}' not found in project, skipping badge", symbolId);
-                    continue;
-                }
-                badge = createBadgeForSymbol(definition.get());
-            } else if (BADGE_TYPE_FILE.equals(badgeType) && ENABLE_FILE_BADGES) {
-                // Replace the anchor content with clickable filename badge
-                replaceWithClickableFilenameBadge(anchor, symbolId);
-                logger.debug("[SymbolBadgeCustomizer] Replaced anchor with clickable filename badge for '{}'", symbolId);
-                badgesInjected++;
-                continue; // Skip the normal badge creation since we replaced the element
-            }
-
-            if (badge == null) {
-                continue;
-            }
-            anchor.appendChild(badge);
-            badgesInjected++;
-        }
-
-        // Process inline <code> elements within <p> tags
-        Elements codeElements = root.select("p code");
-        if (!codeElements.isEmpty()) {
-            logger.debug("[SymbolBadgeCustomizer] Found {} 'p code' element(s).", codeElements.size());
+        // Use single traversal with visitor pattern for better performance
+        var visitor = new BadgeElementVisitor();
+        traverseAndProcess(root, visitor);
+        
+        logger.debug("[SymbolBadgeCustomizer] processed {} element(s), injected {} badges", 
+                    visitor.elementsProcessed, visitor.badgesInjected);
+    }
+    
+    /**
+     * Single traversal of DOM tree to process all relevant elements.
+     */
+    private void traverseAndProcess(Element element, BadgeElementVisitor visitor) {
+        // Process current element if it's relevant
+        if ("a".equals(element.tagName())) {
+            processAnchorElement(element, visitor);
+        } else if ("code".equals(element.tagName())) {
+            processCodeElement(element, visitor);
         }
         
-        // Also check for code elements in other contexts
-        Elements allCodeElements = root.select("code");
-        logger.debug("[SymbolBadgeCustomizer] Total code elements found: {}", allCodeElements.size());
+        // Recursively process children
+        for (Element child : element.children()) {
+            traverseAndProcess(child, visitor);
+        }
+    }
+    
+    /**
+     * Visitor class to collect statistics during traversal.
+     */
+    private static class BadgeElementVisitor {
+        int elementsProcessed = 0;
+        int badgesInjected = 0;
+    }
+    
+    /**
+     * Process anchor elements for symbol/file badges.
+     */
+    private void processAnchorElement(Element anchor, BadgeElementVisitor visitor) {
+        visitor.elementsProcessed++;
+        String symbolId = anchor.attr("data-symbol-id");
+        String badgeType = null;
 
-        // Process all code elements, not just those in <p> tags
-        for (Element code : allCodeElements) {
-            String codeText = code.text();
-            String badgeType = null;
-            Element badge = null;
-
-            if (SYMBOL_PATTERN.matcher(codeText).matches()) {
+        if (symbolId.isBlank()) {
+            String candidate = anchor.text();
+            if (SYMBOL_PATTERN.matcher(candidate).matches()) {
+                symbolId = candidate;
                 badgeType = BADGE_TYPE_SYMBOL;
-            } else if (FILENAME_PATTERN.matcher(codeText).matches()) {
+                // write back so other customizers can rely on it later
+                anchor.attr("data-symbol-id", symbolId);
+            } else if (FILENAME_PATTERN.matcher(candidate).matches()) {
+                symbolId = candidate;
                 badgeType = BADGE_TYPE_FILE;
-                logger.debug("[SymbolBadgeCustomizer] Found filename in code element: '{}'", codeText);
-            } else {
-                continue;
+                anchor.attr("data-file-id", symbolId);
             }
-
-            // Skip if this code element is already clickable or has a badge
-            if (code.hasClass("clickable-file-badge")) {
-                logger.trace("[SymbolBadgeCustomizer] Skipping code element, already clickable for text '{}': {}", codeText, code.outerHtml());
-                continue;
-            }
-            Element nextSibling = code.nextElementSibling();
-            if (nextSibling != null && nextSibling.hasClass("badge-symbol")) {
-                logger.trace("[SymbolBadgeCustomizer] Skipping code element, badge already exists for text '{}': {}", codeText, code.outerHtml());
-                continue;
-            }
-
-            if (BADGE_TYPE_SYMBOL.equals(badgeType) && ENABLE_SYMBOL_BADGES) {
-                // Validate symbol exists in project
-                var definition = analyzer.getDefinition(codeText);
-                if (definition.isEmpty()) {
-                    logger.trace("[SymbolBadgeCustomizer] Symbol '{}' not found in project, skipping badge", codeText);
-                    continue;
-                }
-                badge = createBadgeForSymbol(definition.get());
-            } else if (BADGE_TYPE_FILE.equals(badgeType) && ENABLE_FILE_BADGES) {
-                // Replace the code element content with clickable filename badge
-                replaceWithClickableFilenameBadge(code, codeText);
-                logger.debug("[SymbolBadgeCustomizer] Replaced code element with clickable filename badge for '{}'", codeText);
-                badgesInjected++;
-                continue; // Skip the normal badge creation since we replaced the element
-            }
-
-            if (badge != null) {
-                code.after(badge);
-                badgesInjected++;
-                logger.debug("[SymbolBadgeCustomizer] Injected badge after code element: {}", badge.outerHtml());
-            }
+        } else {
+            badgeType = BADGE_TYPE_SYMBOL;
         }
 
-        if (badgesInjected > 0 || anchorsProcessed > 0) {
-            logger.debug("[SymbolBadgeCustomizer] processed {} anchor(s), injected {} badges (anchors+code)", anchorsProcessed, badgesInjected);
+        if (symbolId.isBlank()) {
+            // not a symbol or file anchor
+            return;
+        }
+
+        // Check if this element is already clickable to prevent double-processing
+        if (anchor.hasClass("clickable-file-badge") || !anchor.select("> .badge-symbol").isEmpty()) {
+            logger.trace("[SymbolBadgeCustomizer] Skipping anchor, already processed for symbolId '{}': {}", symbolId, anchor.outerHtml());
+            return;
+        }
+
+        Element badge = null;
+        if (BADGE_TYPE_SYMBOL.equals(badgeType) && ENABLE_SYMBOL_BADGES) {
+            // Validate symbol exists in project
+            var definition = analyzer.getDefinition(symbolId);
+            if (definition.isEmpty()) {
+                logger.trace("[SymbolBadgeCustomizer] Symbol '{}' not found in project, skipping badge", symbolId);
+                return;
+            }
+            badge = createBadgeForSymbol(definition.get());
+        } else if (BADGE_TYPE_FILE.equals(badgeType) && ENABLE_FILE_BADGES) {
+            // Replace the anchor content with clickable filename badge
+            replaceWithClickableFilenameBadge(anchor, symbolId);
+            logger.debug("[SymbolBadgeCustomizer] Replaced anchor with clickable filename badge for '{}'", symbolId);
+            visitor.badgesInjected++;
+            return; // Skip the normal badge creation since we replaced the element
+        }
+
+        if (badge != null) {
+            anchor.appendChild(badge);
+            visitor.badgesInjected++;
+        }
+    }
+    
+    /**
+     * Process code elements for symbol/file badges.
+     */
+    private void processCodeElement(Element code, BadgeElementVisitor visitor) {
+        visitor.elementsProcessed++;
+        String codeText = code.text();
+        String badgeType = null;
+        Element badge = null;
+
+        if (SYMBOL_PATTERN.matcher(codeText).matches()) {
+            badgeType = BADGE_TYPE_SYMBOL;
+        } else if (FILENAME_PATTERN.matcher(codeText).matches()) {
+            badgeType = BADGE_TYPE_FILE;
+            logger.debug("[SymbolBadgeCustomizer] Found filename in code element: '{}'", codeText);
+        } else {
+            return;
+        }
+
+        // Skip if this code element is already clickable or has a badge
+        if (code.hasClass("clickable-file-badge")) {
+            logger.trace("[SymbolBadgeCustomizer] Skipping code element, already clickable for text '{}': {}", codeText, code.outerHtml());
+            return;
+        }
+        Element nextSibling = code.nextElementSibling();
+        if (nextSibling != null && nextSibling.hasClass("badge-symbol")) {
+            logger.trace("[SymbolBadgeCustomizer] Skipping code element, badge already exists for text '{}': {}", codeText, code.outerHtml());
+            return;
+        }
+
+        if (BADGE_TYPE_SYMBOL.equals(badgeType) && ENABLE_SYMBOL_BADGES) {
+            // Validate symbol exists in project
+            var definition = analyzer.getDefinition(codeText);
+            if (definition.isEmpty()) {
+                logger.trace("[SymbolBadgeCustomizer] Symbol '{}' not found in project, skipping badge", codeText);
+                return;
+            }
+            badge = createBadgeForSymbol(definition.get());
+        } else if (BADGE_TYPE_FILE.equals(badgeType) && ENABLE_FILE_BADGES) {
+            // Replace the code element content with clickable filename badge
+            replaceWithClickableFilenameBadge(code, codeText);
+            logger.debug("[SymbolBadgeCustomizer] Replaced code element with clickable filename badge for '{}'", codeText);
+            visitor.badgesInjected++;
+            return; // Skip the normal badge creation since we replaced the element
+        }
+
+        if (badge != null) {
+            code.after(badge);
+            visitor.badgesInjected++;
+            logger.debug("[SymbolBadgeCustomizer] Injected badge after code element: {}", badge.outerHtml());
         }
     }
 
@@ -228,8 +243,12 @@ public final class SymbolBadgeCustomizer implements HtmlCustomizer {
      * Returns a no-op customizer if the analyzer is not ready.
      */
     public static HtmlCustomizer create(IContextManager contextManager) {
+        if (contextManager == null) {
+            return HtmlCustomizer.DEFAULT;
+        }
+        
         var analyzerWrapper = contextManager.getAnalyzerWrapper();
-        if (!analyzerWrapper.isReady()) {
+        if (analyzerWrapper == null || !analyzerWrapper.isReady()) {
             return HtmlCustomizer.DEFAULT;
         }
 
@@ -243,15 +262,19 @@ public final class SymbolBadgeCustomizer implements HtmlCustomizer {
     }
 
     private void replaceWithClickableFilenameBadge(Element element, String filename) {
-        int badgeId = BADGE_ID_COUNTER.incrementAndGet();
+        int badgeId = badgeIdCounter.incrementAndGet();
         // Encode the file information in the title attribute since Swing doesn't preserve data- attributes
         String encodedTitle = String.format("file:%s:id:%d", filename, badgeId);
         
         // Clear the element and replace with clickable filename badge content
         element.empty();
-        element.addClass("clickable-file-badge")
+        element.addClass("badge")
+               .addClass("badge-symbol")
+               .addClass("badge-file")
+               .addClass("clickable-badge")
+               .addClass("clickable-file-badge") // Keep for backward compatibility
                .text(filename)
                .attr("title", encodedTitle)
-               .attr("style", "cursor: pointer; text-decoration: underline;");
+               .attr("style", "cursor: pointer; text-decoration: underline; color: blue; font-size: 0.9em; margin-left: 2px;");
     }
 }
