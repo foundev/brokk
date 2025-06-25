@@ -8,6 +8,7 @@ import org.jsoup.select.Elements;
 
 import java.nio.file.Path;
 import java.util.Locale;
+import java.util.Objects;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.regex.Pattern;
 
@@ -227,17 +228,13 @@ public final class SymbolBadgeCustomizer implements HtmlCustomizer {
      * Returns a no-op customizer if the analyzer is not ready.
      */
     public static HtmlCustomizer create(IContextManager contextManager) {
-        if (contextManager == null) {
-            return HtmlCustomizer.DEFAULT;
-        }
-
         var analyzerWrapper = contextManager.getAnalyzerWrapper();
-        if (analyzerWrapper == null || !analyzerWrapper.isReady()) {
+        if (!analyzerWrapper.isReady()) {
             return HtmlCustomizer.DEFAULT;
         }
 
         var analyzer = analyzerWrapper.getNonBlocking();
-        return new SymbolBadgeCustomizer(analyzer, true);
+        return new SymbolBadgeCustomizer(Objects.requireNonNull(analyzer), true);
     }
 
     @Override

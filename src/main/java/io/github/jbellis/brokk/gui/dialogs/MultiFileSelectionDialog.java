@@ -218,7 +218,7 @@ public class MultiFileSelectionDialog extends JDialog {
             @Override
             public void keyPressed(java.awt.event.KeyEvent e) {
                 if (e.getKeyCode() == KeyEvent.VK_SPACE && e.isControlDown()) {
-                    System.out.println("MultiFileSelectionDialog: Ctrl+Space class autocomplete triggered - text: '" + classInput.getText() + "'");
+                    System.out.println("MultiFileSelectionDialog: Ctrl+Space class autocomplete triggered - text: '" + classInput + "'");
                 }
             }
         });

@@ -89,6 +89,7 @@ public final class IncrementalBlockRenderer {
     private volatile HtmlCustomizer htmlCustomizer = HtmlCustomizer.DEFAULT;
     
     // Badge click handler for interactive badges
+    @Nullable
     private BadgeClickHandler badgeClickHandler = null;
     
     // Component factories

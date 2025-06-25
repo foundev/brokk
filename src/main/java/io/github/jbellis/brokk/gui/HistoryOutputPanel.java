@@ -81,7 +81,7 @@ public class HistoryOutputPanel extends JPanel {
 
         // Build combined Output + Instructions panel (Center)
         this.llmStreamArea = new MarkdownOutputPanel();
-        this.llmScrollPane = buildLLMStreamScrollPane(this.llmStreamArea);
+        this.llmScrollPane = buildLLMStreamScrollPane();
         this.copyButton = new JButton("Copy");
         var centerPanel = buildCombinedOutputInstructionsPanel(this.llmScrollPane, this.copyButton);
         add(centerPanel, BorderLayout.CENTER);
@@ -580,8 +580,7 @@ public class HistoryOutputPanel extends JPanel {
     /**
      * Builds the LLM streaming area where markdown output is displayed
      */
-    private JScrollPane buildLLMStreamScrollPane(MarkdownOutputPanel llmStreamArea) {
-        llmStreamArea = new MarkdownOutputPanel();
+    private JScrollPane buildLLMStreamScrollPane() {
 
         // Configure symbol badge customizer
         var symbolBadgeCustomizer = SymbolBadgeCustomizer.create(contextManager);

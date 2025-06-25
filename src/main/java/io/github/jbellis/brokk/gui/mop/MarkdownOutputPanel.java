@@ -76,7 +76,8 @@ public class MarkdownOutputPanel extends JPanel implements Scrollable, ThemeAwar
     private HtmlCustomizer htmlCustomizer = HtmlCustomizer.DEFAULT;
     
     // Global BadgeClickHandler applied to every renderer
-    private BadgeClickHandler badgeClickHandler = null;
+    @Nullable
+    private BadgeClickHandler badgeClickHandler;
 
     public MarkdownOutputPanel(boolean escapeHtml) {
         this.escapeHtml = escapeHtml;
@@ -305,7 +306,7 @@ public class MarkdownOutputPanel extends JPanel implements Scrollable, ThemeAwar
         boolean enableEditBlocks = message.type() != ChatMessageType.USER;
         var renderer = new IncrementalBlockRenderer(isDarkTheme, enableEditBlocks, escapeHtml);
         renderer.setHtmlCustomizer(htmlCustomizer);
-        renderer.setBadgeClickHandler(badgeClickHandler);
+        renderer.setBadgeClickHandler(requireNonNull(badgeClickHandler));
 
         // Create a new worker for this message
         var worker = new StreamingWorker(renderer);
@@ -445,13 +446,6 @@ public class MarkdownOutputPanel extends JPanel implements Scrollable, ThemeAwar
     public void setBadgeClickHandler(BadgeClickHandler handler) {
         this.badgeClickHandler = handler;
         renderers().forEach(r -> r.setBadgeClickHandler(handler));
-    }
-    
-    /**
-     * Gets the current badge click handler.
-     */
-    public BadgeClickHandler getBadgeClickHandler() {
-        return badgeClickHandler;
     }
     
     /**
