@@ -9,6 +9,7 @@ import io.github.jbellis.brokk.issues.*;
 import io.github.jbellis.brokk.util.HtmlUtil;
 import io.github.jbellis.brokk.util.ImageUtil;
 import io.github.jbellis.brokk.gui.components.GitHubTokenMissingPanel;
+import io.github.jbellis.brokk.gui.components.LoadingTextBox;
 import okhttp3.OkHttpClient;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
@@ -24,6 +25,7 @@ import javax.swing.Timer;
 import java.awt.event.MouseAdapter;
 import java.awt.event.MouseEvent;
 import java.io.IOException;
+import java.io.InterruptedIOException;
 import java.net.URI;
 import java.time.LocalDate;
 import java.util.*;
@@ -31,7 +33,9 @@ import java.util.List;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
+
 import io.github.jbellis.brokk.util.Environment;
+import org.jetbrains.annotations.Nullable;
 
 public class GitIssuesTab extends JPanel implements SettingsChangeListener {
     private static final Logger logger = LogManager.getLogger(GitIssuesTab.class);
@@ -57,13 +61,24 @@ public class GitIssuesTab extends JPanel implements SettingsChangeListener {
     private JButton captureButton;
 
     private FilterBox statusFilter;
-    private FilterBox resolutionFilter;
+    @Nullable
+    private FilterBox resolutionFilter; // Initialized conditionally
     private FilterBox authorFilter;
     private FilterBox labelFilter;
     private FilterBox assigneeFilter;
-    private JTextField searchField;
+    private LoadingTextBox searchBox;
     private Timer searchDebounceTimer;
-    private static final int SEARCH_DEBOUNCE_DELAY = 300; // ms for search debounce
+    private static final int SEARCH_DEBOUNCE_DELAY = 400; // ms for search debounce
+    private String lastSearchQuery = "";
+
+    // Debouncing for issue description loading
+    private static final int DESCRIPTION_DEBOUNCE_DELAY = 250; // ms
+    private final Timer descriptionDebounceTimer;
+    @Nullable
+    private IssueHeader pendingHeaderForDescription;
+    @Nullable
+    private Future<?> currentDescriptionFuture;
+
 
     // Context Menu for Issue Table
     private JPopupMenu issueContextMenu;
@@ -80,11 +95,11 @@ public class GitIssuesTab extends JPanel implements SettingsChangeListener {
     private static final List<String> STATUS_FILTER_OPTIONS = List.of("Open", "Closed"); // "All" is null selection
     private final List<String> actualStatusFilterOptions = new ArrayList<>(STATUS_FILTER_OPTIONS);
 
+    private volatile Future<?> currentSearchFuture;
     private final GfmRenderer gfmRenderer;
     private final OkHttpClient httpClient;
     private final IssueService issueService;
-    private final GitHubTokenMissingPanel gitHubTokenMissingPanel;
-    private final Set<Future<?>> futuresToBeCancelledOnGutHubTokenChange = ConcurrentHashMap.newKeySet();
+    private final Set<Future<?>> activeFutures = ConcurrentHashMap.newKeySet();
 
 
     public GitIssuesTab(Chrome chrome, ContextManager contextManager, GitPanel gitPanel, IssueService issueService) {
@@ -95,7 +110,11 @@ public class GitIssuesTab extends JPanel implements SettingsChangeListener {
         this.gitPanel = gitPanel;
         this.gfmRenderer = new GfmRenderer();
         this.httpClient = initializeHttpClient();
-
+        
+        // Initialize nullable fields to avoid NullAway errors
+        this.pendingHeaderForDescription = null;
+        this.currentDescriptionFuture = null;
+        
         // Load dynamic statuses after issueService and statusFilter are initialized
         var future = contextManager.submitBackgroundTask("Load Available Issue Statuses", () -> {
             List<String> fetchedStatuses = null;
@@ -119,10 +138,6 @@ public class GitIssuesTab extends JPanel implements SettingsChangeListener {
                         actualStatusFilterOptions.addAll(STATUS_FILTER_OPTIONS); // Fallback
                     }
                 }
-                if (statusFilter != null) {
-                    // If FilterBox needs an explicit update method, it should be called here.
-                    // For now, assuming it might re-fetch from its optionsProvider when next opened.
-                }
             });
             return null;
         });
@@ -140,33 +155,60 @@ public class GitIssuesTab extends JPanel implements SettingsChangeListener {
         JPanel topContentPanel = new JPanel();
         topContentPanel.setLayout(new BoxLayout(topContentPanel, BoxLayout.Y_AXIS));
 
-        gitHubTokenMissingPanel = new GitHubTokenMissingPanel(chrome);
+        GitHubTokenMissingPanel gitHubTokenMissingPanel = new GitHubTokenMissingPanel(chrome);
         JPanel tokenPanelWrapper = new JPanel(new FlowLayout(FlowLayout.RIGHT, 0, 0));
         tokenPanelWrapper.add(gitHubTokenMissingPanel);
         topContentPanel.add(tokenPanelWrapper);
 
         // Search Panel
         JPanel searchPanel = new JPanel(new BorderLayout(Constants.H_GAP, 0));
-        searchPanel.setBorder(BorderFactory.createEmptyBorder(3, 3, 3, 3));
-        searchField = new JTextField();
-        searchField.setToolTipText("Search issues (Ctrl+F to focus)");
-        searchPanel.add(new JLabel("Search: "), BorderLayout.WEST);
-        searchPanel.add(searchField, BorderLayout.CENTER);
-        topContentPanel.add(searchPanel);
+        // Removed setBorder for searchPanel as it will be part of issueTableAndButtonsPanel
+        searchBox = new LoadingTextBox("Search", 20, chrome); // Placeholder text "Search"
+        searchBox.asTextField().setToolTipText("Search issues (Ctrl+F to focus)"); // Set tooltip on the inner JTextField
+        searchPanel.add(searchBox, BorderLayout.CENTER);
 
-        mainIssueAreaPanel.add(topContentPanel, BorderLayout.NORTH); // Add combined top panel
+        // topContentPanel no longer contains searchPanel
+        mainIssueAreaPanel.add(topContentPanel, BorderLayout.NORTH);
 
         searchDebounceTimer = new Timer(SEARCH_DEBOUNCE_DELAY, e -> {
-            logger.debug("Search debounce timer triggered. Updating issue list with query: {}", searchField.getText());
+            logger.debug("Search debounce timer triggered. Updating issue list with query: {}", searchBox.getText());
             updateIssueList();
         });
         searchDebounceTimer.setRepeats(false);
 
-        searchField.getDocument().addDocumentListener(new DocumentListener() {
-            @Override public void insertUpdate(DocumentEvent e) { changed(); }
-            @Override public void removeUpdate(DocumentEvent e) { changed(); }
-            @Override public void changedUpdate(DocumentEvent e) { changed(); }
+        descriptionDebounceTimer = new Timer(DESCRIPTION_DEBOUNCE_DELAY, e -> {
+            if (pendingHeaderForDescription != null) {
+                // Cancel any previously initiated description load if it's still running
+                if (currentDescriptionFuture != null && !currentDescriptionFuture.isDone()) {
+                    currentDescriptionFuture.cancel(true);
+                }
+                currentDescriptionFuture = loadAndRenderIssueBodyFromHeader(pendingHeaderForDescription);
+            }
+        });
+        descriptionDebounceTimer.setRepeats(false);
+
+        searchBox.addDocumentListener(new DocumentListener() {
+            @Override
+            public void insertUpdate(DocumentEvent e) {
+                changed();
+            }
+
+            @Override
+            public void removeUpdate(DocumentEvent e) {
+                changed();
+            }
+
+            @Override
+            public void changedUpdate(DocumentEvent e) {
+                changed();
+            }
+
             private void changed() {
+                var current = searchBox.getText().strip();
+                if (Objects.equals(current, lastSearchQuery)) {
+                    return;
+                }
+                lastSearchQuery = current;
                 if (searchDebounceTimer.isRunning()) {
                     searchDebounceTimer.restart();
                 } else {
@@ -183,8 +225,8 @@ public class GitIssuesTab extends JPanel implements SettingsChangeListener {
         actionMap.put("focusSearchField", new AbstractAction() {
             @Override
             public void actionPerformed(ActionEvent e) {
-                searchField.requestFocusInWindow();
-                searchField.selectAll();
+                searchBox.asTextField().requestFocusInWindow();
+                searchBox.asTextField().selectAll();
             }
         });
 
@@ -254,7 +296,10 @@ public class GitIssuesTab extends JPanel implements SettingsChangeListener {
         filtersAndTablePanel.add(verticalFilterPanel, BorderLayout.WEST);
 
         // Panel for Issue Table (CENTER) and Issue Buttons (SOUTH)
-        JPanel issueTableAndButtonsPanel = new JPanel(new BorderLayout());
+        JPanel issueTableAndButtonsPanel = new JPanel(new BorderLayout(0, Constants.V_GAP)); // Added V_GAP
+        // Add search panel above the table, inside issueTableAndButtonsPanel
+        // The searchPanel will now be constrained by the width of this panel, which is aligned with the table.
+        issueTableAndButtonsPanel.add(searchPanel, BorderLayout.NORTH);
 
         // Issue Table
         issueTableModel = new DefaultTableModel(
@@ -413,18 +458,36 @@ public class GitIssuesTab extends JPanel implements SettingsChangeListener {
                     if (modelRow < 0 || modelRow >= displayedIssues.size()) {
                         logger.warn("Selected row {} (model {}) is out of bounds for displayed issues size {}", viewRow, modelRow, displayedIssues.size());
                         disableIssueActionsAndClearDetails();
+                        pendingHeaderForDescription = null;
+                        if (descriptionDebounceTimer.isRunning()) {
+                            descriptionDebounceTimer.stop();
+                        }
                         return;
                     }
                     IssueHeader selectedHeader = displayedIssues.get(modelRow);
-                    loadAndRenderIssueBodyFromHeader(selectedHeader);
+
+                    // Enable actions immediately for responsiveness
                     copyDescriptionAction.setEnabled(true);
                     openInBrowserAction.setEnabled(true);
                     captureAction.setEnabled(true);
+
+                    // Debounce loading of the issue body
+                    pendingHeaderForDescription = selectedHeader;
+                    descriptionDebounceTimer.restart();
+
                 } else { // No selection or invalid row
                     disableIssueActionsAndClearDetails();
+                    pendingHeaderForDescription = null;
+                    if (descriptionDebounceTimer.isRunning()) {
+                        descriptionDebounceTimer.stop();
+                    }
                 }
             } else if (issueTable.getSelectedRow() == -1) { // if selection is explicitly cleared
                 disableIssueActionsAndClearDetails();
+                pendingHeaderForDescription = null;
+                if (descriptionDebounceTimer.isRunning()) {
+                    descriptionDebounceTimer.stop();
+                }
             }
         });
 
@@ -432,20 +495,54 @@ public class GitIssuesTab extends JPanel implements SettingsChangeListener {
         updateIssueList(); // async
     }
 
+    @Override
+    public void issueProviderChanged() {
+        SwingUtilities.invokeLater(() -> {
+            logger.debug("Issue provider changed notification received. Requesting GitPanel to recreate this issues tab.");
+            cancelActiveFutures();
+            // Ask GitPanel to recreate this tab.
+            // GitPanel is final and assigned in constructor, so it won't be null here.
+            gitPanel.recreateIssuesTab();
+        });
+    }
+
+    private void cancelActiveFutures() {
+        if (searchDebounceTimer != null && searchDebounceTimer.isRunning()) {
+            searchDebounceTimer.stop();
+        }
+        if (descriptionDebounceTimer != null && descriptionDebounceTimer.isRunning()) {
+            descriptionDebounceTimer.stop();
+        }
+        pendingHeaderForDescription = null;
+
+        List<Future<?>> futuresToCancel = new ArrayList<>(activeFutures);
+        // currentSearchFuture and currentDescriptionFuture are added to activeFutures
+        // when they are created, so they will be included in the futuresToCancel list here.
+
+        logger.debug("Attempting to cancel {} active issue-related futures.", futuresToCancel.size());
+        for (Future<?> f : futuresToCancel) {
+            if (f != null && !f.isDone()) {
+                f.cancel(true);
+                logger.trace("Requested cancellation for active future: {}", f.toString());
+            }
+        }
+        activeFutures.clear(); // Clear the set after attempting cancellation
+    }
+
     /**
-     * Tracks a Future that might contain calls to GitHub API, so that it can be cancelled if GitHub access token changes.
+     * Tracks a Future that might need to be cancelled if settings change (e.g. GitHub token, issue provider).
      */
     private void trackCancellableFuture(Future<?> future) {
-        futuresToBeCancelledOnGutHubTokenChange.removeIf(Future::isDone);
-        if (future != null) {
-            futuresToBeCancelledOnGutHubTokenChange.add(future);
-        }
+        activeFutures.removeIf(Future::isDone);
+        activeFutures.add(future);
     }
 
     @Override
     public void removeNotify() {
         super.removeNotify();
         MainProject.removeSettingsChangeListener(this);
+        searchDebounceTimer.stop();
+        descriptionDebounceTimer.stop();
     }
 
     @Override
@@ -453,40 +550,18 @@ public class GitIssuesTab extends JPanel implements SettingsChangeListener {
         SwingUtilities.invokeLater(() -> {
             logger.debug("GitHub token changed. Initiating cancellation of active issue tasks and scheduling refresh.");
 
-            if (searchDebounceTimer != null && searchDebounceTimer.isRunning()) {
+            if (searchDebounceTimer.isRunning()) {
                 searchDebounceTimer.stop();
             }
-
-            List<Future<?>> futuresToCancelAndAwait = new ArrayList<>(futuresToBeCancelledOnGutHubTokenChange);
-
-            logger.debug("Attempting to cancel {} issue-related futures.", futuresToCancelAndAwait.size());
-            for (Future<?> f : futuresToCancelAndAwait) {
-                if (!f.isDone()) {
-                    f.cancel(true);
-                    logger.trace("Requested cancellation for issue-related future: {}", f.toString());
-                }
+            if (descriptionDebounceTimer.isRunning()) {
+                descriptionDebounceTimer.stop();
             }
+            pendingHeaderForDescription = null;
 
-            if (futuresToCancelAndAwait.isEmpty()) {
-                logger.debug("No active issue tasks to wait for. Proceeding with issue list refresh directly.");
-                updateIssueList();
-                return;
-            }
+            // This stops timers and clears activeFutures set
+            cancelActiveFutures();
 
-            // Wait for the futures to complete or be cancelled to avoid potential race conditions
-            contextManager.submitBackgroundTask("Finalizing issue task cancellations and refreshing data", () -> {
-                logger.debug("Waiting for {} issue-related futures to complete cancellation.", futuresToCancelAndAwait.size());
-                for (Future<?> f : futuresToCancelAndAwait) {
-                    try {
-                        f.get();
-                    } catch (Exception e) {
-                        logger.trace("Issue task cancellation confirmed for: {}", f.toString());
-                    }
-                }
-                logger.debug("All identified issue tasks have completed cancellation. Scheduling issue list refresh.");
-                SwingUtilities.invokeLater(this::updateIssueList);
-                return null;
-            });
+            updateIssueList();
         });
     }
 
@@ -500,33 +575,27 @@ public class GitIssuesTab extends JPanel implements SettingsChangeListener {
         io.github.jbellis.brokk.issues.IssueProviderType providerType = project.getIssuesProvider().type();
         Logger staticLogger = LogManager.getLogger(GitIssuesTab.class);
 
-        switch (providerType) {
-            case JIRA:
+        return switch (providerType) {
+            case JIRA -> {
                 staticLogger.info("Using JiraIssueService for project {} (provider: JIRA)", project.getRoot().getFileName());
-                return new JiraIssueService(project);
-            case GITHUB:
-            case NONE: // Explicitly handle NONE, though it might default to GitHub or a NoOp service later
-            default: // Default to GitHub if enum is somehow null or unexpected value, or NONE
+                yield new JiraIssueService(project);
+            } // Explicitly handle NONE, though it might default to GitHub or a NoOp service later
+            default -> {
                 staticLogger.info("Using GitHubIssueService for project {} (provider: {})", project.getRoot().getFileName(), providerType);
-                return new GitHubIssueService(project);
-        }
+                yield new GitHubIssueService(project);
+            }
+        };
     }
 
     private OkHttpClient initializeHttpClient() {
         OkHttpClient client;
         try {
             // Attempt to get the client from the already initialized issueService
-            if (this.issueService == null) {
-                // This case should ideally not happen if constructor order is correct,
-                // but as a safeguard:
-                logger.error("IssueService is null during httpClient initialization. Falling back to unauthenticated client.");
-                throw new IOException("IssueService not available for HTTP client setup.");
-            }
             client = this.issueService.httpClient(); // This can throw IOException
             logger.info("Successfully initialized HTTP client from IssueService: {}", this.issueService.getClass().getSimpleName());
         } catch (IOException e) {
             logger.error("Failed to initialize authenticated client from IssueService ({}) for GitIssuesTab, falling back to unauthenticated client. Error: {}",
-                         (this.issueService != null ? this.issueService.getClass().getSimpleName() : "null"), e.getMessage(), e);
+                         this.issueService.getClass().getSimpleName(), e.getMessage(), e);
             client = new OkHttpClient.Builder()
                     .connectTimeout(5, TimeUnit.SECONDS)
                     .readTimeout(10, TimeUnit.SECONDS)
@@ -542,23 +611,15 @@ public class GitIssuesTab extends JPanel implements SettingsChangeListener {
     }
 
     private void disableIssueActionsAndClearDetails() {
-        if (copyDescriptionAction != null) {
-            copyDescriptionAction.setEnabled(false);
-            openInBrowserAction.setEnabled(false);
-            captureAction.setEnabled(false);
-        }
+        copyDescriptionAction.setEnabled(false);
+        openInBrowserAction.setEnabled(false);
+        captureAction.setEnabled(false);
         issueBodyTextPane.setContentType("text/html");
         issueBodyTextPane.setText("");
     }
 
-    private void loadAndRenderIssueBodyFromHeader(IssueHeader header) {
+    private Future<?> loadAndRenderIssueBodyFromHeader(IssueHeader header) {
         assert SwingUtilities.isEventDispatchThread();
-
-        if (header == null) {
-            issueBodyTextPane.setContentType("text/html");
-            issueBodyTextPane.setText("");
-            return;
-        }
 
         issueBodyTextPane.setContentType("text/html");
         issueBodyTextPane.setText("<html><body><p><i>Loading description for " + header.id() + "...</i></p></body></html>");
@@ -567,6 +628,10 @@ public class GitIssuesTab extends JPanel implements SettingsChangeListener {
             try {
                 IssueDetails details = issueService.loadDetails(header.id());
                 String rawBody = details.markdownBody();
+
+                if (Thread.currentThread().isInterrupted()) {
+                    return null;
+                }
 
                 if (rawBody == null || rawBody.isBlank()) {
                     SwingUtilities.invokeLater(() -> {
@@ -594,27 +659,44 @@ public class GitIssuesTab extends JPanel implements SettingsChangeListener {
                 }
 
             } catch (Exception e) {
-                logger.error("Failed to load/render details for issue {}: {}", header.id(), e.getMessage(), e);
-                SwingUtilities.invokeLater(() -> {
-                    issueBodyTextPane.setContentType("text/plain");
-                    issueBodyTextPane.setText("Failed to load/render description for " + header.id() + ":\n" + e.getMessage());
-                    issueBodyTextPane.setCaretPosition(0);
-                });
+                if (!wasCancellation(e)) {
+                    logger.error("Failed to load/render details for issue {}: {}", header.id(), e.getMessage(), e);
+                    SwingUtilities.invokeLater(() -> {
+                        issueBodyTextPane.setContentType("text/plain");
+                        issueBodyTextPane.setText("Failed to load/render description for " + header.id() + ":\n" + e.getMessage());
+                        issueBodyTextPane.setCaretPosition(0);
+                    });
+                }
             }
             return null;
         });
         trackCancellableFuture(future);
+        return future;
+    }
+
+    private static boolean wasCancellation(Throwable t) {
+        while (t != null) {
+            if (t instanceof InterruptedException || t instanceof InterruptedIOException) {
+                return true;
+            }
+            t = t.getCause();
+        }
+        return false;
     }
 
     /**
      * Fetches open GitHub issues and populates the issue table.
      */
     private void updateIssueList() {
-        var future = contextManager.submitBackgroundTask("Fetching GitHub Issues", () -> {
+        if (currentSearchFuture != null && !currentSearchFuture.isDone()) {
+            currentSearchFuture.cancel(true);
+        }
+        searchBox.setLoading(true, "Searching issues");
+        currentSearchFuture = contextManager.submitBackgroundTask("Fetching GitHub Issues", () -> {
             List<IssueHeader> fetchedIssueHeaders;
             try {
-                // Read filter values on EDT or before submitting task. searchField can be null during early init.
-                final String currentSearchQuery = (searchField != null) ? searchField.getText().strip() : "";
+                // Read filter values on EDT or before submitting task. searchBox can be null during early init.
+                final String currentSearchQuery = (searchBox != null) ? searchBox.getText().strip() : "";
                 final String queryForApi = currentSearchQuery.isBlank() ? null : currentSearchQuery;
 
                 final String statusVal = getBaseFilterValue(statusFilter.getSelected());
@@ -640,24 +722,35 @@ public class GitIssuesTab extends JPanel implements SettingsChangeListener {
                 fetchedIssueHeaders = this.issueService.listIssues(apiFilterOptions);
                 logger.debug("Fetched {} issue headers via IssueService.", fetchedIssueHeaders.size());
             } catch (Exception ex) {
-                logger.error("Failed to fetch issues via IssueService", ex);
-                SwingUtilities.invokeLater(() -> {
-                    allIssuesFromApi.clear();
-                    displayedIssues.clear();
-                    issueTableModel.setRowCount(0);
-                    issueTableModel.addRow(new Object[]{
-                            "", "Error fetching issues: " + ex.getMessage(), "", "", "", "", ""
+                if (wasCancellation(ex)) {
+                    // Ensure loading indicator is turned off, but don't show an error row or log as ERROR.
+                    SwingUtilities.invokeLater(() -> searchBox.setLoading(false, ""));
+                } else {
+                    logger.error("Failed to fetch issues via IssueService", ex);
+                    SwingUtilities.invokeLater(() -> {
+                        allIssuesFromApi.clear();
+                        displayedIssues.clear();
+                        issueTableModel.setRowCount(0);
+                        issueTableModel.addRow(new Object[]{
+                                "", "Error fetching issues: " + ex.getMessage(), "", "", "", "", ""
+                        });
+                        disableIssueActionsAndClearDetails();
+                        searchBox.setLoading(false, ""); // Stop loading on error
                     });
-                    disableIssueActionsAndClearDetails();
-                });
+                }
                 return null;
             }
 
+            if (Thread.currentThread().isInterrupted()) {
+                // If interrupted after successful fetch but before processing, ensure loading is stopped.
+                SwingUtilities.invokeLater(() -> searchBox.setLoading(false, ""));
+                return null;
+            }
             // Perform filtering and display processing in the background
             processAndDisplayWorker(fetchedIssueHeaders, true);
             return null;
         });
-        trackCancellableFuture(future);
+        trackCancellableFuture(currentSearchFuture);
     }
 
     private void triggerClientSideFilterUpdate() {
@@ -667,7 +760,7 @@ public class GitIssuesTab extends JPanel implements SettingsChangeListener {
             logger.debug("Skipping client-side filter update: allIssuesFromApi is not ready or an error is displayed.");
             return;
         }
-
+        searchBox.setLoading(true, "Filtering issues");
         final List<IssueHeader> currentIssuesToFilter = new ArrayList<>(allIssuesFromApi); // Use a snapshot
 
         contextManager.submitBackgroundTask("Applying Client-Side Filters", () -> {
@@ -679,6 +772,11 @@ public class GitIssuesTab extends JPanel implements SettingsChangeListener {
 
 
     private void processAndDisplayWorker(List<IssueHeader> sourceList, boolean isFullUpdate) {
+        if (Thread.currentThread().isInterrupted()) {
+            // Ensure searchBox loading state is reset correctly on the EDT.
+            SwingUtilities.invokeLater(() -> searchBox.setLoading(false, ""));
+            return;
+        }
         // This method runs on a background thread.
         logger.debug("processAndDisplayWorker: Starting. Source list size: {}. isFullUpdate: {}", sourceList.size(), isFullUpdate);
 
@@ -763,6 +861,7 @@ public class GitIssuesTab extends JPanel implements SettingsChangeListener {
                 issueTable.getSelectionModel().setValueIsAdjusting(true);
                 issueTable.getSelectionModel().setValueIsAdjusting(false);
             }
+            searchBox.setLoading(false, ""); // Stop loading after UI updates
             logger.debug("processAndDisplayWorker (EDT): UI updates complete.");
         });
     }
@@ -819,7 +918,8 @@ public class GitIssuesTab extends JPanel implements SettingsChangeListener {
         return options;
     }
 
-    private String getBaseFilterValue(String displayOptionWithCount) {
+    @Nullable
+    private String getBaseFilterValue(@Nullable String displayOptionWithCount) {
         if (displayOptionWithCount == null) {
             return null; // This is the "All" case (FilterBox name shown)
         }
@@ -894,22 +994,22 @@ public class GitIssuesTab extends JPanel implements SettingsChangeListener {
         bodyForCapture = (bodyForCapture == null || bodyForCapture.isBlank()) ? "*No description provided.*" : bodyForCapture;
         String content = String.format("""
                                        # Issue #%s: %s
-
+                                       
                                        **Author:** %s
                                        **Status:** %s
                                        **URL:** %s
                                        **Labels:** %s
                                        **Assignees:** %s
-
+                                       
                                        ---
-
+                                       
                                        %s
                                        """.stripIndent(),
                                        header.id(),
                                        header.title(),
                                        header.author(),
                                        header.status(),
-                                       header.htmlUrl().toString(),
+                                       header.htmlUrl(),
                                        header.labels().isEmpty() ? "None" : String.join(", ", header.labels()),
                                        header.assignees().isEmpty() ? "None" : String.join(", ", header.assignees()),
                                        bodyForCapture

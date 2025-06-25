@@ -22,7 +22,6 @@ import io.github.jbellis.brokk.gui.components.LoadingButton;
 import io.github.jbellis.brokk.gui.components.OverlayPanel;
 import io.github.jbellis.brokk.gui.dialogs.ArchitectOptionsDialog;
 import io.github.jbellis.brokk.gui.dialogs.ArchitectChoices;
-import io.github.jbellis.brokk.gui.dialogs.ArchitectOptionsDialog;
 import io.github.jbellis.brokk.gui.dialogs.SettingsDialog;
 import io.github.jbellis.brokk.gui.dialogs.SettingsGlobalPanel;
 import io.github.jbellis.brokk.gui.mop.ThemeColors;
@@ -50,20 +49,21 @@ import javax.swing.text.DocumentFilter;
 import javax.swing.undo.UndoManager;
 import java.awt.*;
 import java.awt.datatransfer.DataFlavor;
+import java.util.*;
 import java.awt.event.ActionEvent;
 import java.awt.event.KeyEvent;
 import java.io.IOException;
 import java.nio.file.Path;
-import java.util.*;
 import java.util.List;
+import java.util.function.Consumer;
 import java.util.concurrent.*;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.function.BiConsumer;
-import java.util.function.Consumer;
 import java.util.stream.Stream;
 
 import static io.github.jbellis.brokk.gui.Constants.*;
+import static org.checkerframework.checker.nullness.util.NullnessUtil.castNonNull;
 
 
 /**
@@ -101,9 +101,8 @@ public class InstructionsPanel extends JPanel implements IContextManager.Context
     private final JButton stopButton;
     private final JButton configureModelsButton;
     private final JLabel commandResultLabel;
-    private final ContextManager contextManager; // Can be null if Chrome is initialized without one
+    private final @Nullable ContextManager contextManager; // Can be null if Chrome is initialized without one
     private JTable referenceFileTable;
-    // private JScrollPane tableScrollPane; // This field is not read, made local in initializeReferenceFileTable
     private JLabel failureReasonLabel;
     private JPanel suggestionContentPanel;
     private CardLayout suggestionCardLayout;
@@ -120,13 +119,13 @@ public class InstructionsPanel extends JPanel implements IContextManager.Context
     }), e -> logger.error("Unexpected error", e));
     // Generation counter to identify the latest suggestion request
     private final AtomicLong suggestionGeneration = new AtomicLong(0);
-    private OverlayPanel commandInputOverlay; // Overlay to initially disable command input
+    private final OverlayPanel commandInputOverlay; // Overlay to initially disable command input
     private final UndoManager commandInputUndoManager;
     private boolean lowBalanceNotified = false;
     private boolean freeTierNotified = false;
-    private String lastCheckedInputText = null;
-    private float[][] lastCheckedEmbeddings = null;
-    private List<FileReferenceData> pendingQuickContext = null;
+    private @Nullable String lastCheckedInputText = null;
+    private @Nullable float[][] lastCheckedEmbeddings = null;
+    private @Nullable List<FileReferenceData> pendingQuickContext = null;
 
     public InstructionsPanel(Chrome chrome) {
         super(new BorderLayout(2, 2));
@@ -139,6 +138,11 @@ public class InstructionsPanel extends JPanel implements IContextManager.Context
         this.chrome = chrome;
         this.contextManager = chrome.getContextManager(); // Store potentially null CM
         this.commandInputUndoManager = new UndoManager();
+        commandInputOverlay = new OverlayPanel(
+                overlay -> activateCommandInput(),
+                "Click to enter your instructions"
+        );
+        commandInputOverlay.setCursor(Cursor.getPredefinedCursor(Cursor.TEXT_CURSOR));
 
         // Initialize components
         instructionsArea = buildCommandInputField(); // Build first to add listener
@@ -147,6 +151,7 @@ public class InstructionsPanel extends JPanel implements IContextManager.Context
             chrome.actionOutput("Recording");
         }, msg -> chrome.toolError(msg, "Error"));
         commandResultLabel = buildCommandResultLabel(); // Initialize moved component
+
 
         // Initialize Buttons first
         architectButton = new JButton("Architect"); // Now a regular JButton
@@ -430,13 +435,6 @@ public class InstructionsPanel extends JPanel implements IContextManager.Context
         commandScrollPane.setPreferredSize(new Dimension(600, 80)); // Use preferred size for layout
         commandScrollPane.setMinimumSize(new Dimension(100, 80));
 
-        // Create transparent overlay for command input (original behavior)
-        commandInputOverlay = new OverlayPanel(
-                overlay -> activateCommandInput(),
-                "Click to enter your instructions"
-        );
-        commandInputOverlay.setCursor(Cursor.getPredefinedCursor(Cursor.TEXT_CURSOR));
-
         // Create layered pane with overlay
         var layeredPane = commandInputOverlay.createLayeredPane(commandScrollPane);
         layeredPane.setBorder(new EmptyBorder(0, H_PAD, 0, H_PAD));
@@ -520,21 +518,21 @@ public class InstructionsPanel extends JPanel implements IContextManager.Context
             }
         });
 
-        // ----- wrap table in a scroll-pane ----------------------------------------------------
-        JScrollPane localTableScrollPane = new JScrollPane(referenceFileTable); // Made local
-        localTableScrollPane.setBorder(BorderFactory.createEmptyBorder());
-        localTableScrollPane.setVerticalScrollBarPolicy(ScrollPaneConstants.VERTICAL_SCROLLBAR_NEVER);
-
         // ----- create failure reason label ----------------------------------------------------
         this.failureReasonLabel = new JLabel();
+        this.suggestionCardLayout = new CardLayout();
+        this.suggestionContentPanel = new JPanel(this.suggestionCardLayout);
+
+        // Configure failureReasonLabel
         failureReasonLabel.setFont(referenceFileTable.getFont()); // Use same font as table/badges
         failureReasonLabel.setBorder(BorderFactory.createEmptyBorder(0, H_PAD, 0, H_PAD));
         failureReasonLabel.setVisible(false); // Initially hidden
 
-        // ----- create content panel with CardLayout -------------------------------------------
-        this.suggestionCardLayout = new CardLayout();
-        this.suggestionContentPanel = new JPanel(suggestionCardLayout);
-        suggestionContentPanel.add(localTableScrollPane, "TABLE"); // Use local variable
+        // Configure suggestionContentPanel
+        JScrollPane localTableScrollPane = new JScrollPane(referenceFileTable);
+        localTableScrollPane.setBorder(BorderFactory.createEmptyBorder());
+        localTableScrollPane.setVerticalScrollBarPolicy(ScrollPaneConstants.VERTICAL_SCROLLBAR_NEVER);
+        suggestionContentPanel.add(localTableScrollPane, "TABLE");
         suggestionContentPanel.add(failureReasonLabel, "LABEL");
 
         // ----- create container panel for button and content (table/label) -------------------
@@ -669,9 +667,8 @@ public class InstructionsPanel extends JPanel implements IContextManager.Context
      */
     private boolean contextHasImages() {
         var contextManager = chrome.getContextManager();
-        return contextManager.topContext() != null &&
-                contextManager.topContext().allFragments()
-                        .anyMatch(f -> !f.isText() && !f.getType().isOutputFragment());
+        return contextManager.topContext().allFragments()
+                .anyMatch(f -> !f.isText() && !f.getType().isOutputFragment());
     }
 
     /**
@@ -711,11 +708,12 @@ public class InstructionsPanel extends JPanel implements IContextManager.Context
      * it returns an empty string, otherwise it returns the actual text content.
      */
     public String getInstructions() {
-        return SwingUtil.runOnEdt(() -> {
+        var v = SwingUtil.runOnEdt(() -> {
             return instructionsArea.getText().equals(PLACEHOLDER_TEXT)
                    ? ""
                    : instructionsArea.getText();
         }, "");
+        return castNonNull(v);
     }
 
     /**
@@ -756,7 +754,7 @@ public class InstructionsPanel extends JPanel implements IContextManager.Context
      * to initiate a context suggestion task. It increments the generation counter
      * and submits the task to the sequential worker executor.
      */
-    private void triggerContextSuggestion(ActionEvent e) { // ActionEvent will be null for external triggers
+    private void triggerContextSuggestion(@Nullable ActionEvent e) { // ActionEvent will be null for external triggers
         var goal = getInstructions(); // Capture snapshot on EDT
 
         // Basic checks before submitting to worker
@@ -1140,7 +1138,7 @@ public class InstructionsPanel extends JPanel implements IContextManager.Context
                     chrome.setSkipNextUpdateOutputPanelOnContextChange(true);
                     contextManager.addToHistory(result, false);
                 }
-                repopulateInstructionsArea(input);
+                populateInstructionsArea(input);
             } else {
                 if (result.stopDetails().reason() == TaskResult.StopReason.SUCCESS) {
                     chrome.systemOutput("Code Agent complete!");
@@ -1200,7 +1198,7 @@ public class InstructionsPanel extends JPanel implements IContextManager.Context
                                                    new TaskResult.StopDetails(TaskResult.StopReason.INTERRUPTED));
                 chrome.getContextManager().addToHistory(sessionResult, false);
             }
-            repopulateInstructionsArea(input);
+            populateInstructionsArea(input);
         }
 
     /**
@@ -1248,7 +1246,7 @@ public class InstructionsPanel extends JPanel implements IContextManager.Context
             chrome.systemOutput("Search complete!");
         } catch (InterruptedException e) {
             chrome.toolError("Search agent cancelled without answering");
-            repopulateInstructionsArea(query);
+            populateInstructionsArea(query);
         }
     }
 
@@ -1279,7 +1277,7 @@ public class InstructionsPanel extends JPanel implements IContextManager.Context
             // It's tricky to know if llmOutput for closing ``` is safe or needed here.
             // For now, just log and return, consistent with previous behavior for interruption.
             chrome.systemOutput("Cancelled!");
-            repopulateInstructionsArea(input);
+            populateInstructionsArea(input);
             // No action needed for context history on cancellation here
             return;
         } finally {
@@ -1370,7 +1368,7 @@ public class InstructionsPanel extends JPanel implements IContextManager.Context
                 if (!currentProject.hasGit() || !currentProject.getRepo().supportsWorktrees()) {
                     chrome.hideOutputSpinner();
                     chrome.toolError("Cannot create worktree: Project is not a Git repository or worktrees are not supported.");
-                    repopulateInstructionsArea(originalInstructions); // Restore instructions if setup fails
+                    populateInstructionsArea(originalInstructions); // Restore instructions if setup fails
                     return;
                 }
 
@@ -1415,20 +1413,20 @@ public class InstructionsPanel extends JPanel implements IContextManager.Context
                         chrome.systemOutput("New worktree opened for Architect");
                     } else {
                         chrome.toolError("Failed to open the new worktree project for Architect.");
-                        repopulateInstructionsArea(originalInstructions);
+                        populateInstructionsArea(originalInstructions);
                     }
                 }).exceptionally(ex -> {
                     chrome.toolError("Error opening new worktree project: " + ex.getMessage());
-                    repopulateInstructionsArea(originalInstructions);
+                    populateInstructionsArea(originalInstructions);
                     return null;
                 });
             } catch (InterruptedException e) {
                 logger.warn("Architect worktree setup interrupted.", e);
                 chrome.systemOutput("Architect worktree setup was cancelled.");
-                repopulateInstructionsArea(originalInstructions);
+                populateInstructionsArea(originalInstructions);
             } catch (GitAPIException | IOException | ExecutionException ex) {
                 chrome.toolError("Error setting up worktree: " + ex.getMessage());
-                repopulateInstructionsArea(originalInstructions);
+                populateInstructionsArea(originalInstructions);
             } finally {
                 chrome.hideOutputSpinner();
             }
@@ -1657,16 +1655,18 @@ public class InstructionsPanel extends JPanel implements IContextManager.Context
         chrome.notifyActionComplete("Action '" + actionName + "' completed.");
     }
 
-    private void repopulateInstructionsArea(String originalText) {
+    public void populateInstructionsArea(String text) {
         SwingUtilities.invokeLater(() -> {
             // If placeholder is active or area is disabled, activate input first
             if (instructionsArea.getText().equals(PLACEHOLDER_TEXT) || !instructionsArea.isEnabled()) {
                 activateCommandInput(); // This enables, clears placeholder, requests focus
             }
-            instructionsArea.setText(originalText);
-            commandInputUndoManager.discardAllEdits(); // Reset undo history for the repopulated content
-            instructionsArea.requestFocusInWindow(); // Ensure focus after text set
-            instructionsArea.setCaretPosition(originalText.length()); // Move caret to end
+            SwingUtilities.invokeLater(() -> {
+                instructionsArea.setText(text);
+                commandInputUndoManager.discardAllEdits(); // Reset undo history for the repopulated content
+                instructionsArea.requestFocusInWindow(); // Ensure focus after text set
+                instructionsArea.setCaretPosition(text.length()); // Move caret to end
+            });
         });
     }
 

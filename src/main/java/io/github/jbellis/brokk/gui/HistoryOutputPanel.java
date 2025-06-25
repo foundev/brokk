@@ -29,6 +29,9 @@ import java.awt.event.WindowEvent;
 import java.util.ArrayList;
 import java.util.List;
 
+import static java.util.Objects.requireNonNull;
+import static org.checkerframework.checker.nullness.util.NullnessUtil.castNonNull;
+
 /**
  * A component that combines the context history panel with the output panel using BorderLayout.
  */
@@ -37,25 +40,25 @@ public class HistoryOutputPanel extends JPanel {
 
     private final Chrome chrome;
     private final ContextManager contextManager;
-    private JTable historyTable;
-    private DefaultTableModel historyModel;
-    private JButton undoButton;
-    private JButton redoButton;
-    private JComboBox<MainProject.SessionInfo> sessionComboBox;
-    private JButton newSessionButton;
-    private JButton manageSessionsButton;
+    private final JTable historyTable;
+    private final DefaultTableModel historyModel;
+    private final JButton undoButton;
+    private final JButton redoButton;
+    private final JComboBox<MainProject.SessionInfo> sessionComboBox;
+    private final JButton newSessionButton;
+    private final JButton manageSessionsButton;
 
     // Output components
-    private MarkdownOutputPanel llmStreamArea;
-    private JScrollPane llmScrollPane;
+    private final MarkdownOutputPanel llmStreamArea;
+    private final JScrollPane llmScrollPane;
     // systemArea, systemScrollPane, commandResultLabel removed
-    private JTextArea captureDescriptionArea;
-    private JButton copyButton;
+    @Nullable private JTextArea captureDescriptionArea; // This one seems to be intentionally nullable or less strictly managed
+    private final JButton copyButton;
 
-    private InstructionsPanel instructionsPanel;
+    private final InstructionsPanel instructionsPanel;
     private final List<OutputWindow> activeStreamingWindows = new ArrayList<>();
 
-    private String lastSpinnerMessage;
+    @Nullable private String lastSpinnerMessage = null; // Explicitly initialize
     private BadgeClickHandler standardBadgeClickHandler;
 
     /**
@@ -70,19 +73,35 @@ public class HistoryOutputPanel extends JPanel {
         this.chrome = chrome;
         this.contextManager = contextManager;
         this.instructionsPanel = instructionsPanel;
-        
+
         // Create the standard badge click handler once and reuse it
         this.standardBadgeClickHandler = BadgeClickHandlerFactory.createFileClickHandler(contextManager, chrome);
 
         // commandResultLabel initialization removed
 
         // Build combined Output + Instructions panel (Center)
-        var centerPanel = buildCombinedOutputInstructionsPanel();
+        this.llmStreamArea = new MarkdownOutputPanel();
+        this.llmScrollPane = buildLLMStreamScrollPane(this.llmStreamArea);
+        this.copyButton = new JButton("Copy");
+        var centerPanel = buildCombinedOutputInstructionsPanel(this.llmScrollPane, this.copyButton);
         add(centerPanel, BorderLayout.CENTER);
 
         // Build session controls and activity panel (East)
-        var sessionControlsPanel = buildSessionControlsPanel();
-        var activityPanel = buildActivityPanel();
+        this.historyModel = new DefaultTableModel(new Object[]{"", "Action", "Context"}, 0) {
+            @Override
+            public boolean isCellEditable(int row, int column) {
+                return false;
+            }
+        };
+        this.historyTable = new JTable(this.historyModel);
+        this.undoButton = new JButton("Undo");
+        this.redoButton = new JButton("Redo");
+        this.sessionComboBox = new JComboBox<>();
+        this.newSessionButton = new JButton("New");
+        this.manageSessionsButton = new JButton("Manage");
+
+        var sessionControlsPanel = buildSessionControlsPanel(this.sessionComboBox, this.newSessionButton, this.manageSessionsButton);
+        var activityPanel = buildActivityPanel(this.historyTable, this.historyModel, this.undoButton, this.redoButton);
 
         // Create main history panel with session controls above activity
         var historyPanel = new JPanel(new BorderLayout());
@@ -102,12 +121,9 @@ public class HistoryOutputPanel extends JPanel {
         setMinimumSize(new Dimension(300, 200)); // Example minimum size
     }
 
-    private JPanel buildCombinedOutputInstructionsPanel() {
-        // Build LLM streaming area
-        llmScrollPane = buildLLMStreamScrollPane();
-
-        // Build capture output panel
-        var capturePanel = buildCaptureOutputPanel();
+    private JPanel buildCombinedOutputInstructionsPanel(JScrollPane llmScrollPane, JButton copyButton) {
+        // Build capture output panel (copyButton is passed in)
+        var capturePanel = buildCaptureOutputPanel(copyButton);
 
         // Output panel with LLM stream
         var outputPanel = new JPanel(new BorderLayout());
@@ -138,7 +154,7 @@ public class HistoryOutputPanel extends JPanel {
     /**
      * Builds the session controls panel with combo box and buttons
      */
-    private JPanel buildSessionControlsPanel() {
+    private JPanel buildSessionControlsPanel(JComboBox<MainProject.SessionInfo> sessionComboBox, JButton newSessionButton, JButton manageSessionsButton) {
         var panel = new JPanel(new BorderLayout(5, 5));
         panel.setBorder(BorderFactory.createTitledBorder(
                 BorderFactory.createEtchedBorder(),
@@ -148,8 +164,7 @@ public class HistoryOutputPanel extends JPanel {
                 new Font(Font.DIALOG, Font.BOLD, 12)
         ));
 
-        // Session combo box
-        sessionComboBox = new JComboBox<>();
+        // Session combo box (passed in)
         sessionComboBox.setRenderer(new DefaultListCellRenderer() {
             @Override
             public Component getListCellRendererComponent(JList<?> list, Object value, int index,
@@ -161,7 +176,7 @@ public class HistoryOutputPanel extends JPanel {
                 return this;
             }
         });
-        
+
         // Add selection listener for session switching
         sessionComboBox.addActionListener(e -> {
             var selectedSession = (MainProject.SessionInfo) sessionComboBox.getSelectedItem();
@@ -172,25 +187,23 @@ public class HistoryOutputPanel extends JPanel {
 
         // Buttons panel
         var buttonsPanel = new JPanel(new FlowLayout(FlowLayout.CENTER, 5, 0));
-        
-        newSessionButton = new JButton("New");
-        newSessionButton.setToolTipText("Create a new session");
+
         var newSessionSize = new Dimension(100, newSessionButton.getPreferredSize().height);
         newSessionButton.setPreferredSize(newSessionSize);
         newSessionButton.setMinimumSize(newSessionSize);
         newSessionButton.setMaximumSize(newSessionSize);
+        newSessionButton.setToolTipText("Create a new session");
         newSessionButton.addActionListener(e -> {
             contextManager.createSessionAsync(ContextManager.DEFAULT_SESSION_NAME).thenRun(() ->
                 SwingUtilities.invokeLater(this::updateSessionComboBox)
             );
         });
 
-        manageSessionsButton = new JButton("Manage");
-        manageSessionsButton.setToolTipText("Manage sessions (rename, delete, copy)");
         var manageSessionSize = new Dimension(100, manageSessionsButton.getPreferredSize().height);
         manageSessionsButton.setPreferredSize(manageSessionSize);
         manageSessionsButton.setMinimumSize(manageSessionSize);
         manageSessionsButton.setMaximumSize(manageSessionSize);
+        manageSessionsButton.setToolTipText("Manage sessions (rename, delete, copy)");
         manageSessionsButton.addActionListener(e -> {
             var dialog = new SessionsDialog(this, chrome, contextManager);
             dialog.setVisible(true);
@@ -218,16 +231,16 @@ public class HistoryOutputPanel extends JPanel {
             for (var listener : listeners) {
                 sessionComboBox.removeActionListener(listener);
             }
-            
+
             // Clear and repopulate
             sessionComboBox.removeAllItems();
             var sessions = contextManager.getProject().listSessions();
             sessions.sort(java.util.Comparator.comparingLong(IProject.SessionInfo::modified).reversed()); // Most recent first
-            
+
             for (var session : sessions) {
                 sessionComboBox.addItem(session);
             }
-            
+
             // Select current session
             var currentSessionId = contextManager.getCurrentSessionId();
             for (int i = 0; i < sessionComboBox.getItemCount(); i++) {
@@ -237,7 +250,7 @@ public class HistoryOutputPanel extends JPanel {
                     break;
                 }
             }
-            
+
             // Restore action listeners
             for (var listener : listeners) {
                 sessionComboBox.addActionListener(listener);
@@ -248,7 +261,7 @@ public class HistoryOutputPanel extends JPanel {
     /**
      * Builds the Activity history panel that shows past contexts
      */
-    private JPanel buildActivityPanel() {
+    private JPanel buildActivityPanel(JTable historyTable, DefaultTableModel historyModel, JButton undoButton, JButton redoButton) {
         // Create history panel
         var panel = new JPanel(new BorderLayout());
         panel.setBorder(BorderFactory.createTitledBorder(
@@ -259,16 +272,6 @@ public class HistoryOutputPanel extends JPanel {
                 new Font(Font.DIALOG, Font.BOLD, 12)
         ));
 
-        // Create table model with columns - first two columns are visible, third is hidden
-        historyModel = new DefaultTableModel(
-                new Object[]{"", "Action", "Context"}, 0) {
-            @Override
-            public boolean isCellEditable(int row, int column) {
-                return false;
-            }
-        };
-
-        historyTable = new JTable(historyModel);
         historyTable.setFont(new Font(Font.DIALOG, Font.PLAIN, 12));
         historyTable.setSelectionMode(ListSelectionModel.SINGLE_SELECTION);
 
@@ -334,13 +337,13 @@ public class HistoryOutputPanel extends JPanel {
                  if (e.getClickCount() == 2) { // Double-click
                      int row = historyTable.rowAtPoint(e.getPoint());
                      if (row >= 0) {
-                         Context context = (Context) historyModel.getValueAt(row, 2);
+                         Context context = (Context) requireNonNull(historyModel.getValueAt(row, 2));
                          var output = context.getParsedOutput();
                          if (output != null) {
                              // Open in new window
                              String titleHint = context.getAction();
                              new OutputWindow(HistoryOutputPanel.this, output, titleHint,
-                                              chrome.themeManager != null && chrome.themeManager.isDarkTheme(), false);
+                                              chrome.themeManager.isDarkTheme(), false);
                          }
                      }
                  }
@@ -392,7 +395,6 @@ public class HistoryOutputPanel extends JPanel {
         buttonPanel.setBorder(new EmptyBorder(5, 5, 5, 5));
         buttonPanel.add(Box.createHorizontalGlue()); // Push buttons to center
 
-        undoButton = new JButton("Undo");
         undoButton.setMnemonic(KeyEvent.VK_Z);
         undoButton.setToolTipText("Undo the most recent history entry");
         var undoSize = new Dimension(100, undoButton.getPreferredSize().height);
@@ -403,7 +405,6 @@ public class HistoryOutputPanel extends JPanel {
             contextManager.undoContextAsync();
         });
 
-        redoButton = new JButton("Redo");
         redoButton.setMnemonic(KeyEvent.VK_Y);
         redoButton.setToolTipText("Redo the most recently undone entry");
         var redoSize = new Dimension(100, redoButton.getPreferredSize().height);
@@ -442,13 +443,8 @@ public class HistoryOutputPanel extends JPanel {
      */
     public void updateUndoRedoButtonStates() {
         SwingUtilities.invokeLater(() -> {
-            if (contextManager != null && contextManager.getContextHistory() != null) {
-                undoButton.setEnabled(contextManager.getContextHistory().hasUndoStates());
-                redoButton.setEnabled(contextManager.getContextHistory().hasRedoStates());
-            } else {
-                undoButton.setEnabled(false);
-                redoButton.setEnabled(false);
-            }
+            undoButton.setEnabled(contextManager.getContextHistory().hasUndoStates());
+            redoButton.setEnabled(contextManager.getContextHistory().hasRedoStates());
         });
     }
 
@@ -577,20 +573,20 @@ public class HistoryOutputPanel extends JPanel {
      *
      * @return The JTable containing context history
      */
-    public JTable getHistoryTable() {
+    public @Nullable JTable getHistoryTable() {
         return historyTable;
     }
 
     /**
      * Builds the LLM streaming area where markdown output is displayed
      */
-    private JScrollPane buildLLMStreamScrollPane() {
+    private JScrollPane buildLLMStreamScrollPane(MarkdownOutputPanel llmStreamArea) {
         llmStreamArea = new MarkdownOutputPanel();
-        
+
         // Configure symbol badge customizer
         var symbolBadgeCustomizer = SymbolBadgeCustomizer.create(contextManager);
         llmStreamArea.setHtmlCustomizer(new CompositeHtmlCustomizer(symbolBadgeCustomizer));
-        
+
         // Set badge click handler for all current and future renderers
         llmStreamArea.setBadgeClickHandler(standardBadgeClickHandler);
 
@@ -614,7 +610,7 @@ public class HistoryOutputPanel extends JPanel {
      * Builds the "Capture Output" panel with a horizontal layout:
      * [Capture Text]
      */
-    private JPanel buildCaptureOutputPanel() {
+    private JPanel buildCaptureOutputPanel(JButton copyButton) {
         var panel = new JPanel(new BorderLayout(5, 3));
         panel.setBorder(BorderFactory.createEmptyBorder(5, 0, 5, 0));
 
@@ -631,8 +627,6 @@ public class HistoryOutputPanel extends JPanel {
         // Buttons panel on the right
         var buttonsPanel = new JPanel(new FlowLayout(FlowLayout.RIGHT, 5, 0));
 
-        // "Copy Text" button
-        copyButton = new JButton("Copy");
         copyButton.setMnemonic(KeyEvent.VK_T);
         copyButton.setToolTipText("Copy the output to clipboard");
         copyButton.addActionListener(e -> {
@@ -680,6 +674,10 @@ public class HistoryOutputPanel extends JPanel {
                 });
             } else {
                 var context = contextManager.selectedContext();
+                if (context == null) {
+                    logger.warn("Cannot open output in new window: current context is null.");
+                    return;
+                }
                 var output = context.getParsedOutput();
                 if (output != null) {
                     String titleHint = context.getAction();
@@ -715,7 +713,7 @@ public class HistoryOutputPanel extends JPanel {
     public void setLlmOutput(ContextFragment.TaskFragment newOutput) {
         llmStreamArea.setText(newOutput);
     }
-    
+
     /**
      * Sets the text in the LLM output area
      */
@@ -727,7 +725,7 @@ public class HistoryOutputPanel extends JPanel {
                 () -> {
                     if (forceScrollToTop) {
                         // Scroll to the top
-                        SwingUtilities.invokeLater(() -> llmScrollPane.getVerticalScrollBar().setValue(0));
+                        SwingUtilities.invokeLater(() -> castNonNull(llmScrollPane.getVerticalScrollBar()).setValue(0));
                     }
                 }
         );
@@ -774,11 +772,11 @@ public class HistoryOutputPanel extends JPanel {
      * Gets the LLM scroll pane
      */
     public JScrollPane getLlmScrollPane() {
-        return llmScrollPane;
+        return requireNonNull(llmScrollPane, "llmScrollPane should be initialized by constructor");
     }
 
     public MarkdownOutputPanel getLlmStreamArea() {
-        return llmStreamArea;
+        return requireNonNull(llmStreamArea, "llmStreamArea should be initialized by constructor");
     }
 
     public void clearLlmOutput() {
@@ -820,39 +818,39 @@ public class HistoryOutputPanel extends JPanel {
         public OutputWindow(HistoryOutputPanel parentPanel, ContextFragment.TaskFragment output, @Nullable String titleHint, boolean isDark, boolean isBlockingMode) {
             super(determineWindowTitle(titleHint, isBlockingMode)); // Call superclass constructor first
 
-                // Set icon from Chrome.newFrame
-                try {
-                    var iconUrl = Chrome.class.getResource(Brokk.ICON_RESOURCE);
-                    if (iconUrl != null) {
-                        var icon = new ImageIcon(iconUrl);
-                        setIconImage(icon.getImage());
-                    }
-                } catch (Exception e) {
-                    // Silently ignore icon setting failures in child windows
+            // Set icon from Chrome.newFrame
+            try {
+                var iconUrl = Chrome.class.getResource(Brokk.ICON_RESOURCE);
+                if (iconUrl != null) {
+                    var icon = new ImageIcon(iconUrl);
+                    setIconImage(icon.getImage());
                 }
-                
-                this.project = parentPanel.contextManager.getProject(); // Get project reference
-                setDefaultCloseOperation(JFrame.DISPOSE_ON_CLOSE);
+            } catch (Exception e) {
+                // Silently ignore icon setting failures in child windows
+            }
+
+            this.project = parentPanel.contextManager.getProject(); // Get project reference
+            setDefaultCloseOperation(JFrame.DISPOSE_ON_CLOSE);
 
             // Create markdown panel with the text
             outputPanel = new MarkdownOutputPanel();
-            
+
             // Configure symbol badge customizer
             var symbolBadgeCustomizer = SymbolBadgeCustomizer.create(parentPanel.contextManager);
             outputPanel.setHtmlCustomizer(new CompositeHtmlCustomizer(symbolBadgeCustomizer));
-            
+
             // Use the standard badge click handler from parent panel
             outputPanel.setBadgeClickHandler(parentPanel.standardBadgeClickHandler);
-            
+
             outputPanel.updateTheme(isDark);
             outputPanel.setText(output);
-            
+
             // Create toolbar panel with capture button if not in blocking mode
             JPanel toolbarPanel = null;
             if (!isBlockingMode) {
                 toolbarPanel = new JPanel(new FlowLayout(FlowLayout.RIGHT, 5, 0));
                 toolbarPanel.setBorder(BorderFactory.createEmptyBorder(0, 5, 0, 0));
-                
+
                 JButton captureButton = new JButton("Capture");
                 captureButton.setToolTipText("Add the output to context");
                 captureButton.addActionListener(e -> {
@@ -863,13 +861,13 @@ public class HistoryOutputPanel extends JPanel {
                 });
                 toolbarPanel.add(captureButton);
             }
-            
+
             // Use shared utility method to create searchable content panel with optional toolbar
             JPanel contentPanel = Chrome.createSearchableContentPanel(List.of(outputPanel), toolbarPanel, parentPanel.contextManager);
 
             // Add the content panel to the frame
             add(contentPanel);
-            
+
             if (!isBlockingMode) {
                 // Schedule compaction after everything is set up
                 outputPanel.scheduleCompaction();
@@ -937,7 +935,7 @@ public class HistoryOutputPanel extends JPanel {
                         taskType = InstructionsPanel.ACTION_ASK;
                     } else if (titleHint.contains(InstructionsPanel.ACTION_RUN)) {
                         taskType = InstructionsPanel.ACTION_RUN;
-                    } 
+                    }
                     if (taskType != null) {
                         windowTitle = String.format("Output (%s in progress)", taskType);
                     }

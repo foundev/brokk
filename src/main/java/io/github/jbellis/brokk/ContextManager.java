@@ -36,6 +36,7 @@ import java.time.Instant;
 import java.util.*;
 import java.util.concurrent.*;
 import java.util.concurrent.atomic.AtomicReference;
+import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.function.Function;
 import java.util.regex.Pattern;
 import java.util.stream.Collectors;
@@ -89,10 +90,8 @@ public class ContextManager implements IContextManager, AutoCloseable {
             }
 
             logger.error("Uncaught exception in executor", th);
-            if (io != null) {
-                io.systemOutput("Uncaught exception in thread %s. This shouldn't happen, please report a bug!\n%s"
-                                        .formatted(thread.getName(), getStackTraceAsString(th)));
-            }
+            io.systemOutput("Uncaught exception in thread %s. This shouldn't happen, please report a bug!\n%s"
+                                    .formatted(thread.getName(), getStackTraceAsString(th)));
         });
     }
 
@@ -128,6 +127,7 @@ public class ContextManager implements IContextManager, AutoCloseable {
     // The current, mutable, live context that the user interacts with
     private volatile Context liveContext = Context.EMPTY; // Initialize to a non-null default
     private final List<ContextListener> contextListeners = new CopyOnWriteArrayList<>();
+    private final List<FileSystemEventListener> fileSystemEventListeners = new CopyOnWriteArrayList<>();
 
     @Override
     public ExecutorService getBackgroundTasks() {
@@ -142,6 +142,14 @@ public class ContextManager implements IContextManager, AutoCloseable {
     @Override
     public void removeContextListener(ContextListener listener) {
         contextListeners.remove(listener);
+    }
+
+    public void addFileSystemEventListener(FileSystemEventListener listener) {
+        fileSystemEventListeners.add(listener);
+    }
+
+    public void removeFileSystemEventListener(FileSystemEventListener listener) {
+        fileSystemEventListeners.remove(listener);
     }
 
     /**
@@ -224,7 +232,7 @@ public class ContextManager implements IContextManager, AutoCloseable {
         SwingUtilities.invokeLater(() -> {
             var tc = topContext();
             notifyContextListeners(tc);
-            if (io != null && io instanceof Chrome) { // Check if UI is ready
+            if (io instanceof Chrome) { // Check if UI is ready
                 io.enableActionButtons();
             }
         });
@@ -274,16 +282,17 @@ public class ContextManager implements IContextManager, AutoCloseable {
             @Override
             public void onTrackedFileChange() {
                 project.getRepo().refresh();
-                if (liveContext != null) {
-                    var fr = liveContext.freezeAndCleanup();
-                    // we can't rely on pushContext's change detection because here we care about the contents and not the fragment identity
-                    if (!topContext().workspaceEquals(fr.frozenContext())) {
-                        pushContext(ctx -> fr.liveContext().withParsedOutput(null, "Loaded external changes"));
-                    }
-                    // analyzer refresh will call this too, but it will be delayed
-                    io.updateWorkspace();
+                var fr = liveContext.freezeAndCleanup();
+                // we can't rely on pushContext's change detection because here we care about the contents and not the fragment identity
+                if (!topContext().workspaceEquals(fr.frozenContext())) {
+                    processExternalFileChanges(fr);
                 }
+                // analyzer refresh will call this too, but it will be delayed
+                io.updateWorkspace();
                 io.updateCommitPanel();
+                for (var fsListener : fileSystemEventListeners) {
+                    fsListener.onTrackedFilesChanged();
+                }
             }
 
             @Override
@@ -300,14 +309,12 @@ public class ContextManager implements IContextManager, AutoCloseable {
                 }
                 if (successful) {
                     // possible for analyzer build to finish before context load does
-                    if (liveContext != null) {
-                        var fr = liveContext.freezeAndCleanup();
-                        // we can't rely on pushContext's change detection because here we care about the contents and not the fragment identity
-                        if (!topContext().workspaceEquals(fr.frozenContext())) {
-                            pushContext(ctx -> fr.liveContext().withParsedOutput(null, "Code Intelligence changes"));
-                        }
-                        io.updateWorkspace();
+                    var fr = liveContext.freezeAndCleanup();
+                    // we can't rely on pushContext's change detection because here we care about the contents and not the fragment identity
+                    if (!topContext().workspaceEquals(fr.frozenContext())) {
+                        processExternalFileChanges(fr);
                     }
+                    io.updateWorkspace();
                 }
                 if (externalRebuildRequested && io instanceof Chrome chrome) {
                     if (successful) {
@@ -326,6 +333,7 @@ public class ContextManager implements IContextManager, AutoCloseable {
 
         // Ensure style guide and build details are loaded/generated asynchronously
         ensureStyleGuide();
+        ensureReviewGuide();
         ensureBuildDetailsAsync(); // Changed from ensureBuildCommand
         cleanupOldHistoryAsync(); // Clean up old LLM history logs
 
@@ -615,8 +623,8 @@ public class ContextManager implements IContextManager, AutoCloseable {
      * task.  Safe to call repeatedly.
      */
     public void interruptUserActionThread() {
-        var runner = userActionThread.get();
-        if (runner != null && runner.isAlive()) {
+        var runner = requireNonNull(userActionThread.get());
+        if (runner.isAlive()) {
             logger.debug("Interrupting user action thread " + runner.getName());
             runner.interrupt();
         }
@@ -730,10 +738,9 @@ public class ContextManager implements IContextManager, AutoCloseable {
     public void drop(Collection<? extends ContextFragment> fragments) {
         // The pushContext method now returns the new liveContext
         var ids = fragments.stream().map(f -> mapToLiveFragment(f).id()).toList();
-        Context newLiveContext = pushContext(currentLiveCtx -> currentLiveCtx.removeFragmentsByIds(ids));
-        if (newLiveContext != null) { // Check if a change actually occurred
-            io.systemOutput("Dropped " + fragments.stream().map(ContextFragment::shortDescription).collect(Collectors.joining(", ")));
-        }
+        pushContext(currentLiveCtx -> currentLiveCtx.removeFragmentsByIds(ids));
+        // Check if a change actually occurred
+        io.systemOutput("Dropped " + fragments.stream().map(ContextFragment::shortDescription).collect(Collectors.joining(", ")));
     }
 
     /**
@@ -1025,7 +1032,7 @@ public class ContextManager implements IContextManager, AutoCloseable {
     }
 
     public void addCallersForMethod(String methodName, int depth, Map<String, List<CallSite>> callgraph) {
-        if (callgraph == null || callgraph.isEmpty()) {
+        if (callgraph.isEmpty()) {
             io.systemOutput("No callers found for " + methodName + " (pre-check).");
             return;
         }
@@ -1038,7 +1045,7 @@ public class ContextManager implements IContextManager, AutoCloseable {
      * callees for method
      */
     public void calleesForMethod(String methodName, int depth, Map<String, List<CallSite>> callgraph) {
-        if (callgraph == null || callgraph.isEmpty()) {
+        if (callgraph.isEmpty()) {
             io.systemOutput("No callees found for " + methodName + " (pre-check).");
             return;
         }
@@ -1051,7 +1058,6 @@ public class ContextManager implements IContextManager, AutoCloseable {
      * parse stacktrace
      */
     public boolean addStacktraceFragment(StackTrace stacktrace) {
-        assert stacktrace != null;
         var exception = requireNonNull(stacktrace.getExceptionType());
         var sources = new HashSet<CodeUnit>();
         var content = new StringBuilder();
@@ -1098,7 +1104,7 @@ public class ContextManager implements IContextManager, AutoCloseable {
         // The fragments will dynamically fetch content.
 
         boolean summariesAdded = false;
-        if (files != null && !files.isEmpty()) {
+        if (!files.isEmpty()) {
             List<String> filePaths = files.stream()
                     .map(ProjectFile::toString)
                     .collect(Collectors.toList());
@@ -1108,7 +1114,7 @@ public class ContextManager implements IContextManager, AutoCloseable {
             summariesAdded = true;
         }
 
-        if (classes != null && !classes.isEmpty()) {
+        if (!classes.isEmpty()) {
             List<String> classFqns = classes.stream()
                     .map(CodeUnit::fqName)
                     .collect(Collectors.toList());
@@ -1186,14 +1192,14 @@ public class ContextManager implements IContextManager, AutoCloseable {
 
     /**
      * Redacts SEARCH/REPLACE blocks from an AiMessage.
-     * If the message contains S/R blocks, they are replaced with "[elided edits for file %s]".
+     * If the message contains S/R blocks, they are replaced with "[elided SEARCH/REPLACE block]".
      * If the message does not contain S/R blocks, or if the redacted text is blank, Optional.empty() is returned.
      *
      * @param aiMessage The AiMessage to process.
      * @param parser    The EditBlockParser to use for parsing.
      * @return An Optional containing the redacted AiMessage, or Optional.empty() if no message should be added.
      */
-    public static Optional<AiMessage> redactAiMessage(AiMessage aiMessage, EditBlockParser parser) {
+    static Optional<AiMessage> redactAiMessage(AiMessage aiMessage, EditBlockParser parser) {
         // Pass an empty set for trackedFiles as it's not needed for redaction.
         var parsedResult = parser.parse(aiMessage.text(), Collections.emptySet());
         // Check if there are actual S/R block objects, not just text parts
@@ -1208,15 +1214,10 @@ public class ContextManager implements IContextManager, AutoCloseable {
             var sb = new StringBuilder();
             for (int i = 0; i < blocks.size(); i++) {
                 var ob = blocks.get(i);
-                EditBlock.SearchReplaceBlock block = ob.block();
-                if (block == null) { // Plain text part
+                if (ob.block() == null) { // Plain text part
                     sb.append(ob.text());
                 } else { // An S/R block
-                    if (block.filename() == null) {
-                        sb.append("[elided edits]");
-                    } else {
-                        sb.append("[elided edits for file %s]".formatted(block.filename()));
-                    }
+                    sb.append("[elided SEARCH/REPLACE block]");
                     // If the next output block is also an S/R block, add a newline
                     if (i + 1 < blocks.size() && blocks.get(i + 1).block() != null) {
                         sb.append('\n');
@@ -1224,10 +1225,6 @@ public class ContextManager implements IContextManager, AutoCloseable {
                 }
             }
             String redactedText = sb.toString();
-            redactedText = redactedText
-                    .replace("SEARCH/REPLACE block", "edit")
-                    .replace("*SEARCH/REPLACE* block", "edit")
-                    .replace("`SEARCH/REPLACE` block", "edit");
             return redactedText.isBlank() ? Optional.empty() : Optional.of(new AiMessage(redactedText));
         }
     }
@@ -1403,6 +1400,47 @@ public class ContextManager implements IContextManager, AutoCloseable {
     }
 
     /**
+     * Processes external file changes by deciding whether to replace the top context or push a new one.
+     * If the current top context's action starts with "Loaded external changes", it updates the count and replaces it.
+     * Otherwise, it pushes a new context entry.
+     *
+     * @param fr The FreezeResult containing the updated live and frozen contexts reflecting the external changes.
+     */
+    private void processExternalFileChanges(Context.FreezeResult fr) {
+        var topCtx = topContext();
+        var previousAction = topCtx.getAction();
+        if (!previousAction.startsWith("Loaded external changes")) {
+            // If the previous action is not about external changes, push a new context
+            pushContext(currentLiveCtx -> fr.liveContext().withParsedOutput(null, CompletableFuture.completedFuture("Loaded external changes")));
+            return;
+        }
+
+        // Parse the existing action to extract the count if present
+        var pattern = Pattern.compile("Loaded external changes(?: \\((\\d+)\\))?");
+        var matcher = pattern.matcher(previousAction);
+        int newCount;
+        if (matcher.matches() && matcher.group(1) != null) {
+            var countGroup = matcher.group(1);
+            try {
+                newCount = Integer.parseInt(countGroup) + 1;
+            } catch (NumberFormatException e) {
+                newCount = 2;
+            }
+        } else {
+            newCount = 2;
+        }
+
+        // Form the new action string with the updated count
+        var newAction = newCount > 1 ? "Loaded external changes (%d)".formatted(newCount) : "Loaded external changes";
+        var newLiveContext = fr.liveContext().withParsedOutput(null, CompletableFuture.completedFuture(newAction));
+        var cleaned = newLiveContext.freezeAndCleanup();
+        liveContext = cleaned.liveContext();
+        contextHistory.replaceTopContext(cleaned.frozenContext());
+        SwingUtilities.invokeLater(() -> notifyContextListeners(cleaned.frozenContext()));
+        project.saveHistory(contextHistory, currentSessionId);
+    }
+
+    /**
      * Pushes context changes using a generator function.
      * The generator is applied to the current `liveContext`.
      * The resulting context becomes the new `liveContext`.
@@ -1412,15 +1450,6 @@ public class ContextManager implements IContextManager, AutoCloseable {
      * @return The new `liveContext`, or the existing `liveContext` if no changes were made by the generator.
      */
     public Context pushContext(Function<Context, Context> contextGenerator) {
-        Instant start = Instant.now();
-        while (liveContext == null && java.time.Duration.between(start, Instant.now()).toSeconds() < 5) {
-            Thread.onSpinWait();
-        }
-        if (liveContext == null) {
-            logger.error("Timeout waiting for liveContext after 5 seconds");
-            liveContext = Context.EMPTY;
-        }
-
         var updatedLiveContext = contextGenerator.apply(liveContext);
         assert !updatedLiveContext.containsFrozenFragments() : updatedLiveContext;
         if (updatedLiveContext == liveContext) {
@@ -1546,7 +1575,7 @@ public class ContextManager implements IContextManager, AutoCloseable {
                         return "(Image summarization failed)";
                     }
                     var description = result.text();
-                    return (description == null || description.isBlank()) ? "(Image description empty)" : description.trim();
+                    return description.isBlank() ? "(Image description empty)" : description.trim();
                 } catch (IOException e) {
                     logger.error("Failed to convert pasted image for summarization", e);
                     return "(Error processing image)";
@@ -1568,7 +1597,6 @@ public class ContextManager implements IContextManager, AutoCloseable {
      */
     @Override
     public <T> CompletableFuture<T> submitBackgroundTask(String taskDescription, Callable<T> task) {
-        assert taskDescription != null;
         var future = backgroundTasks.submit(() -> {
             try {
                 io.backgroundOutput(taskDescription);
@@ -1680,9 +1708,10 @@ public class ContextManager implements IContextManager, AutoCloseable {
      */
     private void ensureStyleGuide()
     {
-        if (project.getStyleGuide() != null) {
+        if (!project.getStyleGuide().isEmpty()) {
             return;
         }
+
         submitBackgroundTask("Generating style guide", () -> {
             try {
                 io.systemOutput("Generating project style guide...");
@@ -1767,6 +1796,18 @@ public class ContextManager implements IContextManager, AutoCloseable {
     }
 
     /**
+     * Ensure review guide exists, generating if needed
+     */
+    private void ensureReviewGuide() {
+        if (!project.getReviewGuide().isEmpty()) {
+            return;
+        }
+        
+        project.saveReviewGuide(MainProject.DEFAULT_REVIEW_GUIDE);
+        io.systemOutput("Review guide created at .brokk/review.md");
+    }
+
+    /**
      * Compresses a single TaskEntry into a summary string using the quickest model.
      *
      * @param entry The TaskEntry to compress.
@@ -1796,7 +1837,7 @@ public class ContextManager implements IContextManager, AutoCloseable {
         }
 
         String summary = result.text();
-        if (summary == null || summary.isBlank()) {
+        if (summary.isBlank()) {
             logger.warn("History compression resulted in empty summary for entry: {}", entry);
             return entry;
         }
@@ -2143,7 +2184,6 @@ public class ContextManager implements IContextManager, AutoCloseable {
 
     @Override
     public ToolRegistry getToolRegistry() {
-        assert toolRegistry != null : "ToolRegistry accessed before initialization";
         return toolRegistry;
     }
 

@@ -1,6 +1,8 @@
 package io.github.jbellis.brokk.gui.dialogs;
 
+import dev.langchain4j.model.chat.StreamingChatLanguageModel;
 import io.github.jbellis.brokk.ContextManager;
+import io.github.jbellis.brokk.Service;
 import io.github.jbellis.brokk.analyzer.ProjectFile;
 import io.github.jbellis.brokk.difftool.ui.BrokkDiffPanel;
 import io.github.jbellis.brokk.difftool.ui.BufferSource;
@@ -27,12 +29,16 @@ import io.github.jbellis.brokk.prompts.SummarizerPrompts;
 import io.github.jbellis.brokk.GitHubAuth;
 import io.github.jbellis.brokk.gui.components.LoadingButton;
 import java.awt.Desktop;
+import dev.langchain4j.data.message.ChatMessage;
 
 
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.ScheduledFuture;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.function.Supplier;
+
+import org.jetbrains.annotations.Nullable;
 
 
 public class CreatePullRequestDialog extends JDialog {
@@ -45,12 +51,14 @@ public class CreatePullRequestDialog extends JDialog {
     private JComboBox<String> targetBranchComboBox;
     private JTextField titleField;
     private JTextArea descriptionArea;
+    private JLabel descriptionHintLabel; // Hint for description generation source
     private GitCommitBrowserPanel commitBrowserPanel;
     private FileStatusTable fileStatusTable;
     private JLabel branchFlowLabel;
     private LoadingButton createPrButton; // Field for the Create PR button
     private Runnable flowUpdater;
     private List<CommitInfo> currentCommits = Collections.emptyList();
+    @Nullable
     private String mergeBaseCommit = null;
     private boolean sourceBranchNeedsPush = false;
 
@@ -58,10 +66,27 @@ public class CreatePullRequestDialog extends JDialog {
      * Optional branch name that should be pre-selected as the source branch
      * when the dialog opens.  May be {@code null}.
      */
+    @Nullable
     private final String preselectedSourceBranch;
 
+    @SuppressWarnings("NullAway.Init")
+    public CreatePullRequestDialog(@Nullable Frame owner, Chrome chrome, ContextManager contextManager, @Nullable String preselectedSourceBranch) {
+        super(owner, "Create a Pull Request", false);
+        this.chrome = chrome;
+        this.contextManager = contextManager;
+        this.preselectedSourceBranch = preselectedSourceBranch;
+
+        initializeDialog();
+        buildLayout();
+    }
+
+    @Nullable
     private PrDescriptionWorker currentDescriptionWorker;
+    @Nullable
     private ContextManager.SummarizeWorker currentTitleWorker;
+
+    @Nullable
+    private ScheduledFuture<?> pendingDebounceTask;
 
     private final ScheduledExecutorService debounceExec = Executors.newSingleThreadScheduledExecutor(new java.util.concurrent.ThreadFactory() {
         private final AtomicInteger threadNumber = new AtomicInteger(1);
@@ -73,28 +98,11 @@ public class CreatePullRequestDialog extends JDialog {
             return t;
         }
     });
-    private ScheduledFuture<?> pendingDebounceTask;
+    // private ScheduledFuture<?> pendingDebounceTask; // Removed duplicate
     private static final long DEBOUNCE_MS = 400;
 
     public CreatePullRequestDialog(Frame owner, Chrome chrome, ContextManager contextManager) {
         this(owner, chrome, contextManager, null); // delegate
-    }
-
-    /**
-     * Full constructor allowing the caller to specify which branch should be
-     * selected as the source branch when the dialog opens.
-     */
-    public CreatePullRequestDialog(Frame owner,
-                                   Chrome chrome,
-                                   ContextManager contextManager,
-                                   String preselectedSourceBranch) {
-        super(owner, "Create a Pull Request", false);
-        this.chrome = chrome;
-        this.contextManager = contextManager;
-        this.preselectedSourceBranch = preselectedSourceBranch;
-
-        initializeDialog();
-        buildLayout();
     }
 
     private void initializeDialog() {
@@ -218,6 +226,17 @@ public class CreatePullRequestDialog extends JDialog {
         descriptionArea = new JTextArea(10, 20); // Initial rows and columns
         var scrollPane = new JScrollPane(descriptionArea);
         panel.add(scrollPane, gbc);
+
+        // Hint label for description generation source
+        descriptionHintLabel = new JLabel("<html>Description generated from commit messages as the diff was too large.</html>");
+        descriptionHintLabel.setFont(descriptionHintLabel.getFont().deriveFont(Font.ITALIC, descriptionHintLabel.getFont().getSize() * 0.9f));
+        descriptionHintLabel.setVisible(false); // Initially hidden
+        gbc.gridx = 1;
+        gbc.gridy = 2; // Position below the description area
+        gbc.weighty = 0; // Don't take extra vertical space
+        gbc.fill = GridBagConstraints.HORIZONTAL;
+        gbc.anchor = GridBagConstraints.NORTHWEST; // Align to top-left of its cell
+        panel.add(descriptionHintLabel, gbc);
         
         return panel;
     }
@@ -376,12 +395,42 @@ public class CreatePullRequestDialog extends JDialog {
                     // Nothing to describe; stop any ongoing generation and clear fields.
                     cancelGenerationWorkersAndClearFields();
                 } else {
-                    // Auto-generate title and description
-                    // This diff is for the LLM, not for display directly
-                    var diffText = gitRepo.showDiff(sourceBranch, this.mergeBaseCommit);
-                    debounceGenerate(diffText);
-                }
+                    if (this.mergeBaseCommit != null) {
+                        // Auto-generate title and description
+                        // This diff is for the LLM, not for display directly
+                        var diffText = gitRepo.showDiff(sourceBranch, this.mergeBaseCommit);
+                        var svc = contextManager.getService();
+                        var model = getPreferredModelForPrGeneration();
+                        int maxTokensInput = svc.getMaxInputTokens(model);
+                        // Heuristic: ~3 characters per token for English text.
+                        // Multiply maxTokensInput by a safety factor (e.g., 0.9) to leave headroom.
+                        int estimatedTokens = diffText.length() / 3;
+                        boolean diffTooBig  = estimatedTokens > (maxTokensInput * 0.9);
 
+                        if (diffTooBig) {
+                            logger.info("Diff (approx. {} tokens) may exceed model's input budget ({} tokens); falling back to commit messages for PR description.",
+                                        estimatedTokens, maxTokensInput);
+                            var commitMsgs = gitRepo.getCommitMessagesBetween(sourceBranch, targetBranch);
+                            if (commitMsgs.isEmpty()) {
+                                logger.warn("Diff too big, and no commit messages found between {} and {}. Cannot generate PR description.", sourceBranch, targetBranch);
+                                cancelGenerationWorkersAndClearFields();
+                            } else {
+                                debounceGenerateFromCommitMessages(commitMsgs);
+                            }
+                        } else {
+                            debounceGenerateFromDiff(diffText);
+                        }
+                    } else {
+                        // No merge base, cannot generate diff for description.
+                        logger.warn("No merge base found between {} and {}, cannot generate PR description.", sourceBranch, targetBranch);
+                        cancelGenerationWorkersAndClearFields(); // Clear any pending/optimistic UI
+                        // Optionally, set a specific message in descriptionArea
+                        SwingUtilities.invokeLater(() -> {
+                            descriptionArea.setText("(Could not determine changes: no common merge base found)");
+                            titleField.setText(""); // Also clear title
+                        });
+                    }
+                }
 
                 SwingUtilities.invokeLater(() -> updateCommitRelatedUI(branchDiffData.commits(),
                                                                        branchDiffData.changedFiles(),
@@ -393,6 +442,12 @@ public class CreatePullRequestDialog extends JDialog {
                 throw e;
             }
         });
+    }
+
+    private StreamingChatLanguageModel getPreferredModelForPrGeneration() {
+        var svc = contextManager.getService();
+        var model = svc.getModel(Service.GROK_3_MINI, Service.ReasoningLevel.DEFAULT);
+        return model != null ? model : svc.quickestModel();
     }
 
     private void updateCreatePrButtonState() {
@@ -530,6 +585,7 @@ public class CreatePullRequestDialog extends JDialog {
         selectDefaultSourceBranch(gitRepo, sourceBranches, localBranches);
     }
     
+    @Nullable
     private String findDefaultTargetBranch(List<String> targetBranches) {
         if (targetBranches.contains("origin/main")) {
             return "origin/main";
@@ -559,10 +615,10 @@ public class CreatePullRequestDialog extends JDialog {
     /**
      * Convenience helper to open the dialog with a pre-selected source branch.
      */
-    public static void show(Frame owner,
+    public static void show(@Nullable Frame owner,
                             Chrome chrome,
                             ContextManager contextManager,
-                            String sourceBranch) {
+                            @Nullable String sourceBranch) {
         CreatePullRequestDialog dialog =
                 new CreatePullRequestDialog(owner, chrome, contextManager, sourceBranch);
         dialog.setVisible(true);
@@ -583,7 +639,7 @@ public class CreatePullRequestDialog extends JDialog {
         return new BufferSource.StringSource(content, commitSHA, f.getFileName());
     }
 
-    private List<ProjectFile> getOrderedFilesForDiff(ProjectFile priorityFile) {
+    private List<ProjectFile> getOrderedFilesForDiff(@Nullable ProjectFile priorityFile) {
         var allFilesInTable = getAllFilesFromFileStatusTable();
         var selectedFiles = fileStatusTable.getSelectedFiles();
         var orderedFiles = new ArrayList<ProjectFile>();
@@ -645,8 +701,8 @@ public class CreatePullRequestDialog extends JDialog {
         }
     }
 
-    private void openPrDiffViewer(ProjectFile priorityFile) {
-        var orderedFiles = getOrderedFilesForDiff(priorityFile);
+    private void openPrDiffViewer(@Nullable ProjectFile priorityFile) {
+        List<ProjectFile> orderedFiles = getOrderedFilesForDiff(priorityFile);
 
         final String currentMergeBase = this.mergeBaseCommit;
         final String currentSourceBranch = (String) sourceBranchComboBox.getSelectedItem();
@@ -667,15 +723,13 @@ public class CreatePullRequestDialog extends JDialog {
         });
     }
 
-    // --- PR Description and Title Generation ---
-
     private class PrDescriptionWorker extends SwingWorker<String, Void> {
         private final ContextManager cm;
-        private final String diff;
+        private final Supplier<List<ChatMessage>> promptSupplier;
 
-        PrDescriptionWorker(ContextManager cm, String diff) {
+        PrDescriptionWorker(ContextManager cm, Supplier<List<ChatMessage>> promptSupplier) {
             this.cm = cm;
-            this.diff = diff;
+            this.promptSupplier = promptSupplier;
         }
 
         @Override
@@ -683,8 +737,8 @@ public class CreatePullRequestDialog extends JDialog {
             if (isCancelled()) {
                 return ""; // Early exit if cancelled before starting work
             }
-            var msgs = SummarizerPrompts.instance.collectPrDescriptionMessages(diff);
-            var llm = cm.getLlm(cm.getService().quickestModel(), "PR-description");
+            var msgs = promptSupplier.get(); // Get messages from the supplier
+            var llm = cm.getLlm(getPreferredModelForPrGeneration(), "PR-description");
             var result = llm.sendRequest(msgs);
 
             if (isCancelled()) { // Check again after potentially long LLM call
@@ -797,20 +851,47 @@ public class CreatePullRequestDialog extends JDialog {
         SwingUtilities.invokeLater(() -> {
             titleField.setText("");
             descriptionArea.setText("");
+            showDescriptionHint(false); // Hide hint when clearing
             updateCreatePrButtonState();
         });
     }
 
-    private void debounceGenerate(String diffTxt) {
+    private void showDescriptionHint(boolean show) {
+        SwingUtilities.invokeLater(() -> {
+            descriptionHintLabel.setVisible(show);
+        });
+    }
+
+    private void debounceGenerate(Supplier<List<ChatMessage>> promptSupplier) {
         if (pendingDebounceTask != null) {
             pendingDebounceTask.cancel(false);
         }
         pendingDebounceTask = debounceExec.schedule(
-                () -> spawnDescriptionWorker(diffTxt), // Will run on executor thread
+                () -> spawnDescriptionWorker(promptSupplier), // Will run on executor thread
                 DEBOUNCE_MS, TimeUnit.MILLISECONDS);
     }
 
-    private void spawnDescriptionWorker(String diffTxt) {
+    // Specific debouncer for diff-based generation
+    private void debounceGenerateFromDiff(String diffTxt) {
+        SwingUtilities.invokeLater(() -> { // Ensure UI updates are on EDT
+            setTextAndResetCaret(descriptionArea, "Generating description from diff...");
+            setTextAndResetCaret(titleField, "Generating title...");
+            showDescriptionHint(false); // Hide hint if using diff
+        });
+        debounceGenerate(() -> SummarizerPrompts.instance.collectPrDescriptionMessages(diffTxt));
+    }
+
+    // Specific debouncer for commit-message-based generation
+    private void debounceGenerateFromCommitMessages(List<String> commitMsgs) {
+        SwingUtilities.invokeLater(() -> { // Ensure UI updates are on EDT
+             setTextAndResetCaret(descriptionArea, "Generating description from commit messages...");
+             setTextAndResetCaret(titleField, "Generating title...");
+             showDescriptionHint(true); // Show hint if using commit messages
+        });
+        debounceGenerate(() -> SummarizerPrompts.instance.collectPrDescriptionFromCommitMsgs(commitMsgs));
+    }
+
+    private void spawnDescriptionWorker(Supplier<List<ChatMessage>> promptSupplier) {
         // Cancel previous background LLM calls
         if (currentDescriptionWorker != null) {
             currentDescriptionWorker.cancel(true);
@@ -819,13 +900,8 @@ public class CreatePullRequestDialog extends JDialog {
             currentTitleWorker.cancel(true);
         }
 
-        // Optimistic placeholders while work runs
-        SwingUtilities.invokeLater(() -> {
-            setTextAndResetCaret(descriptionArea, "Generating description ...");
-            setTextAndResetCaret(titleField, "Generating title ...");
-        });
-
-        currentDescriptionWorker = new PrDescriptionWorker(contextManager, diffTxt);
+        // Optimistic placeholders
+        currentDescriptionWorker = new PrDescriptionWorker(contextManager, promptSupplier);
         currentDescriptionWorker.execute();
     }
 

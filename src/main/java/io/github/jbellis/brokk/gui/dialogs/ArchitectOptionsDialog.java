@@ -5,9 +5,11 @@ import io.github.jbellis.brokk.agents.ArchitectAgent;
 import io.github.jbellis.brokk.analyzer.Language;
 import io.github.jbellis.brokk.gui.Chrome;
 import io.github.jbellis.brokk.gui.SwingUtil;
+import org.jetbrains.annotations.Nullable;
 
 import javax.swing.*;
 import java.awt.*;
+import java.awt.event.KeyEvent;
 import java.awt.event.WindowAdapter;
 import java.awt.event.WindowEvent;
 import java.util.concurrent.atomic.AtomicReference;
@@ -34,6 +36,7 @@ public class ArchitectOptionsDialog {
      * @param chrome         The main application window reference for positioning and theme.
      * @return The selected ArchitectChoices (options + worktree preference), or null if the dialog was cancelled.
      */
+    @Nullable
     public static ArchitectChoices showDialogAndWait(Chrome chrome) {
         var contextManager = chrome.getContextManager();
         // Use AtomicReference to capture the result from the EDT lambda
@@ -178,6 +181,12 @@ public class ArchitectOptionsDialog {
                     resultHolder.compareAndSet(null, null); // Ensure null if not already set by OK/Cancel
                 }
             });
+
+            // Bind Escape key to Cancel action
+            dialog.getRootPane().registerKeyboardAction(e -> {
+                resultHolder.compareAndSet(null, null);
+                dialog.dispose();
+            }, KeyStroke.getKeyStroke(KeyEvent.VK_ESCAPE, 0), JComponent.WHEN_IN_FOCUSED_WINDOW);
 
             dialog.pack();
             dialog.setLocationRelativeTo(chrome.getFrame()); // Center relative to parent

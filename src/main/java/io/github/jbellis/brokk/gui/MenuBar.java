@@ -9,7 +9,6 @@ import io.github.jbellis.brokk.gui.dialogs.ImportDependencyDialog;
 import io.github.jbellis.brokk.gui.dialogs.PreviewImagePanel;
 import io.github.jbellis.brokk.gui.dialogs.SettingsDialog;
 import io.github.jbellis.brokk.gui.dialogs.FeedbackDialog;
-import io.github.jbellis.brokk.gui.dialogs.UpgradeAgentDialog;
 
 import javax.swing.*;
 import java.awt.*;
@@ -271,11 +270,14 @@ public class MenuBar {
     var dropAllItem = new JMenuItem("Drop All");
     dropAllItem.setAccelerator(KeyStroke.getKeyStroke(KeyEvent.VK_P, Toolkit.getDefaultToolkit().getMenuShortcutKeyMaskEx()));
     dropAllItem.addActionListener(e -> {
-            chrome.getContextPanel().performContextActionAsync(
-                    WorkspacePanel.ContextAction.DROP, List.of());
-        });
-        dropAllItem.setEnabled(hasProject);
-        contextMenu.add(dropAllItem);
+        chrome.getContextPanel().performContextActionAsync(
+                WorkspacePanel.ContextAction.DROP, List.of());
+    });
+    dropAllItem.setEnabled(hasProject);
+    contextMenu.add(dropAllItem);
+
+    // Store reference in WorkspacePanel for dynamic state updates
+    chrome.getContextPanel().setDropAllMenuItem(dropAllItem);
 
         menuBar.add(contextMenu);
 
@@ -288,8 +290,8 @@ public class MenuBar {
             upgradeAgentItem.addActionListener(e -> {
                 if (chrome.getProject() != null && chrome.getContextManager() != null) {
                     SwingUtilities.invokeLater(() -> {
-                        var dialog = new UpgradeAgentDialog(chrome.getFrame(), chrome);
-                        dialog.setVisible(true);
+//                        var dialog = new UpgradeAgentDialog(chrome.getFrame(), chrome);
+//                        dialog.setVisible(true);
                     });
                 }
             });

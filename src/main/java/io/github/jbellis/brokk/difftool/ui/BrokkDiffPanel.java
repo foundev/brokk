@@ -9,6 +9,7 @@ import static javax.swing.SwingUtilities.invokeLater;
 
 import java.util.Objects;
 
+import io.github.jbellis.brokk.difftool.node.JMDiffNode;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 import org.jetbrains.annotations.Nullable;
@@ -16,7 +17,6 @@ import org.jetbrains.annotations.Nullable;
 import com.github.difflib.DiffUtils;
 import com.github.difflib.UnifiedDiffUtils;
 import com.github.difflib.algorithm.DiffAlgorithmListener;
-import com.github.difflib.patch.Patch;
 import io.github.jbellis.brokk.context.ContextFragment;
 import io.github.jbellis.brokk.ContextManager;
 import io.github.jbellis.brokk.gui.Chrome;
@@ -39,6 +39,7 @@ public class BrokkDiffPanel extends JPanel implements ThemeAware {
     private boolean started;
     private final JLabel loadingLabel = new JLabel("Processing... Please wait.");
     private final GuiTheme theme;
+    private final JCheckBox showBlankLineDiffsCheckBox = new JCheckBox("Show blank-lines");
 
     // All file comparisons with lazy loading cache
     private final List<FileComparisonInfo> fileComparisons;
@@ -99,7 +100,6 @@ public class BrokkDiffPanel extends JPanel implements ThemeAware {
 
     public BrokkDiffPanel(Builder builder, GuiTheme theme) {
         this.theme = theme;
-        assert builder.contextManager != null;
         this.contextManager = builder.contextManager;
         this.isMultipleCommitsContext = builder.isMultipleCommitsContext;
 
@@ -127,6 +127,13 @@ public class BrokkDiffPanel extends JPanel implements ThemeAware {
             }
         });
 
+        showBlankLineDiffsCheckBox.setSelected(!JMDiffNode.isIgnoreBlankLineDiffs());
+        showBlankLineDiffsCheckBox.addActionListener(e -> {
+            boolean show = showBlankLineDiffsCheckBox.isSelected();
+            JMDiffNode.setIgnoreBlankLineDiffs(!show);
+            refreshAllDiffPanels();
+        });
+
         revalidate();
     }
 
@@ -143,7 +150,6 @@ public class BrokkDiffPanel extends JPanel implements ThemeAware {
 
         public Builder(GuiTheme theme, ContextManager contextManager) {
             this.theme = theme;
-            assert contextManager != null;
             this.contextManager = contextManager;
             this.fileComparisons = new ArrayList<>();
             this.leftSource = null; // Initialize @Nullable fields
@@ -158,7 +164,7 @@ public class BrokkDiffPanel extends JPanel implements ThemeAware {
         public Builder rightSource(BufferSource source) {
             this.rightSource = source;
             // Automatically add the comparison
-            if (this.leftSource != null && this.rightSource != null) {
+            if (this.leftSource != null) {
                 addComparison(this.leftSource, this.rightSource);
             }
             leftSource = null; // Clear to prevent duplicate additions
@@ -167,7 +173,6 @@ public class BrokkDiffPanel extends JPanel implements ThemeAware {
         }
 
         public Builder addComparison(BufferSource leftSource, BufferSource rightSource) {
-            assert leftSource != null && rightSource != null : "Both left and right sources must be provided for comparison.";
             this.fileComparisons.add(new FileComparisonInfo(leftSource, rightSource));
             return this;
         }
@@ -252,12 +257,8 @@ public class BrokkDiffPanel extends JPanel implements ThemeAware {
         assert SwingUtilities.isEventDispatchThread() : "Must be called on EDT";
         updateUndoRedoButtons();
 
-        if (btnPreviousFile != null) {
-            btnPreviousFile.setEnabled(canNavigateToPreviousFile());
-        }
-        if (btnNextFile != null) {
-            btnNextFile.setEnabled(canNavigateToNextFile());
-        }
+        btnPreviousFile.setEnabled(canNavigateToPreviousFile());
+        btnNextFile.setEnabled(canNavigateToNextFile());
     }
 
 
@@ -349,6 +350,11 @@ public class BrokkDiffPanel extends JPanel implements ThemeAware {
         toolBar.add(btnUndo);
         toolBar.add(Box.createHorizontalStrut(10)); // 10px spacing
         toolBar.add(btnRedo);
+
+        toolBar.add(Box.createHorizontalStrut(20));
+        toolBar.addSeparator();
+        toolBar.add(Box.createHorizontalStrut(10));
+        toolBar.add(showBlankLineDiffsCheckBox);
 
         // Add Capture Diff button to the right
         toolBar.add(Box.createHorizontalGlue()); // Pushes subsequent components to the right
@@ -598,9 +604,7 @@ public class BrokkDiffPanel extends JPanel implements ThemeAware {
     }
 
     private void updateFileIndicatorLabel(String text) {
-        if (fileIndicatorLabel != null) {
-            fileIndicatorLabel.setText(text);
-        }
+        fileIndicatorLabel.setText(text);
     }
 
     private void performUndoRedo(java.util.function.Consumer<AbstractContentPanel> action) {
@@ -626,17 +630,29 @@ public class BrokkDiffPanel extends JPanel implements ThemeAware {
         repaint();
     }
 
+    private void refreshAllDiffPanels() {
+        assert SwingUtilities.isEventDispatchThread() : "Must be called on EDT";
+        // Refresh existing cached panels (preserves cache for performance)
+        panelCache.values().forEach(BufferDiffPanel::diff);
+        // Refresh current panel if it's not cached
+        var current = getBufferDiffPanel();
+        if (current != null && !panelCache.containsValue(current)) {
+            current.diff();
+        }
+        // Update navigation buttons after refresh
+        SwingUtilities.invokeLater(this::updateUndoRedoButtons);
+        repaint();
+    }
+
     @Override
     public void applyTheme(GuiTheme guiTheme) {
         assert SwingUtilities.isEventDispatchThread() : "applyTheme must be called on EDT";
-        
+
         // Apply theme to cached panels
         for (var panel : panelCache.values()) {
-            if (panel != null) {
-                panel.applyTheme(guiTheme);
-            }
+            panel.applyTheme(guiTheme);
         }
-        
+
         // Update all child components including toolbar buttons and labels
         SwingUtilities.updateComponentTreeUI(this);
         revalidate();

@@ -4,6 +4,7 @@ import com.fasterxml.jackson.core.JsonProcessingException;
 import io.github.jbellis.brokk.Service.ModelConfig;
 import io.github.jbellis.brokk.agents.ArchitectAgent;
 import io.github.jbellis.brokk.agents.BuildAgent;
+import io.github.jbellis.brokk.issues.IssueProviderType;
 import org.jetbrains.annotations.Nullable;
 import io.github.jbellis.brokk.analyzer.Language;
 import io.github.jbellis.brokk.analyzer.ProjectFile;
@@ -38,6 +39,7 @@ public final class MainProject extends AbstractProject {
     private final Path propertiesFile;
     private final Properties projectProps;
     private final Path styleGuidePath;
+    private final Path reviewGuidePath;
     private volatile CompletableFuture<BuildAgent.BuildDetails> detailsFuture = new CompletableFuture<>();
 
     private static final String BUILD_DETAILS_KEY = "buildDetailsJson";
@@ -97,11 +99,16 @@ public final class MainProject extends AbstractProject {
     private static final String DATA_RETENTION_POLICY_KEY = "dataRetentionPolicy";
     private static final String FAVORITE_MODELS_KEY = "favoriteModelsJson";
 
+    public static final String DEFAULT_REVIEW_GUIDE = """
+            When reviewing the pull request, please address the following points:
+            - explain your understanding of what this PR is intended to do
+            - does it accomplish its goals
+            - does it conform to the style guidelines
+            - what parts are the trickiest and how could they be simplified
+            """.stripIndent();
+
     public record ProjectPersistentInfo(long lastOpened, List<String> openWorktrees) {
         public ProjectPersistentInfo {
-            if (openWorktrees == null) {
-                openWorktrees = List.of();
-            }
         }
 
         public static ProjectPersistentInfo fromTimestamp(long lastOpened) {
@@ -114,6 +121,7 @@ public final class MainProject extends AbstractProject {
 
         this.propertiesFile = this.masterRootPathForConfig.resolve(".brokk").resolve("project.properties");
         this.styleGuidePath = this.masterRootPathForConfig.resolve(".brokk").resolve("style.md");
+        this.reviewGuidePath = this.masterRootPathForConfig.resolve(".brokk").resolve("review.md");
         this.sessionsDir = this.masterRootPathForConfig.resolve(".brokk").resolve("sessions");
         this.legacySessionsIndexPath = this.sessionsDir.resolve("sessions.jsonl");
 
@@ -194,9 +202,7 @@ public final class MainProject extends AbstractProject {
                     String jsonString = objectMapper.writeValueAsString(migratedConfig);
                     props.setProperty(typeInfo.configKey(), jsonString);
                     props.remove(typeInfo.oldModelNameKey());
-                    if (typeInfo.oldReasoningKey() != null) {
-                        props.remove(typeInfo.oldReasoningKey());
-                    }
+                    props.remove(typeInfo.oldReasoningKey());
                     changed = true;
                     logger.info("Migrated model config for {} from old keys ('{}', '{}') to new key '{}'.",
                             modelType, typeInfo.oldModelNameKey(), typeInfo.oldReasoningKey(), typeInfo.configKey());
@@ -247,7 +253,6 @@ public final class MainProject extends AbstractProject {
 
     @Override
     public void saveBuildDetails(BuildAgent.BuildDetails details) {
-        assert details != null;
         if (!details.equals(BuildAgent.BuildDetails.EMPTY)) {
             try {
                 String json = objectMapper.writeValueAsString(details);
@@ -300,7 +305,6 @@ public final class MainProject extends AbstractProject {
     }
 
     private void setModelConfigInternal(String modelTypeKey, ModelConfig config) {
-        assert config != null;
         var props = loadGlobalProperties();
         var typeInfo = MODEL_TYPE_INFOS.get(modelTypeKey);
         Objects.requireNonNull(typeInfo, "typeInfo should not be null for modelTypeKey: " + modelTypeKey);
@@ -362,7 +366,7 @@ public final class MainProject extends AbstractProject {
 
     @Override
     public void setCommitMessageFormat(String format) {
-        if (format == null || format.isBlank() || format.trim().equals(DEFAULT_COMMIT_MESSAGE_FORMAT)) {
+        if (format.isBlank() || format.trim().equals(DEFAULT_COMMIT_MESSAGE_FORMAT)) {
             if (projectProps.containsKey(COMMIT_MESSAGE_FORMAT_KEY)) {
                 projectProps.remove(COMMIT_MESSAGE_FORMAT_KEY);
                 saveProjectProperties();
@@ -432,7 +436,7 @@ public final class MainProject extends AbstractProject {
 
     @Override
     public void setAnalyzerLanguages(Set<Language> languages) {
-        if (languages == null || languages.isEmpty() || (languages.size() == 1 && languages.contains(Language.NONE))) {
+        if (languages.isEmpty() || ((languages.size() == 1) && languages.contains(Language.NONE))) {
             projectProps.remove(CODE_INTELLIGENCE_LANGUAGES_KEY);
         } else {
             String langsString = languages.stream()
@@ -451,15 +455,14 @@ public final class MainProject extends AbstractProject {
 
     @Override
     public void setCodeAgentTestScope(CodeAgentTestScope scope) {
-        assert scope != null;
         projectProps.setProperty(CODE_AGENT_TEST_SCOPE_KEY, scope.name());
         saveProjectProperties();
     }
 
-    @Nullable private volatile io.github.jbellis.brokk.IssueProvider issuesProviderCache = null;
+    @Nullable private volatile IssueProvider issuesProviderCache = null;
 
     @Override
-    public io.github.jbellis.brokk.IssueProvider getIssuesProvider() {
+    public IssueProvider getIssuesProvider() {
         if (issuesProviderCache != null) {
             return issuesProviderCache;
         }
@@ -467,40 +470,20 @@ public final class MainProject extends AbstractProject {
         String json = projectProps.getProperty(ISSUES_PROVIDER_JSON_KEY);
         if (json != null && !json.isBlank()) {
             try {
-                issuesProviderCache = objectMapper.readValue(json, io.github.jbellis.brokk.IssueProvider.class);
+                issuesProviderCache = objectMapper.readValue(json, IssueProvider.class);
                 return issuesProviderCache;
             } catch (JsonProcessingException e) {
                 logger.error("Failed to deserialize IssueProvider from JSON: {}. Will attempt migration or default.", json, e);
             }
         }
-
-        // Migration from old properties
-        String oldProviderEnumName = projectProps.getProperty(OLD_ISSUE_PROVIDER_ENUM_KEY);
-        if (oldProviderEnumName != null) {
-            io.github.jbellis.brokk.issues.IssueProviderType oldType = io.github.jbellis.brokk.issues.IssueProviderType.fromString(oldProviderEnumName);
-            if (oldType == io.github.jbellis.brokk.issues.IssueProviderType.JIRA) {
-                String baseUrl = projectProps.getProperty(JIRA_PROJECT_BASE_URL_KEY, "");
-                String apiToken = projectProps.getProperty(JIRA_PROJECT_API_TOKEN_KEY, "");
-                String projectKey = projectProps.getProperty(JIRA_PROJECT_KEY_KEY, "");
-                issuesProviderCache = io.github.jbellis.brokk.IssueProvider.jira(baseUrl, apiToken, projectKey);
-            } else if (oldType == io.github.jbellis.brokk.issues.IssueProviderType.GITHUB) {
-                // Old GitHub had no specific config, so it's the default GitHub config
-                issuesProviderCache = io.github.jbellis.brokk.IssueProvider.github();
-            }
-            // If migrated, save new format and remove old keys
-            if (issuesProviderCache != null) {
-                setIssuesProvider(issuesProviderCache); // This will save and clear old keys
-                logger.info("Migrated issue provider settings from old format for project {}", getRoot().getFileName());
-                return issuesProviderCache;
-            }
-        }
-
+        
         // Defaulting logic if no JSON and no old properties
         if (isGitHubRepo()) {
-            issuesProviderCache = io.github.jbellis.brokk.IssueProvider.github();
+            issuesProviderCache = IssueProvider.github();
         } else {
-            issuesProviderCache = io.github.jbellis.brokk.IssueProvider.none();
+            issuesProviderCache = IssueProvider.none();
         }
+
         // Save the default so it's persisted
         setIssuesProvider(issuesProviderCache);
         logger.info("Defaulted issue provider to {} for project {}", issuesProviderCache.type(), getRoot().getFileName());
@@ -508,14 +491,31 @@ public final class MainProject extends AbstractProject {
     }
 
     @Override
-    public void setIssuesProvider(io.github.jbellis.brokk.IssueProvider provider) {
-        if (provider == null) {
-            provider = io.github.jbellis.brokk.IssueProvider.none(); // Default to NONE if null is passed
+    public void setIssuesProvider(IssueProvider provider) {
+        IssueProvider oldProvider = this.issuesProviderCache;
+        IssueProviderType oldType = null;
+        if (oldProvider != null) {
+            oldType = oldProvider.type();
+        } else {
+            // Attempt to load from props if cache is null to get a definitive "before" type
+            String currentJsonInProps = projectProps.getProperty(ISSUES_PROVIDER_JSON_KEY);
+            if (currentJsonInProps != null && !currentJsonInProps.isBlank()) {
+                try {
+                    IssueProvider providerFromProps = objectMapper.readValue(currentJsonInProps, IssueProvider.class);
+                    oldType = providerFromProps.type();
+                } catch (JsonProcessingException e) {
+                    // Log or ignore, oldType remains null or determined by migration if applicable
+                    logger.debug("Could not parse existing IssueProvider JSON from properties while determining old type: {}", e.getMessage());
+                }
+            }
         }
+
+        var newType = provider.type();
+
         try {
             String json = objectMapper.writeValueAsString(provider);
             projectProps.setProperty(ISSUES_PROVIDER_JSON_KEY, json);
-            issuesProviderCache = provider;
+            this.issuesProviderCache = provider; // Update cache
 
             // Remove old keys after successful new key storage
             boolean removedOld = projectProps.remove(OLD_ISSUE_PROVIDER_ENUM_KEY) != null;
@@ -528,6 +528,12 @@ public final class MainProject extends AbstractProject {
 
             saveProjectProperties();
             logger.info("Set issue provider to type '{}' for project {}", provider.type(), getRoot().getFileName());
+
+            // Notify listeners if the provider *type* has changed.
+            if (oldType != newType) {
+                logger.debug("Issue provider type changed from {} to {}. Notifying listeners.", oldType, newType);
+                notifyIssueProviderChanged();
+            }
         } catch (JsonProcessingException e) {
             logger.error("Failed to serialize IssueProvider to JSON: {}. Settings not saved.", provider, e);
             throw new RuntimeException("Failed to serialize IssueProvider", e);
@@ -592,7 +598,6 @@ public final class MainProject extends AbstractProject {
 
     @Override
     public void setAnalyzerRefresh(CpgRefresh value) {
-        assert value != null;
         projectProps.setProperty("code_intelligence_refresh", value.name());
         saveProjectProperties();
     }
@@ -616,6 +621,28 @@ public final class MainProject extends AbstractProject {
             AtomicWrites.atomicOverwrite(styleGuidePath, styleGuide);
         } catch (IOException e) {
             logger.error("Error saving style guide: {}", e.getMessage());
+        }
+    }
+
+    @Override
+    public String getReviewGuide() {
+        try {
+            if (Files.exists(reviewGuidePath)) {
+                return Files.readString(reviewGuidePath);
+            }
+        } catch (IOException e) {
+            logger.error("Error reading review guide: {}", e.getMessage());
+        }
+        return ""; // Return empty string if not found or error
+    }
+
+    @Override
+    public void saveReviewGuide(String reviewGuide) {
+        try {
+            Files.createDirectories(reviewGuidePath.getParent());
+            AtomicWrites.atomicOverwrite(reviewGuidePath, reviewGuide);
+        } catch (IOException e) {
+            logger.error("Error saving review guide: {}", e.getMessage());
         }
     }
 
@@ -773,13 +800,23 @@ public final class MainProject extends AbstractProject {
 
     public static void setGitHubToken(String token) {
         var props = loadGlobalProperties();
-        if (token == null || token.isBlank()) {
+        if (token.isBlank()) {
             props.remove(GITHUB_TOKEN_KEY);
         } else {
             props.setProperty(GITHUB_TOKEN_KEY, token.trim());
         }
         saveGlobalProperties(props);
         notifyGitHubTokenChanged();
+    }
+
+    private static void notifyIssueProviderChanged() {
+        for (SettingsChangeListener listener : settingsChangeListeners) {
+            try {
+                listener.issueProviderChanged();
+            } catch (Exception e) {
+                logger.error("Error notifying listener of issue provider change", e);
+            }
+        }
     }
 
     private static void notifyGitHubTokenChanged() {
@@ -812,7 +849,6 @@ public final class MainProject extends AbstractProject {
 
     @Override
     public void setArchitectOptions(ArchitectAgent.ArchitectOptions options, boolean runInWorktree) {
-        assert options != null;
         try {
             String json = objectMapper.writeValueAsString(options);
             projectProps.setProperty(ARCHITECT_OPTIONS_JSON_KEY, json);
@@ -848,7 +884,7 @@ public final class MainProject extends AbstractProject {
 
     public static void setBrokkKey(String key) {
         var props = loadGlobalProperties();
-        if (key == null || key.isBlank()) {
+        if (key.isBlank()) {
             props.remove("brokkApiKey");
         } else {
             props.setProperty("brokkApiKey", key.trim());
@@ -891,7 +927,6 @@ public final class MainProject extends AbstractProject {
         public String getDisplayName() { return displayName; }
         @Override public String toString() { return displayName; }
         public static DataRetentionPolicy fromString(String value) {
-            if (value == null) return UNSET;
             for (DataRetentionPolicy policy : values()) {
                 if (policy.name().equalsIgnoreCase(value)) return policy;
             }
@@ -910,7 +945,7 @@ public final class MainProject extends AbstractProject {
 
     @Override
     public void setDataRetentionPolicy(DataRetentionPolicy policy) {
-        assert policy != null && policy != DataRetentionPolicy.UNSET : "Cannot set policy to UNSET or null";
+        assert policy != DataRetentionPolicy.UNSET : "Cannot set policy to UNSET or null";
         projectProps.setProperty(DATA_RETENTION_POLICY_KEY, policy.name());
         saveProjectProperties();
         logger.info("Set Data Retention Policy to {} for project {}", policy, root.getFileName());
@@ -942,7 +977,6 @@ public final class MainProject extends AbstractProject {
     }
 
     public static void saveFavoriteModels(List<Service.FavoriteModel> favorites) {
-        assert favorites != null;
         var props = loadGlobalProperties();
         String newJson;
         try {
@@ -1200,7 +1234,7 @@ public final class MainProject extends AbstractProject {
             var persistentInfo = entry.getValue();
             if (validPathsFromOpenList.contains(mainProjectPathKey)) {
                 for (String worktreePathStr : persistentInfo.openWorktrees()) {
-                    if (worktreePathStr != null && !worktreePathStr.isBlank()) {
+                    if (!worktreePathStr.isBlank()) {
                         try {
                             var worktreePath = Path.of(worktreePathStr);
                             if (Files.isDirectory(worktreePath)) {

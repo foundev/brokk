@@ -1,5 +1,6 @@
 package io.github.jbellis.brokk.gui;
 
+import org.jetbrains.annotations.Nullable;
 import dev.langchain4j.data.message.AiMessage;
 import dev.langchain4j.data.message.ChatMessage;
 import io.github.jbellis.brokk.AnalyzerWrapper;
@@ -18,6 +19,7 @@ import io.github.jbellis.brokk.gui.dialogs.SymbolSelectionDialog;
 import io.github.jbellis.brokk.gui.util.AddMenuFactory;
 import io.github.jbellis.brokk.gui.util.ContextMenuUtils;
 import io.github.jbellis.brokk.gui.components.OverlayPanel;
+import io.github.jbellis.brokk.gui.components.SpinnerIconUtil;
 import io.github.jbellis.brokk.prompts.CopyExternalPrompts;
 import io.github.jbellis.brokk.tools.WorkspaceTools;
 import io.github.jbellis.brokk.util.HtmlToMarkdown;
@@ -27,9 +29,9 @@ import io.github.jbellis.brokk.util.StackTrace;
 import okhttp3.OkHttpClient;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
-import org.jetbrains.annotations.NotNull;
 
 import javax.swing.*;
+import java.awt.event.*;
 import java.util.Arrays;
 import javax.swing.border.EmptyBorder;
 import javax.swing.border.TitledBorder;
@@ -38,9 +40,6 @@ import java.awt.*;
 import java.awt.datatransfer.DataFlavor;
 import java.awt.datatransfer.StringSelection;
 import java.awt.datatransfer.Transferable;
-import java.awt.event.ActionEvent;
-import java.awt.event.MouseAdapter;
-import java.awt.event.MouseEvent;
 import java.io.IOException;
 import java.net.URI;
 import java.net.URISyntaxException;
@@ -52,6 +51,9 @@ import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.stream.Collectors;
+
+import static java.util.Objects.requireNonNull;
+import static org.checkerframework.checker.nullness.util.NullnessUtil.castNonNull;
 
 public class WorkspacePanel extends JPanel {
     private static final Logger logger = LogManager.getLogger(WorkspacePanel.class);
@@ -83,11 +85,17 @@ public class WorkspacePanel extends JPanel {
     public static final class NoSelection implements PopupScenario {
         @Override
         public List<Action> getActions(WorkspacePanel panel) {
-            return List.of(
-                WorkspaceAction.DROP_ALL.createAction(panel),
-                WorkspaceAction.COPY_ALL.createAction(panel),
-                WorkspaceAction.PASTE.createAction(panel)
-            );
+            var actions = new ArrayList<Action>();
+
+            // Only add drop all action if workspace is editable and we're on the last history item
+            if (panel.workspaceCurrentlyEditable && panel.isOnLatestContext()) {
+                actions.add(WorkspaceAction.DROP_ALL.createAction(panel));
+            }
+
+            actions.add(WorkspaceAction.COPY_ALL.createAction(panel));
+            actions.add(WorkspaceAction.PASTE.createAction(panel));
+
+            return actions;
         }
     }
 
@@ -190,12 +198,10 @@ public class WorkspacePanel extends JPanel {
             actions.add(null); // Separator
             actions.add(WorkspaceAction.COPY.createFragmentsAction(panel, List.of(fragment)));
 
-            var dropAction = WorkspaceAction.DROP.createFragmentsAction(panel, List.of(fragment));
-            if (!panel.workspaceCurrentlyEditable) {
-                dropAction.setEnabled(false);
-                dropAction.putValue(Action.SHORT_DESCRIPTION, READ_ONLY_TIP);
+            // Only add drop action if workspace is editable and we're on the last history item
+            if (panel.workspaceCurrentlyEditable && panel.isOnLatestContext()) {
+                actions.add(WorkspaceAction.DROP.createFragmentsAction(panel, List.of(fragment)));
             }
-            actions.add(dropAction);
 
             return actions;
         }
@@ -224,12 +230,10 @@ public class WorkspacePanel extends JPanel {
             actions.add(null); // Separator
             actions.add(WorkspaceAction.COPY.createFragmentsAction(panel, fragments));
 
-            var dropAction = WorkspaceAction.DROP.createFragmentsAction(panel, fragments);
-            if (!panel.workspaceCurrentlyEditable) {
-                dropAction.setEnabled(false);
-                dropAction.putValue(Action.SHORT_DESCRIPTION, READ_ONLY_TIP);
+            // Only add drop action if workspace is editable and we're on the last history item
+            if (panel.workspaceCurrentlyEditable && panel.isOnLatestContext()) {
+                actions.add(WorkspaceAction.DROP.createFragmentsAction(panel, fragments));
             }
-            actions.add(dropAction);
 
             return actions;
         }
@@ -266,47 +270,47 @@ public class WorkspacePanel extends JPanel {
             return new AbstractAction(label) {
                 @Override
                 public void actionPerformed(ActionEvent e) {
-                    switch (WorkspaceAction.this) {
-                        case DROP_ALL -> panel.performContextActionAsync(ContextAction.DROP, List.of());
-                        case COPY_ALL -> panel.performContextActionAsync(ContextAction.COPY, List.of());
-                        case PASTE -> panel.performContextActionAsync(ContextAction.PASTE, List.of());
-                        case COMPRESS_HISTORY -> panel.contextManager.compressHistoryAsync();
-                        default -> throw new UnsupportedOperationException("Action not implemented: " + WorkspaceAction.this);
+                switch (WorkspaceAction.this) {
+                    case DROP_ALL -> panel.performContextActionAsync(ContextAction.DROP, List.of());
+                    case COPY_ALL -> panel.performContextActionAsync(ContextAction.COPY, List.of());
+                    case PASTE -> panel.performContextActionAsync(ContextAction.PASTE, List.of());
+                    case COMPRESS_HISTORY -> panel.contextManager.compressHistoryAsync();
+                    default -> throw new UnsupportedOperationException("Action not implemented: " + WorkspaceAction.this);
+                }
+            }
+        };
+    }
+
+    public AbstractAction createDisabledAction(String tooltip) {
+        var action = new AbstractAction(label) {
+            @Override
+            public void actionPerformed(ActionEvent e) {
+                // Disabled actions do nothing
+            }
+        };
+        action.setEnabled(false);
+        action.putValue(Action.SHORT_DESCRIPTION, tooltip);
+        return action;
+    }
+
+    public AbstractAction createFileAction(WorkspacePanel panel, ProjectFile file) {
+        return new AbstractAction(label) {
+            @Override
+            public void actionPerformed(ActionEvent e) {
+                switch (WorkspaceAction.this) {
+                    case SHOW_IN_PROJECT -> panel.chrome.showFileInProjectTree(file);
+                    case VIEW_FILE -> {
+                        var fragment = new ContextFragment.ProjectPathFragment(file, panel.contextManager);
+                        panel.showFragmentPreview(fragment);
                     }
+                    case VIEW_HISTORY -> requireNonNull(panel.chrome.getGitPanel()).addFileHistoryTab(file);
+                    default -> throw new UnsupportedOperationException("File action not implemented: " + WorkspaceAction.this);
                 }
-            };
-        }
+            }
+        };
+    }
 
-        public AbstractAction createDisabledAction(String tooltip) {
-            var action = new AbstractAction(label) {
-                @Override
-                public void actionPerformed(ActionEvent e) {
-                    // Disabled actions do nothing
-                }
-            };
-            action.setEnabled(false);
-            action.putValue(Action.SHORT_DESCRIPTION, tooltip);
-            return action;
-        }
-
-        public AbstractAction createFileAction(WorkspacePanel panel, ProjectFile file) {
-            return new AbstractAction(label) {
-                @Override
-                public void actionPerformed(ActionEvent e) {
-                    switch (WorkspaceAction.this) {
-                        case SHOW_IN_PROJECT -> panel.chrome.showFileInProjectTree(file);
-                        case VIEW_FILE -> {
-                            var fragment = new ContextFragment.ProjectPathFragment(file, panel.contextManager);
-                            panel.showFragmentPreview(fragment);
-                        }
-                        case VIEW_HISTORY -> panel.chrome.getGitPanel().addFileHistoryTab(file);
-                        default -> throw new UnsupportedOperationException("File action not implemented: " + WorkspaceAction.this);
-                    }
-                }
-            };
-        }
-
-        public AbstractAction createFileRefAction(WorkspacePanel panel, TableUtils.FileReferenceList.FileReferenceData fileRef) {
+    public AbstractAction createFileRefAction(WorkspacePanel panel, TableUtils.FileReferenceList.FileReferenceData fileRef) {
             var baseName = this == EDIT_FILE ? "Edit " : this == READ_FILE ? "Read " : "Summarize ";
             return new AbstractAction(baseName + fileRef.getFullPath()) {
                 @Override
@@ -551,11 +555,12 @@ public class WorkspacePanel extends JPanel {
     private JPanel locSummaryPanel;
     private JPanel warningPanel; // Panel for warning messages
     private JPanel analyzerRebuildPanel;
-    private JLabel analyzerRebuildSpinner;
+    private @Nullable JLabel analyzerRebuildSpinner;
     private boolean workspaceCurrentlyEditable = true;
-    private Context currentContext;
     private OverlayPanel workspaceOverlay;
     private JLayeredPane workspaceLayeredPane;
+    private TitledBorder workspaceTitledBorder;
+    @Nullable private JMenuItem dropAllMenuItem = null;
 
     // Buttons
     // Table popup menu (when no row is selected)
@@ -563,6 +568,9 @@ public class WorkspacePanel extends JPanel {
 
     private static final String READ_ONLY_TIP = "Select latest activity to enable";
     private static final String COPY_ALL_ACTION_CMD = "workspace.copyAll";
+    private static final String DROP_ALL_ACTION_CMD = "workspace.dropAll";
+    private static final String WORKSPACE_TITLE = "Workspace";
+    private static final String WORKSPACE_TITLE_NOT_LIVE = "Workspace (read-only)";
 
     /**
      * Primary constructor allowing menu-mode selection
@@ -571,20 +579,19 @@ public class WorkspacePanel extends JPanel {
                           ContextManager contextManager,
                           PopupMenuMode popupMenuMode) {
         super(new BorderLayout());
-        assert chrome != null;
-        assert contextManager != null;
 
         this.chrome = chrome;
         this.contextManager = contextManager;
         this.popupMenuMode = popupMenuMode;
 
-        setBorder(BorderFactory.createTitledBorder(
+        workspaceTitledBorder = BorderFactory.createTitledBorder(
                 BorderFactory.createEtchedBorder(),
-                "Workspace",
+                WORKSPACE_TITLE,
                 TitledBorder.DEFAULT_JUSTIFICATION,
                 TitledBorder.DEFAULT_POSITION,
                 new Font(Font.DIALOG, Font.BOLD, 12)
-        ));
+        );
+        setBorder(workspaceTitledBorder);
 
         buildContextPanel();
 
@@ -779,16 +786,17 @@ public class WorkspacePanel extends JPanel {
                 // Handle COPY_ONLY mode
                 if (popupMenuMode == PopupMenuMode.COPY_ONLY) {
                     if (row >= 0) {
-                        if (contextTable.getSelectedRowCount() == 0
+                if (contextTable.getSelectedRowCount() == 0
                                 || !Arrays.stream(contextTable.getSelectedRows()).anyMatch(r -> r == row)) {
-                            contextTable.setRowSelectionInterval(row, row);
-                        }
-                        JMenuItem copyItem = new JMenuItem("Copy to Active Workspace");
-                        copyItem.addActionListener(ev -> {
-                            var fragsToCopy = getSelectedFragments();
-                            contextManager.addFilteredToContextAsync(currentContext, fragsToCopy);
-                        });
-                        contextMenu.removeAll();
+                    contextTable.setRowSelectionInterval(row, row);
+                }
+                JMenuItem copyItem = new JMenuItem("Copy to Active Workspace");
+                copyItem.addActionListener(ev -> {
+                    var fragsToCopy = getSelectedFragments();
+                    Context sourceCtx = requireNonNull(contextManager.selectedContext());
+                    contextManager.addFilteredToContextAsync(sourceCtx, fragsToCopy);
+                });
+                contextMenu.removeAll();
                         contextMenu.add(copyItem);
                         if (chrome.themeManager != null) {
                             chrome.themeManager.registerPopupMenu(contextMenu);
@@ -840,6 +848,7 @@ public class WorkspacePanel extends JPanel {
             }
 
             @Override
+            @Nullable
             protected Transferable createTransferable(JComponent c) {
                 String contentToCopy = getSelectedContent(getSelectedFragments());
                 if (!contentToCopy.isEmpty()) {
@@ -871,6 +880,7 @@ public class WorkspacePanel extends JPanel {
         tablePopupMenu.addSeparator();
 
         JMenuItem dropAllMenuItem = new JMenuItem("Drop All");
+        dropAllMenuItem.setActionCommand(DROP_ALL_ACTION_CMD);
         dropAllMenuItem.addActionListener(e -> performContextActionAsync(ContextAction.DROP, List.of()));
         tablePopupMenu.add(dropAllMenuItem);
 
@@ -927,18 +937,57 @@ public class WorkspacePanel extends JPanel {
         var tableScrollPane = new JScrollPane(contextTable, JScrollPane.VERTICAL_SCROLLBAR_AS_NEEDED, JScrollPane.HORIZONTAL_SCROLLBAR_AS_NEEDED);
         tableScrollPane.setPreferredSize(new Dimension(600, 150));
 
-        BorderUtils.addFocusBorder(tableScrollPane, contextTable);
-
-        // Create gray semi-transparent overlay for history viewing
-        workspaceOverlay = OverlayPanel.createGrayOverlay(
+        // Create gray semi-transparent overlay for history viewing that allows mouse clicks through
+        workspaceOverlay = OverlayPanel.createNonBlockingGrayOverlay(
                 overlay -> {}, // No action on click - this overlay is not meant to be dismissed by user
                 READ_ONLY_TIP,
-                60 // Light transparency (80/255 ≈ 31%) - visible but not too heavy
+                30 // Very light transparency (30/255 ≈ 12%) - subtle indication
         );
         workspaceOverlay.setVisible(false); // Start hidden
 
         // Create layered pane to support overlay
         workspaceLayeredPane = workspaceOverlay.createLayeredPane(tableScrollPane);
+
+        // Create a focusable wrapper that provides consistent focus behavior across the workspace
+        var focusableWrapper = new JPanel(new BorderLayout()) {
+            @Override
+            public boolean requestFocusInWindow() {
+                boolean result = super.requestFocusInWindow();
+                if (!result) {
+                    requestFocus();
+                }
+                return true;
+            }
+        };
+        focusableWrapper.setFocusable(true);
+        focusableWrapper.setFocusTraversalKeysEnabled(true);
+        focusableWrapper.setOpaque(false); // Transparent so underlying components show through
+        focusableWrapper.add(workspaceLayeredPane, BorderLayout.CENTER);
+
+        // Add mouse listeners to key components to ensure focus
+        var focusMouseListener = new MouseAdapter() {
+            @Override
+            public void mousePressed(MouseEvent e) {
+                if (SwingUtilities.isLeftMouseButton(e)) {
+                    SwingUtilities.invokeLater(() -> {
+                        focusableWrapper.requestFocusInWindow();
+                    });
+                }
+            }
+        };
+
+        // Add to the table (this should definitely work)
+        contextTable.addMouseListener(focusMouseListener);
+
+        // Add to the table header
+        if (contextTable.getTableHeader() != null) {
+            contextTable.getTableHeader().addMouseListener(focusMouseListener);
+        }
+
+        // Add to the scroll pane viewport for empty areas
+        tableScrollPane.getViewport().addMouseListener(focusMouseListener);
+
+        BorderUtils.addFocusBorder(focusableWrapper, focusableWrapper);
 
         // Add a mouse listener to the scroll pane for right-clicks on empty areas
         tableScrollPane.addMouseListener(new MouseAdapter() {
@@ -954,8 +1003,8 @@ public class WorkspacePanel extends JPanel {
 
             private void handleScrollPanePopup(MouseEvent e) {
                 if (e.isPopupTrigger()) {
-                    // Get the scroll pane from the layered pane
-                    var scrollPane = (JScrollPane) workspaceLayeredPane.getComponent(0);
+                    // Use the scroll pane directly instead of getting it from the layered pane
+                    var scrollPane = tableScrollPane;
                     // Get the event point in view coordinates
                     var viewPoint = SwingUtilities.convertPoint(scrollPane, e.getPoint(),
                                                                   scrollPane.getViewport().getView());
@@ -974,24 +1023,13 @@ public class WorkspacePanel extends JPanel {
             }
         });
 
-        tablePanel.add(workspaceLayeredPane, BorderLayout.CENTER);
+        tablePanel.add(focusableWrapper, BorderLayout.CENTER);
 
         setLayout(new BorderLayout());
 
         add(tablePanel, BorderLayout.CENTER);
 
         add(contextSummaryPanel, BorderLayout.SOUTH);
-
-        // Listener for layered pane (focus on click, specific popup for empty area)
-        workspaceLayeredPane.addMouseListener(new MouseAdapter() {
-            @Override
-            public void mouseClicked(MouseEvent e) {
-                // Focus table when clicking on the layered pane
-                if (!e.isPopupTrigger() && SwingUtilities.isLeftMouseButton(e)) {
-                    contextTable.requestFocusInWindow();
-                }
-            }
-        });
 
         // Shared listener for panel-wide context menu and focus
         MouseAdapter panelPopupAndFocusListener = new MouseAdapter() {
@@ -1029,20 +1067,20 @@ public class WorkspacePanel extends JPanel {
      * Gets the list of selected fragments
      */
     public List<ContextFragment> getSelectedFragments() {
-        return SwingUtil.runOnEdt(() -> {
+        List<ContextFragment> v = SwingUtil.runOnEdt(() -> {
             var tableModel = (DefaultTableModel) contextTable.getModel();
             return Arrays.stream(contextTable.getSelectedRows())
                     .mapToObj(row -> (ContextFragment) tableModel.getValueAt(row, FRAGMENT_COLUMN))
                     .collect(Collectors.toList());
         }, List.of());
+        return castNonNull(v);
     }
 
     /**
      * Populates the context table from a Context object.
      */
-    public void populateContextTable(Context ctx) {
+    public void populateContextTable(@Nullable Context ctx) {
         assert SwingUtilities.isEventDispatchThread() : "Not on EDT";
-        this.currentContext = ctx;
         var tableModel = (DefaultTableModel) contextTable.getModel();
         tableModel.setRowCount(0);
 
@@ -1124,14 +1162,14 @@ public class WorkspacePanel extends JPanel {
                 continue;
             }
             try {
-                var model = models.getModel(config.name(), config.reasoning());
+                var modelInstance = models.getModel(config.name(), config.reasoning());
                 // Skip if model is unavailable or a placeholder
-                if (model instanceof Service.UnavailableStreamingModel) {
+                if (modelInstance == null || modelInstance instanceof Service.UnavailableStreamingModel) {
                     logger.debug("Skipping unavailable model for context warning: {}", config.name());
                     continue;
                 }
 
-                int maxInputTokens = models.getMaxInputTokens(model);
+                int maxInputTokens = models.getMaxInputTokens(modelInstance);
                 if (maxInputTokens <= 0) {
                     logger.warn("Model {} has invalid maxInputTokens: {}. Skipping for context warning.", config.name(), maxInputTokens);
                     continue;
@@ -1202,7 +1240,10 @@ public class WorkspacePanel extends JPanel {
      * Called by Chrome to refresh the table if context changes
      */
     public void updateContextTable() {
-        SwingUtilities.invokeLater(() -> populateContextTable(contextManager.selectedContext()));
+        SwingUtilities.invokeLater(() -> {
+            populateContextTable(requireNonNull(contextManager.selectedContext()));
+            refreshMenuState(); // Update menu states when context changes
+        });
     }
 
     private JTextArea createWarningTextArea(String text, Color foregroundColor, String tooltip) {
@@ -1279,6 +1320,14 @@ public class WorkspacePanel extends JPanel {
                 .filter(ProjectFile.class::isInstance)
                 .map(ProjectFile.class::cast)
                 .allMatch(pf -> pf.exists() && project.getRepo().getTrackedFiles().contains(pf));
+    }
+
+    /**
+     * Returns true if the workspace is currently on the latest (top) context.
+     * When false, the workspace is viewing historical context and should be read-only.
+     */
+    private boolean isOnLatestContext() {
+        return Objects.equals(contextManager.selectedContext(), contextManager.topContext());
     }
 
     /**
@@ -1377,8 +1426,13 @@ public class WorkspacePanel extends JPanel {
                 if (dialog == null || !dialog.isConfirmed()) { // Check confirmed state
                     chrome.systemOutput("No method selected.");
                 } else {
-
-                    contextManager.addCallersForMethod(dialog.getSelectedMethod(), dialog.getDepth(), dialog.getCallGraph());
+                    var selectedMethod = dialog.getSelectedMethod();
+                    var callGraph = dialog.getCallGraph();
+                    if (selectedMethod != null && callGraph != null) {
+                        contextManager.addCallersForMethod(selectedMethod, dialog.getDepth(), callGraph);
+                    } else {
+                        chrome.systemOutput("Method selection incomplete or cancelled.");
+                    }
                 }
             } catch (CancellationException cex) {
                 chrome.systemOutput("Method selection canceled.");
@@ -1404,11 +1458,16 @@ public class WorkspacePanel extends JPanel {
                 }
 
                 var dialog = showCallGraphDialog("Select Method for Callees", false);
-                if (dialog == null || !dialog.isConfirmed() || dialog.getSelectedMethod() == null || dialog.getSelectedMethod().isBlank()) {
+                if (dialog == null || !dialog.isConfirmed()) {
                     chrome.systemOutput("No method selected.");
                 } else {
-
-                    contextManager.calleesForMethod(dialog.getSelectedMethod(), dialog.getDepth(), dialog.getCallGraph());
+                    var selectedMethod = dialog.getSelectedMethod();
+                    var callGraph = dialog.getCallGraph();
+                    if (selectedMethod != null && callGraph != null) {
+                        contextManager.calleesForMethod(selectedMethod, dialog.getDepth(), callGraph);
+                    } else {
+                        chrome.systemOutput("Method selection incomplete or cancelled.");
+                    }
                 }
             } catch (CancellationException cex) {
                 chrome.systemOutput("Method selection canceled.");
@@ -1420,7 +1479,7 @@ public class WorkspacePanel extends JPanel {
     /**
      * Show the symbol selection dialog with a type filter
      */
-    private String showSymbolSelectionDialog(String title, Set<CodeUnitType> typeFilter) {
+    private @Nullable String showSymbolSelectionDialog(String title, Set<CodeUnitType> typeFilter) {
         var analyzer = contextManager.getAnalyzerUninterrupted();
         var dialogRef = new AtomicReference<SymbolSelectionDialog>();
         SwingUtil.runOnEdt(() -> {
@@ -1431,8 +1490,8 @@ public class WorkspacePanel extends JPanel {
             dialogRef.set(dialog);
         });
         try {
-            var dialog = dialogRef.get();
-            if (dialog != null && dialog.isConfirmed()) {
+            var dialog = castNonNull(dialogRef.get());
+            if (dialog.isConfirmed()) {
                 return dialog.getSelectedSymbol();
             }
             return null;
@@ -1444,7 +1503,7 @@ public class WorkspacePanel extends JPanel {
     /**
      * Show the call graph dialog for configuring method and depth
      */
-    private CallGraphDialog showCallGraphDialog(String title, boolean isCallerGraph) {
+    private @Nullable CallGraphDialog showCallGraphDialog(String title, boolean isCallerGraph) {
         var analyzer = contextManager.getAnalyzerUninterrupted();
         var dialogRef = new AtomicReference<CallGraphDialog>();
         SwingUtil.runOnEdt(() -> {
@@ -1548,7 +1607,7 @@ public class WorkspacePanel extends JPanel {
         chrome.systemOutput("Content copied to clipboard");
     }
 
-    private @NotNull String getSelectedContent(List<? extends ContextFragment> selectedFragments) {
+    private String getSelectedContent(List<? extends ContextFragment> selectedFragments) {
         String content;
         if (selectedFragments.isEmpty()) {
             // gather entire context
@@ -1771,11 +1830,11 @@ public class WorkspacePanel extends JPanel {
             }
 
             // Add selected files (must be ProjectFile for summarization)
-            if (selection.files() != null) {
+            if (selection.files() != null && !selection.files().isEmpty()) {
                 selectedFiles.addAll(toProjectFilesUnsafe(selection.files()));
             }
             // Add selected classes/symbols
-            if (selection.classes() != null) {
+            if (selection.classes() != null && !selection.classes().isEmpty()) {
                 selectedClasses.addAll(selection.classes());
             }
         } else {
@@ -1822,7 +1881,7 @@ public class WorkspacePanel extends JPanel {
      * @param modes              Set of selection modes (FILES, CLASSES) to enable.
      * @return The Selection record containing lists of files and/or classes, or null if cancelled.
      */
-    private MultiFileSelectionDialog.Selection showMultiSourceSelectionDialog(String title, boolean allowExternalFiles, Future<Set<ProjectFile>> projectCompletionsFuture, Set<SelectionMode> modes) {
+    private @Nullable MultiFileSelectionDialog.Selection showMultiSourceSelectionDialog(String title, boolean allowExternalFiles, Future<Set<ProjectFile>> projectCompletionsFuture, Set<SelectionMode> modes) {
         var dialogRef = new AtomicReference<MultiFileSelectionDialog>();
         SwingUtil.runOnEdt(() -> {
             var dialog = new MultiFileSelectionDialog(chrome.getFrame(), contextManager, title, allowExternalFiles, projectCompletionsFuture, modes);
@@ -1919,12 +1978,17 @@ public class WorkspacePanel extends JPanel {
         SwingUtilities.invokeLater(() -> {
             this.workspaceCurrentlyEditable = editable;
 
-            // Show/hide overlay based on editable state
+            // Show/hide overlay based on editable state and update title
             if (editable) {
                 workspaceOverlay.hideOverlay();
+                workspaceTitledBorder.setTitle(WORKSPACE_TITLE);
             } else {
                 workspaceOverlay.showOverlay();
+                workspaceTitledBorder.setTitle(WORKSPACE_TITLE_NOT_LIVE);
             }
+
+            // Repaint to show title change
+            repaint();
 
             refreshMenuState();
         });
@@ -1937,7 +2001,7 @@ public class WorkspacePanel extends JPanel {
         SwingUtilities.invokeLater(() -> {
             if (analyzerRebuildSpinner == null) {
                 analyzerRebuildSpinner = new JLabel();
-                var spinnerIcon = getCachedSpinnerIcon();
+                var spinnerIcon = SpinnerIconUtil.getSpinner(chrome, /*small=*/ true);
                 if (spinnerIcon != null) {
                     analyzerRebuildSpinner.setIcon(spinnerIcon);
                 }
@@ -1986,38 +2050,44 @@ public class WorkspacePanel extends JPanel {
         });
     }
 
-    private Icon getCachedSpinnerIcon() {
-        boolean isDark = chrome.getTheme() != null && chrome.getTheme().isDarkTheme();
-        String path = "/icons/" + (isDark ? "spinner_dark.gif" : "spinner_white.gif");
-        var url = getClass().getResource(path);
-
-        if (url == null) {
-            logger.warn("Spinner icon resource not found: {}", path);
-            return null;
-        }
-
-        ImageIcon originalIcon = new ImageIcon(url);
-        // Create a new ImageIcon from the Image to ensure animation restarts
-        return new ImageIcon(originalIcon.getImage());
+    /**
+     * Sets the drop all menu item reference for dynamic state updates.
+     */
+    public void setDropAllMenuItem(JMenuItem dropAllMenuItem) {
+        this.dropAllMenuItem = dropAllMenuItem;
     }
 
     private void refreshMenuState() {
-        if (tablePopupMenu == null) {
-            return;
-        }
         var editable = workspaceCurrentlyEditable;
+        var onLastHistoryItem = isOnLatestContext();
+
         for (var component : tablePopupMenu.getComponents()) {
             if (component instanceof JMenuItem mi) {
-                // "Copy All" is always enabled.
-                // Other JMenuItems (including JMenu "Add") are enabled based on workspace editability.
                 boolean copyAll = COPY_ALL_ACTION_CMD.equals(mi.getActionCommand());
-                mi.setEnabled(editable || copyAll);
-                if (copyAll || editable) {
+                boolean dropAll = DROP_ALL_ACTION_CMD.equals(mi.getActionCommand());
+
+                if (dropAll) {
+                    // "Drop All" is only visible and enabled when workspace is editable and on last history item
+                    mi.setVisible(editable && onLastHistoryItem);
+                    mi.setEnabled(editable && onLastHistoryItem);
+                    mi.setToolTipText(editable && onLastHistoryItem ? null : READ_ONLY_TIP);
+                } else if (copyAll) {
+                    // "Copy All" is always enabled and visible
+                    mi.setEnabled(true);
+                    mi.setVisible(true);
                     mi.setToolTipText(null);
                 } else {
-                    mi.setToolTipText(READ_ONLY_TIP);
+                    // Other menu items (including JMenu "Add") are enabled based on workspace editability
+                    mi.setEnabled(editable);
+                    mi.setVisible(true);
+                    mi.setToolTipText(editable ? null : READ_ONLY_TIP);
                 }
             }
+        }
+
+        // Also update the global drop all menu item
+        if (dropAllMenuItem != null) {
+            dropAllMenuItem.setEnabled(editable && onLastHistoryItem);
         }
     }
 }

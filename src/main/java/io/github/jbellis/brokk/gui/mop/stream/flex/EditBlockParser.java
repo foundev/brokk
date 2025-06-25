@@ -16,6 +16,8 @@ import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 import org.jetbrains.annotations.Nullable;
 
+import java.util.Collections;
+import java.util.Objects;
 import java.util.Set;
 import java.util.regex.Matcher;
 
@@ -37,9 +39,9 @@ public class EditBlockParser extends AbstractBlockParser {
     private final BasedSequence openingMarker;
     private final BasedSequence searchKeyword;
 
-    private BasedSequence divider;
-    private BasedSequence replaceKeyword;
-    private BasedSequence closingMarker;
+    private BasedSequence divider = BasedSequence.NULL;
+    private BasedSequence replaceKeyword = BasedSequence.NULL;
+    private BasedSequence closingMarker = BasedSequence.NULL;
 
     // Parser state
     private Phase phase = Phase.SEARCH;
@@ -143,8 +145,8 @@ public class EditBlockParser extends AbstractBlockParser {
                     this.closingMarker = line;
                     replaceKeyword = BasedSequence.of("REPLACE");
 
-                    var beforeText = stripQuotedWrapping(searchContent.toString(), currentFilename);
-                    var afterText = stripQuotedWrapping(replaceContent.toString(), currentFilename);
+                    var beforeText = stripQuotedWrapping(searchContent.toString(), Objects.toString(currentFilename, ""));
+                    var afterText = stripQuotedWrapping(replaceContent.toString(), Objects.toString(currentFilename, ""));
 
                     block.setSegments(openingMarker, searchKeyword,
                                       BasedSequence.of(beforeText),
@@ -182,17 +184,17 @@ public class EditBlockParser extends AbstractBlockParser {
 
     @Override
     public void closeBlock(ParserState state) {
-        // If we haven't already set segments, do it now
-        if (block.getOpeningMarker() == null) {
-            var beforeText = stripQuotedWrapping(searchContent.toString(), currentFilename);
-            var afterText = stripQuotedWrapping(replaceContent.toString(), currentFilename);
+        // If we haven't already set segments (e.g. because closing marker was not found yet), do it now
+        if (block.getOpeningMarker() == BasedSequence.NULL && openingMarker != BasedSequence.NULL) {
+            var beforeText = stripQuotedWrapping(searchContent.toString(), Objects.toString(currentFilename, ""));
+            var afterText = stripQuotedWrapping(replaceContent.toString(), Objects.toString(currentFilename, ""));
 
             block.setSegments(openingMarker, searchKeyword,
                               BasedSequence.of(beforeText),
-                              divider != null ? divider : BasedSequence.NULL,
-                              replaceKeyword != null ? replaceKeyword : BasedSequence.NULL,
+                              divider, // already defaults to BasedSequence.NULL
+                              replaceKeyword, // already defaults to BasedSequence.NULL
                               BasedSequence.of(afterText),
-                              closingMarker != null ? closingMarker : BasedSequence.NULL);
+                              closingMarker); // already defaults to BasedSequence.NULL
         }
 
         // Ensure filename is set
@@ -339,12 +341,12 @@ public class EditBlockParser extends AbstractBlockParser {
 
         @Override
         public Set<Class<?>> getAfterDependents() {
-            return null;
+            return Collections.emptySet();
         }
 
         @Override
         public Set<Class<?>> getBeforeDependents() {
-            return null;
+            return Collections.emptySet();
         }
     }
 }
