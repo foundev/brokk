@@ -40,7 +40,6 @@ public class CodeAgent {
     private static final Logger logger = LogManager.getLogger(CodeAgent.class);
     private static final int MAX_PARSE_ATTEMPTS = 3;
     private static final int MAX_APPLY_FAILURES_BEFORE_FALLBACK = 3;
-    private static final int MAX_BUILD_FAILURES = 3;
 
     // private record ApplyResult(EditBlock.EditResult editResult, int updatedApplyFailures) {} // ApplyResult is no longer returned by applyBlocksAndHandleErrors
 
@@ -69,8 +68,7 @@ public class CodeAgent {
         int blocksAppliedWithoutBuild,
         String lastBuildError,
         Set<ProjectFile> changedFiles,
-        Map<ProjectFile, String> originalFileContents,
-        int consecutiveBuildFailures // New field
+        Map<ProjectFile, String> originalFileContents
     ) {}
 
     private final IContextManager contextManager;
@@ -126,7 +124,7 @@ public class CodeAgent {
                                                                    parser);
 
         var conversationState = new ConversationState(taskMessages, nextRequest, originalWorkspaceEditableMessages);
-        var workspaceState = new WorkspaceState(blocks, 0 /* initial parseFailures */, applyFailures, blocksAppliedWithoutBuild, buildError, changedFiles, originalFileContents, 0 /* initial consecutiveBuildFailures */);
+        var workspaceState = new WorkspaceState(blocks, 0 /* initial parseFailures */, applyFailures, blocksAppliedWithoutBuild, buildError, changedFiles, originalFileContents);
         var loopContext = new LoopContext(conversationState, workspaceState, userInput);
 
         while (true) {
@@ -278,7 +276,7 @@ public class CodeAgent {
             }
             // For pure parse failure (newlyParsedBlocks is empty), pendingBlocksForRetry remains as currentWorkspaceState.pendingBlocks()
             // Keep existing blocksAppliedWithoutBuild for Retry
-            var nextWorkspaceState = new WorkspaceState(pendingBlocksForRetry, updatedConsecutiveParseFailures, currentWorkspaceState.consecutiveApplyFailures(), currentWorkspaceState.blocksAppliedWithoutBuild(), currentWorkspaceState.lastBuildError(), currentWorkspaceState.changedFiles(), currentWorkspaceState.originalFileContents(), currentWorkspaceState.consecutiveBuildFailures());
+            var nextWorkspaceState = new WorkspaceState(pendingBlocksForRetry, updatedConsecutiveParseFailures, currentWorkspaceState.consecutiveApplyFailures(), currentWorkspaceState.blocksAppliedWithoutBuild(), currentWorkspaceState.lastBuildError(), currentWorkspaceState.changedFiles(), currentWorkspaceState.originalFileContents());
             return new Step.Retry(new LoopContext(nextConversationState, nextWorkspaceState, currentLoopContext.userGoal()), requireNonNull(consoleLogForRetry));
         } else { // No Parse Error
             updatedConsecutiveParseFailures = 0; // Reset on successful parse segment
@@ -297,7 +295,7 @@ public class CodeAgent {
                 var pendingBlocksForRetry = new ArrayList<>(currentWorkspaceState.pendingBlocks());
                 pendingBlocksForRetry.addAll(newlyParsedBlocks); // Add successfully parsed blocks before retry
                 // Keep existing blocksAppliedWithoutBuild for Retry even on clean partial response
-                var nextWorkspaceState = new WorkspaceState(pendingBlocksForRetry, updatedConsecutiveParseFailures, currentWorkspaceState.consecutiveApplyFailures(), currentWorkspaceState.blocksAppliedWithoutBuild(), currentWorkspaceState.lastBuildError(), currentWorkspaceState.changedFiles(), currentWorkspaceState.originalFileContents(), currentWorkspaceState.consecutiveBuildFailures());
+                var nextWorkspaceState = new WorkspaceState(pendingBlocksForRetry, updatedConsecutiveParseFailures, currentWorkspaceState.consecutiveApplyFailures(), currentWorkspaceState.blocksAppliedWithoutBuild(), currentWorkspaceState.lastBuildError(), currentWorkspaceState.changedFiles(), currentWorkspaceState.originalFileContents());
                 return new Step.Retry(new LoopContext(nextConversationState, nextWorkspaceState, currentLoopContext.userGoal()), requireNonNull(consoleLogForRetry));
             } else { // Full successful parse of this segment
                 // Token Redaction:
@@ -318,7 +316,7 @@ public class CodeAgent {
                     currentConversationState.originalWorkspaceEditableMessages()
                 );
 
-                var nextWorkspaceState = new WorkspaceState(mutablePendingBlocks, updatedConsecutiveParseFailures, currentWorkspaceState.consecutiveApplyFailures(), currentWorkspaceState.blocksAppliedWithoutBuild(), currentWorkspaceState.lastBuildError(), currentWorkspaceState.changedFiles(), currentWorkspaceState.originalFileContents(), currentWorkspaceState.consecutiveBuildFailures());
+                var nextWorkspaceState = new WorkspaceState(mutablePendingBlocks, updatedConsecutiveParseFailures, currentWorkspaceState.consecutiveApplyFailures(), currentWorkspaceState.blocksAppliedWithoutBuild(), currentWorkspaceState.lastBuildError(), currentWorkspaceState.changedFiles(), currentWorkspaceState.originalFileContents());
                 return new Step.Continue(new LoopContext(nextConversationStateWithRedaction, nextWorkspaceState, currentLoopContext.userGoal()), List.copyOf(newlyParsedBlocks));
             }
         }
@@ -783,22 +781,13 @@ public class CodeAgent {
                 0, // blocksAppliedWithoutBuild is reset
                 "", // lastBuildError is empty
                 ws.changedFiles(),
-                ws.originalFileContents(),
-                0 // consecutiveBuildFailures is reset
+                ws.originalFileContents()
             );
             // On successful build, the loopContext for Step.Continue should reflect this clean state.
             // The userGoal is still the same, and conversation history is preserved.
             // The nextRequest in cs might be a placeholder from applyPhase fallback; it will be ignored if runTask terminates due to SUCCESS.
             return new Step.Continue(new LoopContext(cs, newWs, currentLoopContext.userGoal()), Collections.emptyList());
         } else { // Build failed
-            int updatedConsecutiveBuildFailures = ws.consecutiveBuildFailures() + 1;
-
-            if (updatedConsecutiveBuildFailures >= MAX_BUILD_FAILURES) {
-                String fatalMessage = "Build failed after " + updatedConsecutiveBuildFailures + " attempts. Last error:\n" + latestBuildError;
-                io.systemOutput(fatalMessage);
-                return new Step.Fatal(new TaskResult.StopDetails(TaskResult.StopReason.BUILD_ERROR, fatalMessage));
-            }
-
             // Prepare for retry
             UserMessage nextRequestForBuildFailure = new UserMessage(formatBuildErrorsForLLM(latestBuildError));
             var newCs = new ConversationState(
@@ -813,8 +802,7 @@ public class CodeAgent {
                 0, // blocksAppliedWithoutBuild is reset
                 latestBuildError, // Store the new build error
                 ws.changedFiles(),
-                ws.originalFileContents(),
-                updatedConsecutiveBuildFailures // Store updated build failure count
+                ws.originalFileContents()
             );
             return new Step.Retry(new LoopContext(newCs, newWs, currentLoopContext.userGoal()), "Build failed with: " + latestBuildError.lines().findFirst().orElse("") + "... Asking LLM to fix.");
         }
@@ -893,8 +881,7 @@ public class CodeAgent {
                         1, // Force build as per plan (at least one "edit" happened via fallback)
                         ws.lastBuildError(), // Keep last build error for now
                         updatedChangedFiles, // Use updated set
-                        nextOriginalFileContents,
-                        ws.consecutiveBuildFailures()
+                        nextOriginalFileContents
                     );
                     return new Step.Continue(new LoopContext(csForStep, wsForStep, currentLoopContext.userGoal()), Collections.emptyList());
                 } else { // Apply failed, but not yet time for full fallback -> ask LLM to retry
@@ -909,12 +896,14 @@ public class CodeAgent {
                         newBlocksAppliedWithoutBuild,
                         ws.lastBuildError(),
                         ws.changedFiles(),
-                        nextOriginalFileContents,
-                        ws.consecutiveBuildFailures()
+                        nextOriginalFileContents
                     );
                     return new Step.Retry(new LoopContext(csForStep, wsForStep, currentLoopContext.userGoal()), "Retrying apply failures for %d blocks.".formatted(editResult.failedBlocks().size()));
                 }
             } else { // All blocks from ws.pendingBlocks() applied successfully
+                if (succeededCount > 0) {
+                    io.llmOutput("\n" + succeededCount + " SEARCH/REPLACE blocks applied.", ChatMessageType.CUSTOM);
+                }
                 updatedConsecutiveApplyFailures = 0; // Reset on success
                 wsForStep = new WorkspaceState(
                     nextPendingBlocks, // empty
@@ -923,8 +912,7 @@ public class CodeAgent {
                     newBlocksAppliedWithoutBuild,
                         ws.lastBuildError(),
                         ws.changedFiles(),
-                        nextOriginalFileContents,
-                        ws.consecutiveBuildFailures()
+                        nextOriginalFileContents
                     );
                 return new Step.Continue(new LoopContext(csForStep, wsForStep, currentLoopContext.userGoal()), Collections.emptyList());
             }
