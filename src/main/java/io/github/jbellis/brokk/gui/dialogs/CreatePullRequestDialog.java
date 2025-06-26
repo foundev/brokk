@@ -686,33 +686,48 @@ public class CreatePullRequestDialog extends JDialog {
 
         @Override
         protected void done() {
-            if (isCancelled()) {
-                logger.debug("SuggestPrDetailsWorker cancelled for {} -> {}", sourceBranch, targetBranch);
-                return;
-            }
-
             try {
-                GitWorkflowService.PrSuggestion suggestion = get();
+                GitWorkflowService.PrSuggestion suggestion = get(); // This will throw specific exceptions if cancelled/interrupted.
                 SwingUtilities.invokeLater(() -> {
                     setTextAndResetCaret(titleField, suggestion.title());
                     setTextAndResetCaret(descriptionArea, suggestion.description());
                     showDescriptionHint(suggestion.usedCommitMessages());
                 });
             } catch (InterruptedException e) {
-                Thread.currentThread().interrupt();
+                Thread.currentThread().interrupt(); // Preserve interrupt status
                 logger.warn("SuggestPrDetailsWorker interrupted for {} -> {}", sourceBranch, targetBranch, e);
                 SwingUtilities.invokeLater(() -> {
                     setTextAndResetCaret(titleField, "(suggestion interrupted)");
                     setTextAndResetCaret(descriptionArea, "(suggestion interrupted)");
                     showDescriptionHint(false);
                 });
-            } catch (Exception e) {
-                logger.warn("SuggestPrDetailsWorker failed for {} -> {}", sourceBranch, targetBranch, e);
+            } catch (java.util.concurrent.CancellationException e) {
+                logger.warn("SuggestPrDetailsWorker cancelled for {} -> {}", sourceBranch, targetBranch, e);
                 SwingUtilities.invokeLater(() -> {
-                    setTextAndResetCaret(titleField, "(suggestion failed)");
-                    setTextAndResetCaret(descriptionArea, "(suggestion failed: " + e.getMessage() + ")");
+                    setTextAndResetCaret(titleField, "(suggestion cancelled)");
+                    setTextAndResetCaret(descriptionArea, "(suggestion cancelled)");
                     showDescriptionHint(false);
                 });
+            } catch (java.util.concurrent.ExecutionException e) {
+                Throwable cause = e.getCause();
+                if (cause instanceof InterruptedException interruptedException) {
+                    Thread.currentThread().interrupt(); // Preserve interrupt status
+                    logger.warn("SuggestPrDetailsWorker execution failed due to underlying interruption for {} -> {}", sourceBranch, targetBranch, interruptedException);
+                    SwingUtilities.invokeLater(() -> {
+                        setTextAndResetCaret(titleField, "(suggestion interrupted)");
+                        setTextAndResetCaret(descriptionArea, "(suggestion interrupted)");
+                        showDescriptionHint(false);
+                    });
+                } else {
+                    logger.warn("SuggestPrDetailsWorker failed with ExecutionException for {} -> {}: {}", sourceBranch, targetBranch, (cause != null ? cause.getMessage() : e.getMessage()), cause);
+                    SwingUtilities.invokeLater(() -> {
+                        String errorMessage = (cause != null && cause.getMessage() != null) ? cause.getMessage() : e.getMessage();
+                        errorMessage = (errorMessage == null) ? "Unknown error" : errorMessage;
+                        setTextAndResetCaret(titleField, "(suggestion failed)");
+                        setTextAndResetCaret(descriptionArea, "(suggestion failed: " + errorMessage + ")");
+                        showDescriptionHint(false);
+                    });
+                }
             }
         }
     }

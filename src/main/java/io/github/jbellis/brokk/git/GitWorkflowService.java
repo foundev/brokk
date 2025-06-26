@@ -192,11 +192,27 @@ public final class GitWorkflowService {
         return new BranchDiff(commits, files, merge);
     }
 
-    /** Blocks; caller should off-load to a background thread (SwingWorker, etc.). */
+    private static void throwIfInterrupted() throws InterruptedException {
+        if (Thread.currentThread().isInterrupted()) {
+            throw new InterruptedException("Operation cancelled by interrupt");
+        }
+    }
+
+    /**
+     * Suggests pull request title and description. Blocks; caller should off-load to a
+     * background thread (SwingWorker, etc.). This method is designed to be responsive
+     * to thread interruption.
+     *
+     * @throws InterruptedException if the calling thread is interrupted during processing.
+     */
     public PrSuggestion suggestPullRequestDetails(String source, String target) throws Exception {
+        throwIfInterrupted(); // Check at the beginning
+
         // 1. Compute merge base & diff text
         var mergeBase = repo.getMergeBase(source, target);
+        throwIfInterrupted(); // Check after potential Git operation
         String diff = (mergeBase != null) ? repo.showDiff(source, mergeBase) : "";
+        throwIfInterrupted(); // Check after potential Git operation
 
         // 2. Decide “too big?” heuristic
         var service    = contextManager.getService();
@@ -206,23 +222,30 @@ public final class GitWorkflowService {
         boolean useCommitMsgs = diff.length() / 3.0 > maxTokens * 0.9;
 
         // 3. Build messages
-        List<ChatMessage> messages = useCommitMsgs
-                ? SummarizerPrompts.instance.collectPrDescriptionFromCommitMsgs(
-                        repo.getCommitMessagesBetween(source, target))
-                : SummarizerPrompts.instance.collectPrDescriptionMessages(diff);
+        List<ChatMessage> messages;
+        if (useCommitMsgs) {
+            var commitMessagesContent = repo.getCommitMessagesBetween(source, target);
+            throwIfInterrupted(); // Check after potential Git operation
+            messages = SummarizerPrompts.instance.collectPrDescriptionFromCommitMsgs(commitMessagesContent);
+        } else {
+            messages = SummarizerPrompts.instance.collectPrDescriptionMessages(diff);
+        }
+        throwIfInterrupted(); // Check before LLM call, after messages are prepared
 
         // 4. Call LLM
         // modelToUse is guaranteed non-null from the logic above
         var llm      = contextManager.getLlm(modelToUse, "PR-description");
         var response = llm.sendRequest(messages);
+        throwIfInterrupted(); // Check after LLM call
         String description = response.text().trim();
 
         // 5. Title summarisation (12-word budget)
+        throwIfInterrupted(); // Check before starting/blocking on title summarization
         ContextManager.SummarizeWorker titleWorker = new ContextManager.SummarizeWorker(this.contextManager,
                                                                                          description,
                                                                                          SummarizerPrompts.WORD_BUDGET_12);
         titleWorker.execute(); // Schedule the worker
-        String title = titleWorker.get(); // Blocks until completion and gets the result
+        String title = titleWorker.get(); // Blocks; will throw InterruptedException if this thread is interrupted
 
         return new PrSuggestion(title, description, useCommitMsgs);
     }
