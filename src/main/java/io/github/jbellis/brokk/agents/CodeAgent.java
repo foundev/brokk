@@ -38,30 +38,32 @@ import java.util.stream.Stream;
  */
 public class CodeAgent {
     private static final Logger logger = LogManager.getLogger(CodeAgent.class);
+    // Made package-private for test access
+    static final int MAX_PARSE_ATTEMPTS_FOR_TEST = 3; // Renamed to avoid collision if original MAX_PARSE_ATTEMPTS is kept private for other reasons
     private static final int MAX_PARSE_ATTEMPTS = 3;
     private static final int MAX_APPLY_FAILURES_BEFORE_FALLBACK = 3;
 
     // private record ApplyResult(EditBlock.EditResult editResult, int updatedApplyFailures) {} // ApplyResult is no longer returned by applyBlocksAndHandleErrors
 
-    private record LoopContext(
+    record LoopContext(
         ConversationState conversationState,
         WorkspaceState workspaceState,
         String userGoal
     ) {}
 
-    private sealed interface Step permits Step.Continue, Step.Retry, Step.Fatal {
+    sealed interface Step permits Step.Continue, Step.Retry, Step.Fatal {
         record Continue(LoopContext loopContext, List<EditBlock.SearchReplaceBlock> newlyParsedBlocksInThisSegment) implements Step {}
         record Retry(LoopContext loopContext, String consoleLogMessage) implements Step {}
         record Fatal(TaskResult.StopDetails stopDetails) implements Step {}
     }
 
-    private record ConversationState(
+    record ConversationState(
         List<ChatMessage> taskMessages,
         UserMessage nextRequest,
         List<ChatMessage> originalWorkspaceEditableMessages
     ) {}
 
-    private record WorkspaceState(
+    record WorkspaceState(
         List<EditBlock.SearchReplaceBlock> pendingBlocks,
         int consecutiveParseFailures,
         int consecutiveApplyFailures,
@@ -71,7 +73,7 @@ public class CodeAgent {
         Map<ProjectFile, String> originalFileContents
     ) {}
 
-    private final IContextManager contextManager;
+    final IContextManager contextManager;
     private final StreamingChatLanguageModel model;
     private final IConsoleIO io;
 
@@ -160,7 +162,7 @@ public class CodeAgent {
             if (stopDetails != null) break; // If requestPhase was Fatal
 
             // --- PARSE PHASE ---
-            var parseOutcome = parsePhase(loopContext, streamingResult.text(), streamingResult.isPartial(), parser);
+            var parseOutcome = parsePhase(loopContext, streamingResult.text(), streamingResult.isPartial(), parser); // Ensure parser is available
             switch (parseOutcome) {
                 case Step.Continue(var newLoopContext, var _ignoredBlocks) -> loopContext = newLoopContext;
                 case Step.Retry(var newLoopContext, var consoleMsg) -> {
@@ -239,7 +241,7 @@ public class CodeAgent {
                               stopDetails);
     }
 
-    private Step parsePhase(LoopContext currentLoopContext, String llmText, boolean isPartialResponse, EditBlockParser parser) {
+    Step parsePhase(LoopContext currentLoopContext, String llmText, boolean isPartialResponse, EditBlockParser parser) {
         var currentConversationState = currentLoopContext.conversationState();
         var currentWorkspaceState = currentLoopContext.workspaceState();
 
@@ -676,8 +678,8 @@ public class CodeAgent {
                """.stripIndent().formatted(lastBlock);
     }
 
-    private static class EditStopException extends RuntimeException {
-        private final TaskResult.StopDetails stopDetails;
+    static class EditStopException extends RuntimeException {
+        final TaskResult.StopDetails stopDetails;
 
         public EditStopException(TaskResult.StopDetails stopDetails) {
             super(stopDetails.reason().name() + (stopDetails.explanation() != null ? ": " + stopDetails.explanation() : ""));
@@ -689,7 +691,7 @@ public class CodeAgent {
         }
     }
 
-    private Step requestPhase(LoopContext currentLoopContext, StreamingResult streamingResultFromLlm) {
+    Step requestPhase(LoopContext currentLoopContext, StreamingResult streamingResultFromLlm) {
         var cs = currentLoopContext.conversationState();
         // var ws = currentLoopContext.workspaceState(); // ws not directly used in this phase's logic other than for sendLlmRequest, which is now outside
 
@@ -753,7 +755,7 @@ public class CodeAgent {
         return editResult;
     }
 
-    private Step verifyPhase(LoopContext currentLoopContext) {
+    Step verifyPhase(LoopContext currentLoopContext) {
         var cs = currentLoopContext.conversationState();
         var ws = currentLoopContext.workspaceState();
 
@@ -808,7 +810,7 @@ public class CodeAgent {
         }
     }
 
-    private Step applyPhase(LoopContext currentLoopContext, EditBlockParser parser) {
+    Step applyPhase(LoopContext currentLoopContext, EditBlockParser parser) {
         var cs = currentLoopContext.conversationState();
         var ws = currentLoopContext.workspaceState();
 

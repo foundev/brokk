@@ -2,7 +2,7 @@ package io.github.jbellis.brokk;
 
 import dev.langchain4j.data.message.ChatMessageType;
 
-class TestConsoleIO implements IConsoleIO {
+public class TestConsoleIO implements IConsoleIO {
     private final StringBuilder outputLog = new StringBuilder();
     private final StringBuilder errorLog = new StringBuilder();
 

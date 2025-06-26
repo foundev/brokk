@@ -1,23 +1,71 @@
 package io.github.jbellis.brokk.testutil;
 
 import io.github.jbellis.brokk.IContextManager;
+import io.github.jbellis.brokk.IProject;
+import io.github.jbellis.brokk.analyzer.BrokkFile;
 import io.github.jbellis.brokk.analyzer.IAnalyzer;
 import io.github.jbellis.brokk.analyzer.Language;
+import io.github.jbellis.brokk.analyzer.ProjectFile;
+import io.github.jbellis.brokk.git.InMemoryRepo;
 
 import java.nio.file.Path;
+import java.util.HashSet;
+import java.util.Set;
 
 public final class TestContextManager implements IContextManager {
     private final TestProject project;
     private final IAnalyzer mockAnalyzer;
+    private final InMemoryRepo inMemoryRepo;
+    private final Set<ProjectFile> editableFiles = new HashSet<>();
+    private final Set<ProjectFile> readonlyFiles = new HashSet<>();
 
     public TestContextManager(Path projectRoot) {
         this.project = new TestProject(projectRoot, Language.JAVA);
         this.mockAnalyzer = new MockAnalyzer();
+        this.inMemoryRepo = new InMemoryRepo();
     }
 
     @Override
     public TestProject getProject() {
         return project;
+    }
+
+    @Override
+    public InMemoryRepo getRepo() {
+        return inMemoryRepo;
+    }
+
+    @Override
+    public Set<ProjectFile> getEditableFiles() {
+        return new HashSet<>(editableFiles);
+    }
+
+    @Override
+    public Set<BrokkFile> getReadonlyFiles() {
+        // Assuming ProjectFile is a subtype of BrokkFile,
+        // new HashSet<>(readonlyFiles) which is Set<ProjectFile>
+        // can be returned as Set<BrokkFile>.
+        return new HashSet<>(readonlyFiles);
+    }
+
+    public void addEditableFile(ProjectFile file) {
+        this.editableFiles.add(file);
+        this.readonlyFiles.remove(file); // Cannot be both
+    }
+
+    public void addReadonlyFile(ProjectFile file) {
+        this.readonlyFiles.add(file);
+        this.editableFiles.remove(file); // Cannot be both
+    }
+
+    public void clearEditableAndReadOnlyFiles() {
+        this.editableFiles.clear();
+        this.readonlyFiles.clear();
+    }
+    
+    @Override
+    public ProjectFile toFile(String relName) {
+        return new ProjectFile(project.getRoot(), relName);
     }
 
     @Override
