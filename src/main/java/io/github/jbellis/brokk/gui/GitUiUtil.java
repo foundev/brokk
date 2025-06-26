@@ -13,6 +13,7 @@ import io.github.jbellis.brokk.util.SyntaxDetector;
 import org.fife.ui.rsyntaxtextarea.SyntaxConstants;
 
 import javax.swing.*;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.regex.Pattern;
 import java.util.stream.Collectors;
@@ -223,14 +224,20 @@ public final class GitUiUtil
                 var repo = contextManager.getProject().getRepo();
 
                 // Fetch diff using the correct parent syntax for range
+                // For a single commit selection, firstCommitId == lastCommitId, so diff is commitId vs commitId^
                 var diff = repo.showDiff(firstCommitId, lastCommitId + "^");
                 if (diff.isEmpty()) {
                     chrome.systemOutput("No changes found in the selected commit range");
                     return;
                 }
 
-                // Use the correct method to list files between the two commits
-                var changedFiles = repo.listFilesChangedBetweenCommits(firstCommitId, lastCommitId);
+                List<ProjectFile> changedFiles;
+                if (firstCommitId.equals(lastCommitId)) {
+                    changedFiles = firstCommitInfo.changedFiles(); // More accurate for single commit
+                } else {
+                    changedFiles = repo.listFilesChangedBetweenCommits(firstCommitId, lastCommitId);
+                }
+
                 var fileNames = changedFiles.stream()
                         .map(ProjectFile::getFileName)
                         .collect(Collectors.toList());
@@ -609,6 +616,98 @@ public final class GitUiUtil
                ? files.stream().map(ProjectFile::getFileName).collect(Collectors.joining(", "))
                : files.size() + " files";
     }
+
+    /**
+     * Groups contiguous integers from a sorted array into sub-lists.
+     * @param sortedRows A sorted array of integers.
+     * @return A list of lists, where each inner list contains a sequence of contiguous integers.
+     */
+    public static List<List<Integer>> groupContiguous(int[] sortedRows) {
+        if (sortedRows.length == 0) return List.of();
+
+        var groups = new ArrayList<List<Integer>>();
+        var currentGroup = new ArrayList<Integer>();
+        currentGroup.add(sortedRows[0]);
+        groups.add(currentGroup);
+
+        for (int i = 1; i < sortedRows.length; i++) {
+            if (sortedRows[i] == sortedRows[i - 1] + 1) {
+                currentGroup.add(sortedRows[i]);
+            } else {
+                currentGroup = new ArrayList<>();
+                currentGroup.add(sortedRows[i]);
+                groups.add(currentGroup);
+            }
+        }
+        return groups;
+    }
+
+    /**
+     * Captures the diff for a range of commits, defined by the chronologically newest and oldest
+     * ICommitInfo objects in the selection, and adds it to the context.
+     * The diff is calculated from the parent of the oldest commit in the range up to the newest commit.
+     *
+     * @param contextManager      The ContextManager instance.
+     * @param chrome              The Chrome instance for UI feedback.
+     * @param newestCommitInSelection The ICommitInfo for the newest commit in the selected range.
+     * @param oldestCommitInSelection The ICommitInfo for the oldest commit in the selected range.
+     */
+    public static void addDiffFromCommitInfoRangeToContext
+    (
+            ContextManager contextManager,
+            Chrome chrome,
+            ICommitInfo newestCommitInSelection,
+            ICommitInfo oldestCommitInSelection
+    ) {
+        String taskDescription = String.format("Capturing diff from %s to %s",
+                                               shortenCommitId(oldestCommitInSelection.id()),
+                                               shortenCommitId(newestCommitInSelection.id()));
+        contextManager.submitContextTask(taskDescription, () -> {
+            try {
+                var repo = contextManager.getProject().getRepo();
+                var newestCommitId = newestCommitInSelection.id();
+                var oldestCommitId = oldestCommitInSelection.id();
+
+                // Diff is from oldestCommit's parent up to newestCommit.
+                String diff = repo.showDiff(newestCommitId, oldestCommitId + "^");
+                if (diff.isEmpty()) {
+                    chrome.systemOutput("No changes found in the selected commit range");
+                    return;
+                }
+
+                List<ProjectFile> changedFiles;
+                if (newestCommitId.equals(oldestCommitId)) { // Single commit selected
+                    changedFiles = newestCommitInSelection.changedFiles();
+                } else {
+                    // Files changed between oldest selected commit's parent and newest selected commit
+                    changedFiles = repo.listFilesChangedBetweenCommits(newestCommitId, oldestCommitId + "^");
+                }
+
+                var fileNamesSummary = formatFileList(changedFiles);
+
+                var newestShort = shortenCommitId(newestCommitId);
+                var oldestShort = shortenCommitId(oldestCommitId);
+                var hashTxt = newestCommitId.equals(oldestCommitId)
+                              ? newestShort
+                              : oldestShort + ".." + newestShort;
+
+                var description = "Diff of %s [%s]".formatted(fileNamesSummary, hashTxt);
+
+                var syntaxStyle = changedFiles.isEmpty() ? SyntaxConstants.SYNTAX_STYLE_NONE :
+                                 SyntaxDetector.fromExtension(changedFiles.getFirst().extension());
+                var fragment = new ContextFragment.StringFragment(contextManager, diff, description, syntaxStyle);
+                contextManager.addVirtualFragment(fragment);
+                chrome.systemOutput("Added changes for commit range " + hashTxt + " to context");
+            } catch (Exception ex) {
+                logger.warn("Error adding commit range to context ({}..{}): {}",
+                            shortenCommitId(oldestCommitInSelection.id()),
+                            shortenCommitId(newestCommitInSelection.id()),
+                            ex.getMessage(), ex);
+                chrome.toolError("Error adding commit range to context: " + ex.getMessage());
+            }
+        });
+    }
+
 
     /**
      * Captures the diff of a pull request (between its head and its effective base) and adds it to the context.
