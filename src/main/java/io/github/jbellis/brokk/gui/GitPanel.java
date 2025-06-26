@@ -214,14 +214,6 @@ public class GitPanel extends JPanel
     }
 
     /**
-     * Allows external code to set the commit message (e.g. from an LLM suggestion).
-     */
-    public void setCommitMessageText(String message)
-    {
-        commitTab.setCommitMessageText(message);
-    }
-
-    /**
      * For GitCommitTab or external code to re-populate the Log tab.
      */
     void updateLogTab()
