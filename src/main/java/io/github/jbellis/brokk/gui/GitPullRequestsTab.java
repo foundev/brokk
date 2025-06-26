@@ -531,23 +531,23 @@ public class GitPullRequestsTab extends JPanel implements SettingsChangeListener
         JPopupMenu contextMenu = new JPopupMenu();
         chrome.themeManager.registerPopupMenu(contextMenu);
 
-        checkoutPrMenuItem = new JMenuItem("Check Out PR");
-        checkoutPrMenuItem.addActionListener(e -> checkoutSelectedPr());
-        contextMenu.add(checkoutPrMenuItem);
-
-        diffPrVsBaseMenuItem = new JMenuItem("Capture Diff vs Base");
-        diffPrVsBaseMenuItem.addActionListener(e -> diffSelectedPr());
-        contextMenu.add(diffPrVsBaseMenuItem);
-
-        capturePrDiffMenuItemContextMenu = new JMenuItem("Capture Full PR Diff");
+        capturePrDiffMenuItemContextMenu = new JMenuItem("Capture Diff");
         capturePrDiffMenuItemContextMenu.addActionListener(e -> captureSelectedPrDiff());
         contextMenu.add(capturePrDiffMenuItemContextMenu);
 
-        viewPrDiffMenuItem = new JMenuItem("View Full PR Diff");
+        viewPrDiffMenuItem = new JMenuItem("View Diff");
         viewPrDiffMenuItem.addActionListener(e -> viewFullPrDiff());
         contextMenu.add(viewPrDiffMenuItem);
 
-        openPrInBrowserMenuItem = new JMenuItem("Open PR in Browser");
+        diffPrVsBaseMenuItem = new JMenuItem("Diff vs Base");
+        diffPrVsBaseMenuItem.addActionListener(e -> diffSelectedPr());
+        contextMenu.add(diffPrVsBaseMenuItem);
+
+        checkoutPrMenuItem = new JMenuItem("Check Out");
+        checkoutPrMenuItem.addActionListener(e -> checkoutSelectedPr());
+        contextMenu.add(checkoutPrMenuItem);
+
+        openPrInBrowserMenuItem = new JMenuItem("Open in Browser");
         openPrInBrowserMenuItem.addActionListener(e -> openSelectedPrInBrowser());
         contextMenu.add(openPrInBrowserMenuItem);
 
