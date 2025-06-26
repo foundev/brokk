@@ -1,3 +1,4 @@
+
 package io.github.jbellis.brokk.gui;
 
 import io.github.jbellis.brokk.ContextManager;
@@ -951,7 +952,7 @@ public class GitCommitBrowserPanel extends JPanel {
         return commitRows;
     }
 
-    private record ButtonConfig(boolean enabled, String tooltip, @Nullable java.awt.event.ActionListener listener) {}
+    private record ButtonConfig(boolean enabled, String tooltip, @Nullable ActionListener listener) {}
 
     private record CommitPanelButtonStates(ButtonConfig pull, ButtonConfig push, ButtonConfig createPr) {}
 
@@ -961,52 +962,80 @@ public class GitCommitBrowserPanel extends JPanel {
                                                         Set<String> unpushedCommitIds,
                                                         String activeBranchOrContextName)
     {
-        boolean allowPullPush = options.showPushPullButtons() && viewKind != ViewKind.STASH && viewKind != ViewKind.SEARCH;
-        boolean pullEnabled = allowPullPush && serviceCanPull;
-        String pullTooltip = options.showPushPullButtons()
-                             ? (pullEnabled ? "Pull changes for " + activeBranchOrContextName : "Cannot pull " + activeBranchOrContextName)
-                             : "";
-        ActionListener pullListener = pullEnabled ? e -> handlePullAction(activeBranchOrContextName) : null;
-        var pullConfig = new ButtonConfig(pullEnabled, pullTooltip, pullListener);
-
-        boolean pushEnabled = allowPullPush && serviceCanPush;
-        String pushTooltip;
-        if (!options.showPushPullButtons()) {
-            pushTooltip = "";
-        } else {
-            if (pushEnabled) {
-                boolean isNewLocalBranchWithCommits = false;
-                if (viewKind == ViewKind.LOCAL) { // Only check for local branches
-                    var maybeRepo = getRepoSafely();
-                    if (maybeRepo.isPresent()) {
-                        try {
-                            isNewLocalBranchWithCommits =
-                                    unpushedCommitIds.isEmpty() && // True for new local branches as unpushedCommitIds is empty if no upstream
-                                    !maybeRepo.get().listCommitsDetailed(activeBranchOrContextName).isEmpty() && // Branch has commits
-                                    !maybeRepo.get().hasUpstreamBranch(activeBranchOrContextName); // Branch has no upstream
-                        } catch (GitAPIException ex) {
-                            logger.warn("Could not determine detailed push tooltip status for branch {}: {}", activeBranchOrContextName, ex.getMessage());
-                            // Fallback on error: assume not this specific new branch case.
-                        }
-                    }
-                }
-                pushTooltip = isNewLocalBranchWithCommits
-                              ? "Push and set upstream for " + activeBranchOrContextName
-                              : "Push " + unpushedCommitIds.size() + " commit(s) for " + activeBranchOrContextName;
-            } else {
-                pushTooltip = "Nothing to push for " + activeBranchOrContextName;
-            }
-        }
-        ActionListener pushListener = pushEnabled ? e -> handlePushAction(activeBranchOrContextName) : null;
-        var pushConfig = new ButtonConfig(pushEnabled, pushTooltip, pushListener);
-
-        boolean createPrEnabled = options.showCreatePrButton() && viewKind == ViewKind.LOCAL; // PRs only for local branches
-        String createPrTooltip = options.showCreatePrButton()
-                                 ? (createPrEnabled ? "Create a pull request for branch " + activeBranchOrContextName : "Cannot create PR for " + viewKind.toString().toLowerCase(Locale.ROOT) + " views")
-                                 : "";
-        var createPrConfig = new ButtonConfig(createPrEnabled, createPrTooltip, null); // Listener is static
-
+        var pullConfig = buildPullConfig(viewKind, serviceCanPull, activeBranchOrContextName);
+        var pushConfig = buildPushConfig(viewKind, serviceCanPush, unpushedCommitIds, activeBranchOrContextName);
+        var createPrConfig = buildCreatePrConfig(viewKind, activeBranchOrContextName);
         return new CommitPanelButtonStates(pullConfig, pushConfig, createPrConfig);
+    }
+
+    private boolean allowPullPush(ViewKind viewKind) {
+        return options.showPushPullButtons() && viewKind != ViewKind.STASH && viewKind != ViewKind.SEARCH;
+    }
+
+    private ButtonConfig buildPullConfig(ViewKind viewKind, boolean canPullFromService, String branch) {
+        if (!options.showPushPullButtons()) {
+            return new ButtonConfig(false, "", null);
+        }
+
+        boolean enabled = allowPullPush(viewKind) && canPullFromService;
+        String tooltip = enabled
+                         ? "Pull changes for " + branch
+                         : "Cannot pull " + branch;
+        ActionListener listener = enabled ? e -> handlePullAction(branch) : null;
+        return new ButtonConfig(enabled, tooltip, listener);
+    }
+
+    private boolean isNewLocalBranchWithCommits(String branch, Set<String> unpushedIds) {
+        if (!unpushedIds.isEmpty()) { // If there are unpushed commit IDs, it means an upstream exists or it's not "new" in that sense
+            return false;
+        }
+
+        return getRepoSafely().map(repo -> {
+            try {
+                // A new local branch has commits but no upstream branch set yet.
+                // unpushedCommitIds being empty is a strong indicator if no upstream.
+                return !repo.listCommitsDetailed(branch).isEmpty() && !repo.hasUpstreamBranch(branch);
+            } catch (GitAPIException ex) {
+                logger.warn("Could not determine if branch {} is new local with commits: {}", branch, ex.getMessage());
+                return false; // Fallback on error
+            }
+        }).orElse(false); // If repo is not available, assume not new
+    }
+
+    private String tooltipForEnabledPush(ViewKind viewKind, String branch, Set<String> unpushedIds) {
+        if (viewKind == ViewKind.LOCAL && isNewLocalBranchWithCommits(branch, unpushedIds)) {
+            return "Push and set upstream for " + branch;
+        }
+        return "Push " + unpushedIds.size() + " commit(s) for " + branch;
+    }
+
+    private ButtonConfig buildPushConfig(ViewKind viewKind, boolean canPushFromService, Set<String> unpushedIds, String branch) {
+        if (!options.showPushPullButtons()) {
+            return new ButtonConfig(false, "", null);
+        }
+
+        boolean enabled = allowPullPush(viewKind) && canPushFromService;
+        String tooltip;
+        if (enabled) {
+            tooltip = tooltipForEnabledPush(viewKind, branch, unpushedIds);
+        } else {
+            tooltip = "Nothing to push for " + branch;
+        }
+        ActionListener listener = enabled ? e -> handlePushAction(branch) : null;
+        return new ButtonConfig(enabled, tooltip, listener);
+    }
+
+    private ButtonConfig buildCreatePrConfig(ViewKind viewKind, String branch) {
+        if (!options.showCreatePrButton()) {
+            return new ButtonConfig(false, "", null);
+        }
+
+        boolean enabled = viewKind == ViewKind.LOCAL; // PRs only for local branches
+        String tooltip = enabled
+                         ? "Create a pull request for branch " + branch
+                         : "Cannot create PR for " + viewKind.name().toLowerCase(Locale.ROOT) + " views";
+        // Listener for createPrButton is static and set during initialization
+        return new ButtonConfig(enabled, tooltip, null);
     }
 
     private void handlePullAction(String branchName) {
@@ -1204,7 +1233,7 @@ public class GitCommitBrowserPanel extends JPanel {
         return groups;
     }
 
-    private void configureButton(JButton button, boolean enabled, String tooltip, @Nullable java.awt.event.ActionListener listener) {
+    private void configureButton(JButton button, boolean enabled, String tooltip, @Nullable ActionListener listener) {
         button.setEnabled(enabled);
         // Visibility is now controlled at a higher level (when adding to panel)
         // and should not be changed here if options.showPushPullButtons or options.showCreatePrButton is true.
