@@ -7,6 +7,7 @@ import io.github.jbellis.brokk.analyzer.IAnalyzer;
 import io.github.jbellis.brokk.analyzer.Language;
 import io.github.jbellis.brokk.analyzer.ProjectFile;
 import io.github.jbellis.brokk.git.InMemoryRepo;
+import io.github.jbellis.brokk.IConsoleIO;
 
 import java.nio.file.Path;
 import java.util.HashSet;
@@ -18,11 +19,17 @@ public final class TestContextManager implements IContextManager {
     private final InMemoryRepo inMemoryRepo;
     private final Set<ProjectFile> editableFiles = new HashSet<>();
     private final Set<ProjectFile> readonlyFiles = new HashSet<>();
+    private final IConsoleIO consoleIO;
 
     public TestContextManager(Path projectRoot) {
+        this(projectRoot, null);
+    }
+
+    public TestContextManager(Path projectRoot, IConsoleIO consoleIO) {
         this.project = new TestProject(projectRoot, Language.JAVA);
         this.mockAnalyzer = new MockAnalyzer();
         this.inMemoryRepo = new InMemoryRepo();
+        this.consoleIO = consoleIO;
     }
 
     @Override
@@ -76,6 +83,17 @@ public final class TestContextManager implements IContextManager {
     @Override
     public IAnalyzer getAnalyzer() {
         return mockAnalyzer;
+    }
+
+    @Override
+    public IConsoleIO getIo() {
+        if (consoleIO == null) {
+            // Fallback for existing tests that don't pass IConsoleIO,
+            // though the interface default would throw UnsupportedOperationException.
+            // Consider making IConsoleIO mandatory in constructor if all tests are updated.
+            throw new UnsupportedOperationException("IConsoleIO not provided to TestContextManager");
+        }
+        return consoleIO;
     }
 
     /**

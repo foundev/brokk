@@ -13,6 +13,7 @@ import io.github.jbellis.brokk.prompts.CodePrompts;
 import io.github.jbellis.brokk.prompts.EditBlockParser;
 import io.github.jbellis.brokk.prompts.QuickEditPrompts;
 import io.github.jbellis.brokk.util.Environment;
+import io.github.jbellis.brokk.util.Messages;
 import io.github.jbellis.brokk.util.LogDescription;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
@@ -242,86 +243,67 @@ public class CodeAgent {
     }
 
     Step parsePhase(LoopContext currentLoopContext, String llmText, boolean isPartialResponse, EditBlockParser parser) {
-        var currentConversationState = currentLoopContext.conversationState();
-        var currentWorkspaceState = currentLoopContext.workspaceState();
+        var cs = currentLoopContext.conversationState();
+        var ws = currentLoopContext.workspaceState();
 
         logger.debug("Got response (potentially partial if LLM connection was cut off)");
 
         var parseResult = parser.parseEditBlocks(llmText, contextManager.getRepo().getTrackedFiles());
         var newlyParsedBlocks = parseResult.blocks();
 
-        UserMessage messageForRetry = null;
-        String consoleLogForRetry = null;
-        int updatedConsecutiveParseFailures = currentWorkspaceState.consecutiveParseFailures();
-
+        // Handle explicit parse errors from the parser
         if (parseResult.parseError() != null) {
+            int updatedConsecutiveParseFailures = ws.consecutiveParseFailures();
+            UserMessage messageForRetry;
+            String consoleLogForRetry;
+
             if (newlyParsedBlocks.isEmpty()) { // Pure parse failure
                 updatedConsecutiveParseFailures++;
-                if (updatedConsecutiveParseFailures > MAX_PARSE_ATTEMPTS) {
-                    io.systemOutput("Parse error limit reached; ending task");
-                    return new Step.Fatal(new TaskResult.StopDetails(TaskResult.StopReason.PARSE_ERROR, "Parse error limit reached after " + updatedConsecutiveParseFailures + " attempts."));
-                }
                 messageForRetry = new UserMessage(parseResult.parseError());
                 consoleLogForRetry = "Failed to parse LLM response; retrying";
-            } else { // Partial parse - some blocks parsed, then error
-                updatedConsecutiveParseFailures = 0; // Reset on partial success
-                // Prompt to continue from the last successfully parsed block of this segment.
-                // These partially parsed blocks won't carry over to the next state for retry (pendingBlocks will be cleared).
+            } else { // Partial parse, then an error
+                updatedConsecutiveParseFailures = 0; // Reset, as we got some good blocks.
                 messageForRetry = new UserMessage(getContinueFromLastBlockPrompt(newlyParsedBlocks.getLast()));
                 consoleLogForRetry = "Malformed or incomplete response after %d blocks parsed; asking LLM to continue/fix".formatted(newlyParsedBlocks.size());
             }
 
-            var nextConversationState = new ConversationState(currentConversationState.taskMessages(), messageForRetry, currentConversationState.originalWorkspaceEditableMessages());
-            var pendingBlocksForRetry = new ArrayList<>(currentWorkspaceState.pendingBlocks());
-            if (!newlyParsedBlocks.isEmpty() && parseResult.parseError() != null) { // Partial parse with error
-                pendingBlocksForRetry.addAll(newlyParsedBlocks);
+            if (updatedConsecutiveParseFailures > MAX_PARSE_ATTEMPTS) {
+                io.systemOutput("Parse error limit reached; ending task");
+                return new Step.Fatal(new TaskResult.StopDetails(TaskResult.StopReason.PARSE_ERROR));
             }
-            // For pure parse failure (newlyParsedBlocks is empty), pendingBlocksForRetry remains as currentWorkspaceState.pendingBlocks()
-            // Keep existing blocksAppliedWithoutBuild for Retry
-            var nextWorkspaceState = new WorkspaceState(pendingBlocksForRetry, updatedConsecutiveParseFailures, currentWorkspaceState.consecutiveApplyFailures(), currentWorkspaceState.blocksAppliedWithoutBuild(), currentWorkspaceState.lastBuildError(), currentWorkspaceState.changedFiles(), currentWorkspaceState.originalFileContents());
-            return new Step.Retry(new LoopContext(nextConversationState, nextWorkspaceState, currentLoopContext.userGoal()), requireNonNull(consoleLogForRetry));
-        } else { // No Parse Error
-            updatedConsecutiveParseFailures = 0; // Reset on successful parse segment
-            var mutablePendingBlocks = new ArrayList<>(currentWorkspaceState.pendingBlocks());
-            mutablePendingBlocks.addAll(newlyParsedBlocks);
 
-            if (isPartialResponse) {
-                if (newlyParsedBlocks.isEmpty()) {
-                    messageForRetry = new UserMessage("It looks like the response was cut off before you provided any code blocks. Please continue with your response.");
-                    consoleLogForRetry = "LLM indicated response was partial before any blocks (no parse error); asking to continue";
-                } else {
-                    messageForRetry = new UserMessage(getContinueFromLastBlockPrompt(newlyParsedBlocks.getLast()));
-                    consoleLogForRetry = "LLM indicated response was partial after %d clean blocks; asking to continue".formatted(newlyParsedBlocks.size());
-                }
-                var nextConversationState = new ConversationState(currentConversationState.taskMessages(), messageForRetry, currentConversationState.originalWorkspaceEditableMessages());
-                var pendingBlocksForRetry = new ArrayList<>(currentWorkspaceState.pendingBlocks());
-                pendingBlocksForRetry.addAll(newlyParsedBlocks); // Add successfully parsed blocks before retry
-                // Keep existing blocksAppliedWithoutBuild for Retry even on clean partial response
-                var nextWorkspaceState = new WorkspaceState(pendingBlocksForRetry, updatedConsecutiveParseFailures, currentWorkspaceState.consecutiveApplyFailures(), currentWorkspaceState.blocksAppliedWithoutBuild(), currentWorkspaceState.lastBuildError(), currentWorkspaceState.changedFiles(), currentWorkspaceState.originalFileContents());
-                return new Step.Retry(new LoopContext(nextConversationState, nextWorkspaceState, currentLoopContext.userGoal()), requireNonNull(consoleLogForRetry));
-            } else { // Full successful parse of this segment
-                // Token Redaction:
-                List<ChatMessage> originalTaskMessages = currentConversationState.taskMessages();
-                List<ChatMessage> redactedTaskMessages = new ArrayList<>();
-                for (ChatMessage message : originalTaskMessages) {
-                    if (message instanceof AiMessage aiMessage) {
-                        Optional<AiMessage> redacted = ContextManager.redactAiMessage(aiMessage, parser);
-                        redacted.ifPresent(redactedTaskMessages::add); // Only add if redaction is successful and non-empty
-                    } else {
-                        redactedTaskMessages.add(message); // Keep other message types
-                    }
-                }
-
-                var nextConversationStateWithRedaction = new ConversationState(
-                    redactedTaskMessages,
-                    currentConversationState.nextRequest(), // nextRequest will be updated by subsequent phases if they retry/fail
-                    currentConversationState.originalWorkspaceEditableMessages()
-                );
-
-                var nextWorkspaceState = new WorkspaceState(mutablePendingBlocks, updatedConsecutiveParseFailures, currentWorkspaceState.consecutiveApplyFailures(), currentWorkspaceState.blocksAppliedWithoutBuild(), currentWorkspaceState.lastBuildError(), currentWorkspaceState.changedFiles(), currentWorkspaceState.originalFileContents());
-                return new Step.Continue(new LoopContext(nextConversationStateWithRedaction, nextWorkspaceState, currentLoopContext.userGoal()), List.copyOf(newlyParsedBlocks));
-            }
+            var nextCs = new ConversationState(cs.taskMessages(), messageForRetry, cs.originalWorkspaceEditableMessages());
+            // Add any newly parsed blocks before the error to the pending list for the next apply phase
+            var nextPending = new ArrayList<>(ws.pendingBlocks());
+            nextPending.addAll(newlyParsedBlocks);
+            var nextWs = new WorkspaceState(nextPending, updatedConsecutiveParseFailures, ws.consecutiveApplyFailures(), ws.blocksAppliedWithoutBuild(), ws.lastBuildError(), ws.changedFiles(), ws.originalFileContents());
+            return new Step.Retry(new LoopContext(nextCs, nextWs, currentLoopContext.userGoal()), consoleLogForRetry);
         }
+
+        // No explicit parse error. Reset counter. Add newly parsed blocks to the pending list.
+        var updatedConsecutiveParseFailures = 0;
+        var mutablePendingBlocks = new ArrayList<>(ws.pendingBlocks());
+        mutablePendingBlocks.addAll(newlyParsedBlocks);
+
+        // Handle case where LLM response was cut short, even if syntactically valid so far.
+        if (isPartialResponse) {
+            UserMessage messageForRetry;
+            String consoleLogForRetry;
+            if (newlyParsedBlocks.isEmpty()) {
+                messageForRetry = new UserMessage("It looks like the response was cut off before you provided any code blocks. Please continue with your response.");
+                consoleLogForRetry = "LLM indicated response was partial before any blocks (no parse error); asking to continue";
+            } else {
+                messageForRetry = new UserMessage(getContinueFromLastBlockPrompt(newlyParsedBlocks.getLast()));
+                consoleLogForRetry = "LLM indicated response was partial after %d clean blocks; asking to continue".formatted(newlyParsedBlocks.size());
+            }
+            var nextCs = new ConversationState(cs.taskMessages(), messageForRetry, cs.originalWorkspaceEditableMessages());
+            var nextWs = new WorkspaceState(mutablePendingBlocks, updatedConsecutiveParseFailures, ws.consecutiveApplyFailures(), ws.blocksAppliedWithoutBuild(), ws.lastBuildError(), ws.changedFiles(), ws.originalFileContents());
+            return new Step.Retry(new LoopContext(nextCs, nextWs, currentLoopContext.userGoal()), consoleLogForRetry);
+        }
+
+        // No parse error, not a partial response. This is a successful, complete segment.
+        var nextWs = new WorkspaceState(mutablePendingBlocks, updatedConsecutiveParseFailures, ws.consecutiveApplyFailures(), ws.blocksAppliedWithoutBuild(), ws.lastBuildError(), ws.changedFiles(), ws.originalFileContents());
+        return new Step.Continue(new LoopContext(cs, nextWs, currentLoopContext.userGoal()), List.copyOf(newlyParsedBlocks));
     }
 
     /**
