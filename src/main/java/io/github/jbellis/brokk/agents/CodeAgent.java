@@ -42,7 +42,8 @@ public class CodeAgent {
     // Made package-private for test access
     static final int MAX_PARSE_ATTEMPTS_FOR_TEST = 3; // Renamed to avoid collision if original MAX_PARSE_ATTEMPTS is kept private for other reasons
     private static final int MAX_PARSE_ATTEMPTS = 3;
-    private static final int MAX_APPLY_FAILURES_BEFORE_FALLBACK = 3;
+    @VisibleForTesting
+    static final int MAX_APPLY_FAILURES_BEFORE_FALLBACK = 3;
 
     // private record ApplyResult(EditBlock.EditResult editResult, int updatedApplyFailures) {} // ApplyResult is no longer returned by applyBlocksAndHandleErrors
 
@@ -53,9 +54,16 @@ public class CodeAgent {
     ) {}
 
     sealed interface Step permits Step.Continue, Step.Retry, Step.Fatal {
+        LoopContext loopContext();
+
         record Continue(LoopContext loopContext, List<EditBlock.SearchReplaceBlock> newlyParsedBlocksInThisSegment) implements Step {}
         record Retry(LoopContext loopContext, String consoleLogMessage) implements Step {}
-        record Fatal(TaskResult.StopDetails stopDetails) implements Step {}
+        record Fatal(TaskResult.StopDetails stopDetails) implements Step {
+            @Override
+            public LoopContext loopContext() {
+                throw new UnsupportedOperationException("Fatal step does not have a loop context.");
+            }
+        }
     }
 
     record ConversationState(

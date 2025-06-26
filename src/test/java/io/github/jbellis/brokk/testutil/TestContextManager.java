@@ -2,6 +2,7 @@ package io.github.jbellis.brokk.testutil;
 
 import io.github.jbellis.brokk.IContextManager;
 import io.github.jbellis.brokk.IProject;
+import io.github.jbellis.brokk.Service;
 import io.github.jbellis.brokk.analyzer.BrokkFile;
 import io.github.jbellis.brokk.analyzer.IAnalyzer;
 import io.github.jbellis.brokk.analyzer.Language;
@@ -20,6 +21,7 @@ public final class TestContextManager implements IContextManager {
     private final Set<ProjectFile> editableFiles = new HashSet<>();
     private final Set<ProjectFile> readonlyFiles = new HashSet<>();
     private final IConsoleIO consoleIO;
+    private final StubService stubService;
 
     public TestContextManager(Path projectRoot) {
         this(projectRoot, null);
@@ -30,6 +32,7 @@ public final class TestContextManager implements IContextManager {
         this.mockAnalyzer = new MockAnalyzer();
         this.inMemoryRepo = new InMemoryRepo();
         this.consoleIO = consoleIO;
+        this.stubService = new StubService(this.project);
     }
 
     @Override
@@ -94,6 +97,11 @@ public final class TestContextManager implements IContextManager {
             throw new UnsupportedOperationException("IConsoleIO not provided to TestContextManager");
         }
         return consoleIO;
+    }
+
+    @Override
+    public Service getService() {
+        return stubService;
     }
 
     /**
