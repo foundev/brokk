@@ -1,14 +1,19 @@
 package io.github.jbellis.brokk.git;
 
 import io.github.jbellis.brokk.ContextManager;
+import dev.langchain4j.data.message.ChatMessage;
+import io.github.jbellis.brokk.GitHubAuth;
 import io.github.jbellis.brokk.Llm;
+import io.github.jbellis.brokk.Service;
 import io.github.jbellis.brokk.analyzer.ProjectFile;
 import io.github.jbellis.brokk.prompts.CommitPrompts;
+import io.github.jbellis.brokk.prompts.SummarizerPrompts;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 import org.eclipse.jgit.api.errors.GitAPIException;
 import org.jetbrains.annotations.Nullable;
 
+import java.net.URI;
 import java.util.Arrays;
 import java.util.HashSet;
 import java.util.List;
@@ -28,6 +33,16 @@ public final class GitWorkflowService {
             boolean canPush,
             Set<String> unpushedCommitIds
     ) {}
+
+    public record BranchDiff(
+            List<CommitInfo> commits,
+            List<GitRepo.ModifiedFile> files,
+            @Nullable String mergeBase) {}
+
+    public record PrSuggestion(
+            String title,
+            String description,
+            boolean usedCommitMessages) {}
 
     private final ContextManager contextManager;
     private final GitRepo repo;
@@ -168,6 +183,68 @@ public final class GitWorkflowService {
         }
         repo.pull(); // Assumes pull on current branch is intended if branchName matches
         return "Pulled " + branch;
+    }
+
+    public BranchDiff diffBetweenBranches(String source, String target) throws GitAPIException {
+        var commits = repo.listCommitsBetweenBranches(source, target, /*excludeMergeCommitsFromTarget*/ true);
+        var files   = repo.listFilesChangedBetweenBranches(source, target);
+        var merge   = repo.getMergeBase(source, target);
+        return new BranchDiff(commits, files, merge);
+    }
+
+    /** Blocks; caller should off-load to a background thread (SwingWorker, etc.). */
+    public PrSuggestion suggestPullRequestDetails(String source, String target) throws Exception {
+        // 1. Compute merge base & diff text
+        var mergeBase = repo.getMergeBase(source, target);
+        String diff = (mergeBase != null) ? repo.showDiff(source, mergeBase) : "";
+
+        // 2. Decide “too big?” heuristic
+        var service    = contextManager.getService();
+        var preferredModel = service.getModel(Service.GROK_3_MINI, Service.ReasoningLevel.DEFAULT);
+        var modelToUse = preferredModel != null ? preferredModel : service.quickestModel(); // Fallback
+        var maxTokens  = service.getMaxInputTokens(modelToUse);
+        boolean useCommitMsgs = diff.length() / 3.0 > maxTokens * 0.9;
+
+        // 3. Build messages
+        List<ChatMessage> messages = useCommitMsgs
+                ? SummarizerPrompts.instance.collectPrDescriptionFromCommitMsgs(
+                        repo.getCommitMessagesBetween(source, target))
+                : SummarizerPrompts.instance.collectPrDescriptionMessages(diff);
+
+        // 4. Call LLM
+        // modelToUse is guaranteed non-null from the logic above
+        var llm      = contextManager.getLlm(modelToUse, "PR-description");
+        var response = llm.sendRequest(messages);
+        String description = response.text().trim();
+
+        // 5. Title summarisation (12-word budget)
+        ContextManager.SummarizeWorker titleWorker = new ContextManager.SummarizeWorker(this.contextManager,
+                                                                                         description,
+                                                                                         SummarizerPrompts.WORD_BUDGET_12);
+        titleWorker.execute(); // Schedule the worker
+        String title = titleWorker.get(); // Blocks until completion and gets the result
+
+        return new PrSuggestion(title, description, useCommitMsgs);
+    }
+
+    /** Pushes branch if needed and opens a PR.  Returns the PR url. */
+    public URI createPullRequest(String source, String target,
+                                 String title, String body) throws Exception {
+        // 1. Ensure branch is pushed
+        if (repo.branchNeedsPush(source)) {
+            push(source);
+        }
+
+        // 2. Strip "origin/" prefix for GitHub
+        String head = source.replaceFirst("^origin/", "");
+        String base = target.replaceFirst("^origin/", "");
+
+        // 3. GitHub call
+        var auth   = GitHubAuth.getOrCreateInstance(contextManager.getProject());
+        var ghRepo = auth.getGhRepository();
+        var pr     = ghRepo.createPullRequest(title, head, base, body);
+
+        return pr.getHtmlUrl().toURI();
     }
 
     private static String normaliseMessage(@Nullable String raw)
