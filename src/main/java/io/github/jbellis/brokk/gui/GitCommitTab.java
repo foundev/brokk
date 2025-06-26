@@ -156,7 +156,7 @@ public class GitCommitTab extends JPanel {
 
         editFileItem.addActionListener(e -> {
             var selectedProjectFiles = getSelectedFilesFromTable();
-            GitUiUtil.editFiles(contextManager, selectedProjectFiles);
+            contextManager.editFiles(selectedProjectFiles);
             rightClickedFile = null; // Clear after use
         });
 
