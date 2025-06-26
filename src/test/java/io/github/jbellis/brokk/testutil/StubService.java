@@ -3,11 +3,13 @@ package io.github.jbellis.brokk.testutil;
 import dev.langchain4j.model.chat.DisabledStreamingChatLanguageModel;
 import dev.langchain4j.model.chat.StreamingChatLanguageModel;
 import io.github.jbellis.brokk.IProject;
+import io.github.jbellis.brokk.MainProject;
 import io.github.jbellis.brokk.Service;
 import org.jetbrains.annotations.Nullable;
 
 import java.util.Collections;
 import java.util.Map;
+import java.io.IOException;
 
 public final class StubService extends Service {
 
@@ -16,9 +18,10 @@ public final class StubService extends Service {
     }
 
     @Override
-    public Map<String, String> getAvailableModels() {
-        return Collections.emptyMap();
-    }
+    protected void fetchAvailableModels(MainProject.DataRetentionPolicy policy,
+			      Map<String, String> locationsTarget,
+			      Map<String, Map<String, Object>> infoTarget) throws IOException
+    { }
 
     @Override
     public String nameOf(@Nullable StreamingChatLanguageModel model) { return "stub-model"; }
