@@ -272,8 +272,13 @@ public class CodeAgent {
             }
 
             var nextConversationState = new ConversationState(currentConversationState.taskMessages(), messageForRetry, currentConversationState.originalWorkspaceEditableMessages());
-            // Reset pendingBlocks and blocksAppliedWithoutBuild for Retry
-            var nextWorkspaceState = new WorkspaceState(new ArrayList<>(), updatedConsecutiveParseFailures, currentWorkspaceState.consecutiveApplyFailures(), 0, currentWorkspaceState.lastBuildError(), currentWorkspaceState.changedFiles(), currentWorkspaceState.originalFileContents(), currentWorkspaceState.consecutiveBuildFailures());
+            var pendingBlocksForRetry = new ArrayList<>(currentWorkspaceState.pendingBlocks());
+            if (!newlyParsedBlocks.isEmpty() && parseResult.parseError() != null) { // Partial parse with error
+                pendingBlocksForRetry.addAll(newlyParsedBlocks);
+            }
+            // For pure parse failure (newlyParsedBlocks is empty), pendingBlocksForRetry remains as currentWorkspaceState.pendingBlocks()
+            // Keep existing blocksAppliedWithoutBuild for Retry
+            var nextWorkspaceState = new WorkspaceState(pendingBlocksForRetry, updatedConsecutiveParseFailures, currentWorkspaceState.consecutiveApplyFailures(), currentWorkspaceState.blocksAppliedWithoutBuild(), currentWorkspaceState.lastBuildError(), currentWorkspaceState.changedFiles(), currentWorkspaceState.originalFileContents(), currentWorkspaceState.consecutiveBuildFailures());
             return new Step.Retry(new LoopContext(nextConversationState, nextWorkspaceState, currentLoopContext.userGoal()), requireNonNull(consoleLogForRetry));
         } else { // No Parse Error
             updatedConsecutiveParseFailures = 0; // Reset on successful parse segment
@@ -289,26 +294,32 @@ public class CodeAgent {
                     consoleLogForRetry = "LLM indicated response was partial after %d clean blocks; asking to continue".formatted(newlyParsedBlocks.size());
                 }
                 var nextConversationState = new ConversationState(currentConversationState.taskMessages(), messageForRetry, currentConversationState.originalWorkspaceEditableMessages());
-                // Reset pendingBlocks and blocksAppliedWithoutBuild for Retry even on clean partial response
-                var nextWorkspaceState = new WorkspaceState(new ArrayList<>(), updatedConsecutiveParseFailures, currentWorkspaceState.consecutiveApplyFailures(), 0, currentWorkspaceState.lastBuildError(), currentWorkspaceState.changedFiles(), currentWorkspaceState.originalFileContents(), currentWorkspaceState.consecutiveBuildFailures());
+                var pendingBlocksForRetry = new ArrayList<>(currentWorkspaceState.pendingBlocks());
+                pendingBlocksForRetry.addAll(newlyParsedBlocks); // Add successfully parsed blocks before retry
+                // Keep existing blocksAppliedWithoutBuild for Retry even on clean partial response
+                var nextWorkspaceState = new WorkspaceState(pendingBlocksForRetry, updatedConsecutiveParseFailures, currentWorkspaceState.consecutiveApplyFailures(), currentWorkspaceState.blocksAppliedWithoutBuild(), currentWorkspaceState.lastBuildError(), currentWorkspaceState.changedFiles(), currentWorkspaceState.originalFileContents(), currentWorkspaceState.consecutiveBuildFailures());
                 return new Step.Retry(new LoopContext(nextConversationState, nextWorkspaceState, currentLoopContext.userGoal()), requireNonNull(consoleLogForRetry));
             } else { // Full successful parse of this segment
                 // Token Redaction:
-                List<ChatMessage> messages = currentConversationState.taskMessages();
-                List<ChatMessage> newMessages = new ArrayList<>();
-                for (ChatMessage message : messages) {
+                List<ChatMessage> originalTaskMessages = currentConversationState.taskMessages();
+                List<ChatMessage> redactedTaskMessages = new ArrayList<>();
+                for (ChatMessage message : originalTaskMessages) {
                     if (message instanceof AiMessage aiMessage) {
                         Optional<AiMessage> redacted = ContextManager.redactAiMessage(aiMessage, parser);
-                        redacted.ifPresent(newMessages::add); // Only add if redaction is successful and non-empty
+                        redacted.ifPresent(redactedTaskMessages::add); // Only add if redaction is successful and non-empty
                     } else {
-                        newMessages.add(message); // Keep other message types
+                        redactedTaskMessages.add(message); // Keep other message types
                     }
                 }
-                messages.clear();
-                messages.addAll(newMessages);
+
+                var nextConversationStateWithRedaction = new ConversationState(
+                    redactedTaskMessages,
+                    currentConversationState.nextRequest(), // nextRequest will be updated by subsequent phases if they retry/fail
+                    currentConversationState.originalWorkspaceEditableMessages()
+                );
 
                 var nextWorkspaceState = new WorkspaceState(mutablePendingBlocks, updatedConsecutiveParseFailures, currentWorkspaceState.consecutiveApplyFailures(), currentWorkspaceState.blocksAppliedWithoutBuild(), currentWorkspaceState.lastBuildError(), currentWorkspaceState.changedFiles(), currentWorkspaceState.originalFileContents(), currentWorkspaceState.consecutiveBuildFailures());
-                return new Step.Continue(new LoopContext(currentConversationState /* taskMessages was mutated */, nextWorkspaceState, currentLoopContext.userGoal()), List.copyOf(newlyParsedBlocks));
+                return new Step.Continue(new LoopContext(nextConversationStateWithRedaction, nextWorkspaceState, currentLoopContext.userGoal()), List.copyOf(newlyParsedBlocks));
             }
         }
     }
@@ -860,9 +871,17 @@ public class CodeAgent {
 
                 if (updatedConsecutiveApplyFailures >= MAX_APPLY_FAILURES_BEFORE_FALLBACK) {
                     io.systemOutput("Apply failure limit reached (%d), attempting full file replacement fallback.".formatted(updatedConsecutiveApplyFailures));
-                    attemptFullFileReplacements(editResult.failedBlocks(), currentLoopContext.userGoal(), cs.taskMessages());
+                    List<EditBlock.FailedBlock> blocksForFallback = List.copyOf(editResult.failedBlocks());
+                    attemptFullFileReplacements(blocksForFallback, currentLoopContext.userGoal(), cs.taskMessages());
                     // If attemptFullFileReplacements succeeds, it doesn't throw. If it fails, it throws EditStopException caught below.
                     io.systemOutput("Full file replacement fallback successful.");
+
+                    // Update changedFiles with files modified by fallback
+                    Set<ProjectFile> updatedChangedFiles = new HashSet<>(ws.changedFiles());
+                    blocksForFallback.stream()
+                        .filter(fb -> fb.block().filename() != null) // Ensure filename is not null
+                        .map(fb -> contextManager.toFile(requireNonNull(fb.block().filename()))) // Now safe to call requireNonNull
+                        .forEach(updatedChangedFiles::add);
                     
                     UserMessage placeholderPrompt = new UserMessage("[Placeholder: Build errors will be inserted here by verifyPhase if build fails after this full file replacement]");
                     csForStep = new ConversationState(cs.taskMessages(), placeholderPrompt, cs.originalWorkspaceEditableMessages());
@@ -873,7 +892,7 @@ public class CodeAgent {
                         0, // Reset consecutive apply failures after successful fallback
                         1, // Force build as per plan (at least one "edit" happened via fallback)
                         ws.lastBuildError(), // Keep last build error for now
-                        ws.changedFiles(),
+                        updatedChangedFiles, // Use updated set
                         nextOriginalFileContents,
                         ws.consecutiveBuildFailures()
                     );
