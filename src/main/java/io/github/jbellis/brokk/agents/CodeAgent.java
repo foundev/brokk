@@ -637,7 +637,7 @@ public class CodeAgent {
         } catch (Environment.SubprocessException e) {
             io.llmOutput("\n```", ChatMessageType.CUSTOM); // Close the markdown block
             io.llmOutput("\n**Verification failed**", ChatMessageType.CUSTOM);
-            logger.warn("Verification command failed: {} Output: {}", e.getMessage(), e.getOutput(), e);
+            logger.debug("Build failed: {}", verificationCommand);
             // Add the combined error and output to the history for the next request
             return e.getMessage() + "\n\n" + e.getOutput();
         }
