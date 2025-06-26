@@ -395,7 +395,7 @@ public class Service {
      * @param infoTarget The map to populate with model locations to their info.
      * @throws IOException If network or parsing errors occur.
      */
-    void fetchAvailableModels(MainProject.DataRetentionPolicy policy,
+    protected void fetchAvailableModels(MainProject.DataRetentionPolicy policy,
                                       Map<String, String> locationsTarget,
                                       Map<String, Map<String, Object>> infoTarget) throws IOException
     {
