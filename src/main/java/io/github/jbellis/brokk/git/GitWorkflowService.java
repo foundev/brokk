@@ -116,7 +116,7 @@ public final class GitWorkflowService {
     }
 
     public PushPullState evaluatePushPull(String branch) throws GitAPIException {
-        if (branch.contains("/")) { // Remote branches or special views like "Search:" or "stashes"
+        if (repo.isRemoteBranch(branch) || isSyntheticBranchName(branch)) {
             return new PushPullState(false, false, false, Set.of());
         }
         boolean hasUpstream = repo.hasUpstreamBranch(branch);
@@ -134,7 +134,7 @@ public final class GitWorkflowService {
     public String push(String branch) throws GitAPIException {
         // This check prevents attempting to push special views like "Search:" or "stashes"
         // or remote branches directly.
-        if (branch.contains("/") || "stashes".equals(branch) || branch.startsWith("Search:")) {
+        if (repo.isRemoteBranch(branch) || isSyntheticBranchName(branch)) {
             logger.warn("Push attempted on invalid context: {}", branch);
             throw new GitAPIException("Push is not supported for this view: " + branch) {};
         }
@@ -158,7 +158,7 @@ public final class GitWorkflowService {
     public String pull(String branch) throws GitAPIException {
         // This check prevents attempting to pull special views like "Search:" or "stashes"
         // or remote branches directly.
-        if (branch.contains("/") || "stashes".equals(branch) || branch.startsWith("Search:")) {
+        if (repo.isRemoteBranch(branch) || isSyntheticBranchName(branch)) {
             logger.warn("Pull attempted on invalid context: {}", branch);
             throw new GitAPIException("Pull is not supported for this view: " + branch) {};
         }
@@ -177,5 +177,10 @@ public final class GitWorkflowService {
                 .filter(l -> !l.trim().startsWith("#"))
                 .collect(Collectors.joining("\n"))
                 .trim();
+    }
+
+    public static boolean isSyntheticBranchName(String branchName) {
+        // Callers (evaluatePushPull, push, pull) ensure branchName is not null.
+        return "stashes".equals(branchName) || branchName.startsWith("Search:");
     }
 }

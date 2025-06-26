@@ -173,10 +173,20 @@ public class GitCommitBrowserPanel extends JPanel {
         createPrButton.setEnabled(false);
         createPrButton.addActionListener(e -> {
             String branch = currentBranchOrContextName;
-            if (branch != null && (branch.startsWith("Search:") || STASHES_VIRTUAL_BRANCH.equals(branch))) { // Also disable for remote branches
-                chrome.toolError("Select a branch before creating a PR.");
+
+            if (branch == null) {
+                chrome.toolError("Cannot create PR: No branch is currently selected.");
                 return;
             }
+            if (GitWorkflowService.isSyntheticBranchName(branch)) {
+                chrome.toolError("Select a local branch before creating a PR. Synthetic views are not supported.");
+                return;
+            }
+            if (getRepoSafely().map(repo -> repo.isRemoteBranch(branch)).orElse(false)) {
+                chrome.toolError("Select a local branch before creating a PR. Remote branches are not supported.");
+                return;
+            }
+            // branch is non-null, safe for CreatePullRequestDialog.
             CreatePullRequestDialog.show(chrome.getFrame(), chrome, contextManager, branch);
         });
 
@@ -917,23 +927,24 @@ public class GitCommitBrowserPanel extends JPanel {
     private enum ViewKind {
         STASH, SEARCH, REMOTE, LOCAL;
 
-        static ViewKind determine(String activeBranchOrContextName, Optional<GitRepo> maybeRepo) {
+        static ViewKind determine(@Nullable String activeBranchOrContextName, Optional<GitRepo> maybeRepo) {
+            if (activeBranchOrContextName == null) {
+                // If no branch/context is active, treat as REMOTE for button enablement (disables most actions).
+                return REMOTE;
+            }
             if (STASHES_VIRTUAL_BRANCH.equals(activeBranchOrContextName)) {
                 return STASH;
             }
-            if (activeBranchOrContextName.startsWith("Search:")) {
+            if (activeBranchOrContextName.startsWith("Search:")) { // Safe due to null check above
                 return SEARCH;
             }
             if (maybeRepo.isPresent()) {
-                try {
-                    if (maybeRepo.get().listRemoteBranches().contains(activeBranchOrContextName)) {
-                        return REMOTE;
-                    }
-                } catch (GitAPIException ex) {
-                    logger.warn("Could not determine if '{}' is a remote branch. Assuming local. Error: {}",
-                                activeBranchOrContextName, ex.getMessage());
+                // activeBranchOrContextName is non-null here.
+                if (maybeRepo.get().isRemoteBranch(activeBranchOrContextName)) {
+                    return REMOTE;
                 }
             }
+            // If not null, not STASH, not SEARCH, not REMOTE -> must be LOCAL
             return LOCAL;
         }
     }
