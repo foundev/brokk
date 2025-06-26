@@ -19,6 +19,7 @@ import javax.swing.tree.DefaultTreeModel;
 import javax.swing.tree.TreePath;
 import javax.swing.tree.TreeSelectionModel;
 import java.awt.*;
+import java.awt.event.ActionListener;
 import java.awt.event.MouseAdapter;
 import java.awt.event.MouseEvent;
 import java.nio.file.Path;
@@ -893,11 +894,51 @@ public class GitCommitBrowserPanel extends JPanel {
         }
     }
 
-    public void setCommits(List<? extends ICommitInfo> commits, Set<String> unpushedCommitIds,
-                           boolean canPush, boolean canPull, String activeBranchOrContextName) {
+    public void setCommits(List<? extends ICommitInfo> commits,
+                           Set<String> unpushedCommitIds,
+                           boolean canPush,
+                           boolean canPull,
+                           String activeBranchOrContextName)
+    {
         this.currentBranchOrContextName = activeBranchOrContextName;
 
-        var commitRows = new ArrayList<Object[]>();
+        var viewKind = ViewKind.determine(activeBranchOrContextName, getRepoSafely());
+        var commitRows = buildCommitRows(commits, unpushedCommitIds);
+        var buttonStates = determineButtonStates(viewKind,
+                                                canPush,
+                                                canPull,
+                                                unpushedCommitIds,
+                                                activeBranchOrContextName);
+
+        SwingUtil.runOnEdt(() -> applyStateToUiComponents(commitRows, buttonStates, viewKind));
+    }
+
+    private enum ViewKind {
+        STASH, SEARCH, REMOTE, LOCAL;
+
+        static ViewKind determine(String activeBranchOrContextName, Optional<GitRepo> maybeRepo) {
+            if (STASHES_VIRTUAL_BRANCH.equals(activeBranchOrContextName)) {
+                return STASH;
+            }
+            if (activeBranchOrContextName.startsWith("Search:")) {
+                return SEARCH;
+            }
+            if (maybeRepo.isPresent()) {
+                try {
+                    if (maybeRepo.get().listRemoteBranches().contains(activeBranchOrContextName)) {
+                        return REMOTE;
+                    }
+                } catch (GitAPIException ex) {
+                    logger.warn("Could not determine if '{}' is a remote branch. Assuming local. Error: {}",
+                                activeBranchOrContextName, ex.getMessage());
+                }
+            }
+            return LOCAL;
+        }
+    }
+
+    private List<Object[]> buildCommitRows(List<? extends ICommitInfo> commits, Set<String> unpushedCommitIds) {
+        var commitRows = new ArrayList<Object[]>(commits.size());
         var today = java.time.LocalDate.now(java.time.ZoneId.systemDefault());
         for (ICommitInfo commit : commits) {
             var commitDate = commit.date();
@@ -907,137 +948,146 @@ public class GitCommitBrowserPanel extends JPanel {
                     commit.id(), unpushedCommitIds.contains(commit.id()), commit
             });
         }
+        return commitRows;
+    }
 
-        boolean isStashView = "stashes".equals(activeBranchOrContextName);
-        boolean isSearchView = activeBranchOrContextName.startsWith("Search:");
-        boolean isRemoteBranchView;
-        try {
-            // A branch is remote only if it actually appears in the repo’s remote-branch list
-            isRemoteBranchView = getRepo().listRemoteBranches().contains(activeBranchOrContextName);
-        } catch (org.eclipse.jgit.api.errors.GitAPIException ex) {
-            logger.warn("Could not determine if '{}' is a remote branch. Assuming local. Error: {}",
-                        activeBranchOrContextName, ex.getMessage());
-            isRemoteBranchView = false;
-        }
+    private record ButtonConfig(boolean enabled, String tooltip, @Nullable java.awt.event.ActionListener listener) {}
 
-        // Prepare button configurations off-EDT with final variables
-        final String finalActiveBranchOrContextName = activeBranchOrContextName;
-        // canPull and canPush from gitWorkflowService.evaluatePushPull already account for remote branches (via branch.contains("/"))
-        final boolean finalPullEnabled = this.options.showPushPullButtons() && canPull && !isStashView && !isSearchView;
-        final boolean finalPushEnabled = this.options.showPushPullButtons() && canPush && !isStashView && !isSearchView;
-        final String finalPullTooltip = this.options.showPushPullButtons() ? (finalPullEnabled ? "Pull changes for " + activeBranchOrContextName : "Cannot pull " + activeBranchOrContextName) : "";
+    private record CommitPanelButtonStates(ButtonConfig pull, ButtonConfig push, ButtonConfig createPr) {}
 
-        final String finalPushTooltip;
-        if (!this.options.showPushPullButtons()) {
-            finalPushTooltip = "";
+    private CommitPanelButtonStates determineButtonStates(ViewKind viewKind,
+                                                        boolean serviceCanPush,
+                                                        boolean serviceCanPull,
+                                                        Set<String> unpushedCommitIds,
+                                                        String activeBranchOrContextName)
+    {
+        boolean allowPullPush = options.showPushPullButtons() && viewKind != ViewKind.STASH && viewKind != ViewKind.SEARCH;
+        boolean pullEnabled = allowPullPush && serviceCanPull;
+        String pullTooltip = options.showPushPullButtons()
+                             ? (pullEnabled ? "Pull changes for " + activeBranchOrContextName : "Cannot pull " + activeBranchOrContextName)
+                             : "";
+        ActionListener pullListener = pullEnabled ? e -> handlePullAction(activeBranchOrContextName) : null;
+        var pullConfig = new ButtonConfig(pullEnabled, pullTooltip, pullListener);
+
+        boolean pushEnabled = allowPullPush && serviceCanPush;
+        String pushTooltip;
+        if (!options.showPushPullButtons()) {
+            pushTooltip = "";
         } else {
-            if (finalPushEnabled) {
-                boolean determinedIsNewLocalBranchWithCommits;
-                try {
-                    // This condition identifies a local branch with commits that hasn't been pushed yet to establish an upstream.
-                    determinedIsNewLocalBranchWithCommits =
-                            unpushedCommitIds.isEmpty() && // True for new local branches as unpushedCommitIds is empty if no upstream
-                            !getRepo().listCommitsDetailed(activeBranchOrContextName).isEmpty() && // Branch has commits
-                            !getRepo().hasUpstreamBranch(activeBranchOrContextName); // Branch has no upstream
-                } catch (GitAPIException e) {
-                    logger.warn("Could not determine detailed push tooltip status for branch {}: {}", activeBranchOrContextName, e.getMessage());
-                    determinedIsNewLocalBranchWithCommits = false; // Fallback on error: assume not this specific new branch case.
+            if (pushEnabled) {
+                boolean isNewLocalBranchWithCommits = false;
+                if (viewKind == ViewKind.LOCAL) { // Only check for local branches
+                    var maybeRepo = getRepoSafely();
+                    if (maybeRepo.isPresent()) {
+                        try {
+                            isNewLocalBranchWithCommits =
+                                    unpushedCommitIds.isEmpty() && // True for new local branches as unpushedCommitIds is empty if no upstream
+                                    !maybeRepo.get().listCommitsDetailed(activeBranchOrContextName).isEmpty() && // Branch has commits
+                                    !maybeRepo.get().hasUpstreamBranch(activeBranchOrContextName); // Branch has no upstream
+                        } catch (GitAPIException ex) {
+                            logger.warn("Could not determine detailed push tooltip status for branch {}: {}", activeBranchOrContextName, ex.getMessage());
+                            // Fallback on error: assume not this specific new branch case.
+                        }
+                    }
                 }
-
-                if (determinedIsNewLocalBranchWithCommits) {
-                    finalPushTooltip = "Push and set upstream for " + activeBranchOrContextName;
-                } else {
-                    // Covers branches with an upstream and unpushed commits,
-                    // or the fallback case from an exception above.
-                    finalPushTooltip = "Push " + unpushedCommitIds.size() + " commit(s) for " + activeBranchOrContextName;
-                }
-            } else { // finalPushEnabled is false
-                finalPushTooltip = "Nothing to push for " + activeBranchOrContextName;
+                pushTooltip = isNewLocalBranchWithCommits
+                              ? "Push and set upstream for " + activeBranchOrContextName
+                              : "Push " + unpushedCommitIds.size() + " commit(s) for " + activeBranchOrContextName;
+            } else {
+                pushTooltip = "Nothing to push for " + activeBranchOrContextName;
             }
         }
+        ActionListener pushListener = pushEnabled ? e -> handlePushAction(activeBranchOrContextName) : null;
+        var pushConfig = new ButtonConfig(pushEnabled, pushTooltip, pushListener);
 
-        final java.awt.event.ActionListener finalPullListener = finalPullEnabled ? e -> {
-            contextManager.submitUserTask("Pulling " + finalActiveBranchOrContextName, () -> {
-                try {
-                    String msg = gitWorkflowService.pull(finalActiveBranchOrContextName);
-                    SwingUtil.runOnEdt(() -> {
-                        chrome.systemOutput(msg);
-                        refreshCurrentViewAfterGitOp();
-                        var gitPanel = chrome.getGitPanel(); // Optional, may be null
-                        if (gitPanel != null) {
-                            gitPanel.updateCommitPanel(); // For uncommitted changes
-                        }
-                    });
-                } catch (GitAPIException ex) {
-                    logger.error("Error pulling {}: {}", finalActiveBranchOrContextName, ex.getMessage());
-                    SwingUtil.runOnEdt(() -> chrome.toolError("Pull error for " + finalActiveBranchOrContextName + ": " + ex.getMessage()));
-                }
-            });
-        } : null;
+        boolean createPrEnabled = options.showCreatePrButton() && viewKind == ViewKind.LOCAL; // PRs only for local branches
+        String createPrTooltip = options.showCreatePrButton()
+                                 ? (createPrEnabled ? "Create a pull request for branch " + activeBranchOrContextName : "Cannot create PR for " + viewKind.toString().toLowerCase(Locale.ROOT) + " views")
+                                 : "";
+        var createPrConfig = new ButtonConfig(createPrEnabled, createPrTooltip, null); // Listener is static
 
-        final java.awt.event.ActionListener finalPushListener = finalPushEnabled ? e -> {
-            contextManager.submitUserTask("Pushing " + finalActiveBranchOrContextName, () -> {
-                try {
-                    String msg = gitWorkflowService.push(finalActiveBranchOrContextName);
-                    SwingUtil.runOnEdt(() -> {
-                        chrome.systemOutput(msg);
-                        refreshCurrentViewAfterGitOp();
-                    });
-                } catch (GitRepo.GitPushRejectedException ex) {
-                     logger.warn("Push rejected for {}: {}", finalActiveBranchOrContextName, ex.getMessage());
-                     SwingUtil.runOnEdt(() -> chrome.toolError("Push rejected for " + finalActiveBranchOrContextName + ". Tip: Pull changes first.\nDetails: " + ex.getMessage(), "Push Rejected"));
-                } catch (GitAPIException ex) {
-                    logger.error("Error pushing {}: {}", finalActiveBranchOrContextName, ex.getMessage());
-                    SwingUtil.runOnEdt(() -> chrome.toolError("Push error for " + finalActiveBranchOrContextName + ": " + ex.getMessage()));
-                }
-            });
-        } : null;
+        return new CommitPanelButtonStates(pullConfig, pushConfig, createPrConfig);
+    }
 
-        final boolean finalCreatePrEnabled = this.options.showCreatePrButton() && !isStashView && !isSearchView && !isRemoteBranchView; // Keep isRemoteBranchView check for PR button
-        final String finalCreatePrTooltip = this.options.showCreatePrButton() ? (finalCreatePrEnabled
-            ? "Create a pull request for branch " + activeBranchOrContextName
-            : "Cannot create PR for stashes or search results") : "";
-
-        SwingUtil.runOnEdt(() -> {
-            commitsTableModel.setRowCount(0);
-            changesRootNode.removeAllChildren();
-            changesTreeModel.reload();
-
-            if (this.options.showPushPullButtons()) {
-                configureButton(pullButton, finalPullEnabled, finalPullTooltip, finalPullListener);
-                configureButton(pushButton, finalPushEnabled, finalPushTooltip, finalPushListener);
-            }
-
-            if (this.options.showCreatePrButton()) {
-                // ActionListener is already set up during button creation.
-                configureButton(createPrButton, finalCreatePrEnabled, finalCreatePrTooltip, null); // Pass null for listener as it's already attached
-            }
-
-            if (commitRows.isEmpty()) {
-                revisionTextLabel.setText("Revision:");
-                revisionIdTextArea.setText("N/A");
-                if (!activeBranchOrContextName.startsWith("Search:")) { // Don't show "no commits" for empty search
-                     commitsTableModel.addRow(new Object[]{"No commits found.", "", "", "", false, null});
-                }
-                return;
-            }
-
-            var selectionModel = commitsTable.getSelectionModel();
-            selectionModel.setValueIsAdjusting(true);
+    private void handlePullAction(String branchName) {
+        contextManager.submitUserTask("Pulling " + branchName, () -> {
             try {
-                for (Object[] rowData : commitRows) commitsTableModel.addRow(rowData);
-                TableUtils.fitColumnWidth(commitsTable, 1); // Author
-                TableUtils.fitColumnWidth(commitsTable, 2); // Date
-
-                if (commitsTableModel.getRowCount() > 0) commitsTable.setRowSelectionInterval(0, 0);
-                else {
-                    revisionTextLabel.setText("Revision:");
-                    revisionIdTextArea.setText("N/A");
-                }
-            } finally {
-                selectionModel.setValueIsAdjusting(false);
+                String msg = gitWorkflowService.pull(branchName);
+                SwingUtil.runOnEdt(() -> {
+                    chrome.systemOutput(msg);
+                    refreshCurrentViewAfterGitOp();
+                    var gitPanel = chrome.getGitPanel(); // Optional, may be null
+                    if (gitPanel != null) {
+                        gitPanel.updateCommitPanel(); // For uncommitted changes
+                    }
+                });
+            } catch (GitAPIException ex) {
+                logger.error("Error pulling {}: {}", branchName, ex.getMessage());
+                SwingUtil.runOnEdt(() -> chrome.toolError("Pull error for " + branchName + ": " + ex.getMessage()));
             }
         });
+    }
+
+    private void handlePushAction(String branchName) {
+        contextManager.submitUserTask("Pushing " + branchName, () -> {
+            try {
+                String msg = gitWorkflowService.push(branchName);
+                SwingUtil.runOnEdt(() -> {
+                    chrome.systemOutput(msg);
+                    refreshCurrentViewAfterGitOp();
+                });
+            } catch (GitRepo.GitPushRejectedException ex) {
+                 logger.warn("Push rejected for {}: {}", branchName, ex.getMessage());
+                 SwingUtil.runOnEdt(() -> chrome.toolError("Push rejected for " + branchName + ". Tip: Pull changes first.\nDetails: " + ex.getMessage(), "Push Rejected"));
+            } catch (GitAPIException ex) {
+                logger.error("Error pushing {}: {}", branchName, ex.getMessage());
+                SwingUtil.runOnEdt(() -> chrome.toolError("Push error for " + branchName + ": " + ex.getMessage()));
+            }
+        });
+    }
+
+    private void applyStateToUiComponents(List<Object[]> commitRows,
+                                          CommitPanelButtonStates buttonStates,
+                                          ViewKind viewKind)
+    {
+        commitsTableModel.setRowCount(0);
+        changesRootNode.removeAllChildren();
+        changesTreeModel.reload();
+
+        if (options.showPushPullButtons()) {
+            configureButton(pullButton, buttonStates.pull().enabled(), buttonStates.pull().tooltip(), buttonStates.pull().listener());
+            configureButton(pushButton, buttonStates.push().enabled(), buttonStates.push().tooltip(), buttonStates.push().listener());
+        }
+
+        if (options.showCreatePrButton()) {
+            configureButton(createPrButton, buttonStates.createPr().enabled(), buttonStates.createPr().tooltip(), buttonStates.createPr().listener());
+        }
+
+        if (commitRows.isEmpty()) {
+            revisionTextLabel.setText("Revision:");
+            revisionIdTextArea.setText("N/A");
+            if (viewKind != ViewKind.SEARCH) { // Don't show "no commits" for empty search
+                 commitsTableModel.addRow(new Object[]{"No commits found.", "", "", "", false, null});
+            }
+            return;
+        }
+
+        var selectionModel = commitsTable.getSelectionModel();
+        selectionModel.setValueIsAdjusting(true);
+        try {
+            for (Object[] rowData : commitRows) commitsTableModel.addRow(rowData);
+            TableUtils.fitColumnWidth(commitsTable, 1); // Author
+            TableUtils.fitColumnWidth(commitsTable, 2); // Date
+
+            if (commitsTableModel.getRowCount() > 0) {
+                commitsTable.setRowSelectionInterval(0, 0);
+            } else { // Should be covered by commitRows.isEmpty() check, but defensive
+                revisionTextLabel.setText("Revision:");
+                revisionIdTextArea.setText("N/A");
+            }
+        } finally {
+            selectionModel.setValueIsAdjusting(false);
+        }
     }
 
     // Helper methods from GitLogTab (static or instance methods if they don't depend on GitLogTab's specific state)
@@ -1045,8 +1095,17 @@ public class GitCommitBrowserPanel extends JPanel {
         return commitId.length() >= 7 ? commitId.substring(0, 7) : commitId;
     }
 
-    private GitRepo getRepo() {
+    private GitRepo getRepo() { // Existing method, assumed to be correct for current usage.
         return (GitRepo) contextManager.getProject().getRepo();
+    }
+
+    private Optional<GitRepo> getRepoSafely() {
+        try {
+            return Optional.of(getRepo());
+        } catch (Exception e) { // Catch broad exception if contextManager or project is not set up
+            logger.warn("Could not get GitRepo instance: {}", e.getMessage());
+            return Optional.empty();
+        }
     }
 
     private String getOldHeadId() {
