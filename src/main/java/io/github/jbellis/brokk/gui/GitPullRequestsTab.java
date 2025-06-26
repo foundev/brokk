@@ -613,7 +613,7 @@ public class GitPullRequestsTab extends JPanel implements SettingsChangeListener
                 ICommitInfo oldestCommitInGroup = currentPrCommitDetailsList.get(group.getFirst());
                 ICommitInfo newestCommitInGroup = currentPrCommitDetailsList.get(group.getLast());
 
-                GitUiUtil.addDiffFromCommitInfoRangeToContext(contextManager, chrome, newestCommitInGroup, oldestCommitInGroup);
+                GitUiUtil.addCommitRangeToContext(contextManager, chrome, newestCommitInGroup, oldestCommitInGroup);
             }
         });
         contextMenu.add(capturePrCommitDiffMenuItem);

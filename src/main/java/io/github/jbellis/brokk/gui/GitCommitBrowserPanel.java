@@ -539,9 +539,11 @@ public class GitCommitBrowserPanel extends JPanel {
 
             for (var group : contiguousRowGroups) {
                 if (group.isEmpty()) continue;
-            GitUiUtil.addCommitRangeToContext(contextManager, chrome, group.stream().mapToInt(Integer::intValue).toArray(), commitsTableModel, COL_COMMIT_OBJ);
-        }
-    });
+                ICommitInfo newestCommitInGroup = (ICommitInfo) commitsTableModel.getValueAt(group.getFirst(), COL_COMMIT_OBJ);
+                ICommitInfo oldestCommitInGroup = (ICommitInfo) commitsTableModel.getValueAt(group.getLast(), COL_COMMIT_OBJ);
+                GitUiUtil.addCommitRangeToContext(contextManager, chrome, newestCommitInGroup, oldestCommitInGroup);
+            }
+        });
 
     softResetItem.addActionListener(e -> {
         int row = commitsTable.getSelectedRow(); // int preferred by style guide
