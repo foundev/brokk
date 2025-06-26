@@ -27,8 +27,8 @@ import java.util.concurrent.CompletableFuture;
 import java.util.stream.Collectors;
 
 /**
- * Panel for the "Commit" tab in the Git Panel.
- * Handles uncommitted changes, staging, committing, and stashing.
+ * Panel for the "Changes" tab (formerly "Commit" tab) in the Git Panel.
+ * Handles displaying uncommitted changes, staging, committing, and stashing.
  */
 public class GitCommitTab extends JPanel {
 
@@ -59,7 +59,7 @@ public class GitCommitTab extends JPanel {
     }
 
     /**
-     * Builds the Commit tab UI elements.
+     * Builds the Changes tab UI elements.
      */
     private void buildCommitTabUI()
     {

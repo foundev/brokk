@@ -30,7 +30,7 @@ public class GitPanel extends JPanel
     private final ContextManager contextManager;
     private final JTabbedPane tabbedPane;
 
-    // The “Commit” tab, now delegated to GitCommitTab
+    // The “Changes” tab, now delegated to GitCommitTab
     private final GitCommitTab commitTab;
 
     // The “Log” tab extracted into its own class
@@ -92,9 +92,9 @@ public class GitPanel extends JPanel
         tabbedPane = new JTabbedPane();
         add(tabbedPane, BorderLayout.CENTER);
 
-        // 1) Commit tab (moved to GitCommitTab)
+        // 1) Changes tab (displays uncommitted changes, uses GitCommitTab internally)
         commitTab = new GitCommitTab(chrome, contextManager, this);
-        tabbedPane.addTab("Commit", commitTab);
+        tabbedPane.addTab("Changes", commitTab);
 
         // 2) Log tab (moved to GitLogTab)
         gitLogTab = new GitLogTab(chrome, contextManager);
