@@ -10,8 +10,10 @@ import org.eclipse.jgit.api.errors.GitAPIException;
 import org.jetbrains.annotations.Nullable;
 
 import java.util.Arrays;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Objects;
+import java.util.Set;
 import java.util.stream.Collectors;
 
 public final class GitWorkflowService {
@@ -19,6 +21,13 @@ public final class GitWorkflowService {
 
     public record CommitResult(String commitId, String firstLine) {
     }
+
+    public record PushPullState(
+            boolean hasUpstream,
+            boolean canPull,
+            boolean canPush,
+            Set<String> unpushedCommitIds
+    ) {}
 
     private final ContextManager contextManager;
     private final GitRepo repo;
@@ -104,6 +113,61 @@ public final class GitWorkflowService {
         }
 
         return result.error() == null ? result.text() : "";
+    }
+
+    public PushPullState evaluatePushPull(String branch) throws GitAPIException {
+        if (branch.contains("/")) { // Remote branches or special views like "Search:" or "stashes"
+            return new PushPullState(false, false, false, Set.of());
+        }
+        boolean hasUpstream = repo.hasUpstreamBranch(branch);
+        Set<String> unpushedCommitIds = hasUpstream ? repo.getUnpushedCommitIds(branch) : new HashSet<>();
+        boolean canPull = hasUpstream;
+        boolean canPush = hasUpstream && !unpushedCommitIds.isEmpty(); // Can only push if there's an upstream and unpushed commits
+                                                                    // or if no upstream but local commits exist (handled in push method)
+        if (!hasUpstream && !repo.listCommitsDetailed(branch).isEmpty()) { // local branch with commits but no upstream
+            canPush = true;
+        }
+
+        return new PushPullState(hasUpstream, canPull, canPush, unpushedCommitIds);
+    }
+
+    public String push(String branch) throws GitAPIException {
+        // This check prevents attempting to push special views like "Search:" or "stashes"
+        // or remote branches directly.
+        if (branch.contains("/") || "stashes".equals(branch) || branch.startsWith("Search:")) {
+            logger.warn("Push attempted on invalid context: {}", branch);
+            throw new GitAPIException("Push is not supported for this view: " + branch) {};
+        }
+
+        if (repo.hasUpstreamBranch(branch)) {
+            repo.push(branch);
+            return "Pushed " + branch;
+        } else {
+            // Check if there are any commits to push before setting upstream.
+            // This avoids an empty push -N "origin" "branch:branch" if the branch is empty or fully pushed.
+            // However, listCommitsDetailed includes all commits, not just unpushed.
+            // For a new branch, any commit is "unpushed" relative to a non-existent remote.
+            if (repo.listCommitsDetailed(branch).isEmpty()) {
+                 return "Branch " + branch + " is empty. Nothing to push.";
+            }
+            repo.pushAndSetRemoteTracking(branch, "origin");
+            return "Pushed " + branch + " and set upstream to origin/" + branch;
+        }
+    }
+
+    public String pull(String branch) throws GitAPIException {
+        // This check prevents attempting to pull special views like "Search:" or "stashes"
+        // or remote branches directly.
+        if (branch.contains("/") || "stashes".equals(branch) || branch.startsWith("Search:")) {
+            logger.warn("Pull attempted on invalid context: {}", branch);
+            throw new GitAPIException("Pull is not supported for this view: " + branch) {};
+        }
+
+        if (!repo.hasUpstreamBranch(branch)) {
+            throw new GitAPIException("Branch '" + branch + "' has no upstream branch configured for pull.") {};
+        }
+        repo.pull(); // Assumes pull on current branch is intended if branchName matches
+        return "Pulled " + branch;
     }
 
     private static String normaliseMessage(@Nullable String raw)
