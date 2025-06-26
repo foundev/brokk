@@ -61,12 +61,7 @@ public class GitPullRequestsTab extends JPanel implements SettingsChangeListener
     private DefaultTableModel prTableModel;
     private JTable prCommitsTable;
     private DefaultTableModel prCommitsTableModel;
-    // private JButton checkoutPrButton; // Action moved to menu
-    // private JButton diffPrButton; // Action moved to menu
-    private JButton viewPrDiffButton; // Will remain on panel, action also in menu
-    // private JButton openInBrowserButton; // Action moved to menu
-    // private JButton capturePrDiffButton; // Action moved to menu
-
+    private JButton viewPrDiffButton; 
 
     // Context Menu Items for prTable
     private JMenuItem checkoutPrMenuItem;
@@ -291,20 +286,11 @@ public class GitPullRequestsTab extends JPanel implements SettingsChangeListener
         prButtonPanel.setBorder(BorderFactory.createEmptyBorder(Constants.V_GLUE, 0, 0, 0));
         prButtonPanel.setLayout(new BoxLayout(prButtonPanel, BoxLayout.X_AXIS));
 
-        // Initialize buttons that were previously class members for their actions,
-        // even if they are removed from the panel. Their actions are moved to menu items.
-        // checkoutPrButton = new JButton("Check Out"); // Action moved to checkoutPrMenuItem
-        // diffPrButton = new JButton("Diff vs Base"); // Action moved to diffPrVsBaseMenuItem
-        // capturePrDiffButton = new JButton("Capture Diff"); // Action moved to capturePrDiffMenuItemContextMenu
-        // openInBrowserButton = new JButton("Open in Browser"); // Action moved to openPrInBrowserMenuItem
-
         viewPrDiffButton = new JButton("View Diff"); // This button remains
         viewPrDiffButton.setToolTipText("View all changes in this PR in a diff viewer");
         viewPrDiffButton.setEnabled(false);
         viewPrDiffButton.addActionListener(e -> viewFullPrDiff());
         prButtonPanel.add(viewPrDiffButton);
-        // Removed other buttons from panel:
-        // checkoutPrButton, diffPrButton, capturePrDiffButton, openInBrowserButton
 
         prButtonPanel.add(Box.createHorizontalGlue()); // Pushes refresh button to the right
 
@@ -313,8 +299,8 @@ public class GitPullRequestsTab extends JPanel implements SettingsChangeListener
         prButtonPanel.add(refreshPrButton);
 
         prTableAndButtonsPanel.add(prButtonPanel, BorderLayout.SOUTH);
-        setupPrTableContextMenu(); // Setup context menu for prTable
-        setupPrTableDoubleClick(); // Setup double-click for prTable
+        setupPrTableContextMenu();
+        setupPrTableDoubleClick();
         centerContentPanel.add(prTableAndButtonsPanel, BorderLayout.CENTER); // Add to centerContentPanel
         mainPrAreaPanel.add(centerContentPanel, BorderLayout.CENTER); // Add centerContentPanel to main panel
 
@@ -459,7 +445,7 @@ public class GitPullRequestsTab extends JPanel implements SettingsChangeListener
 
         // Listen for PR selection changes
         prTable.getSelectionModel().addListSelectionListener(e -> {
-            if (!e.getValueIsAdjusting()) { // Removed && prTable.getSelectedRow() != -1 to handle deselection
+            if (!e.getValueIsAdjusting()) {
                 int viewRow = prTable.getSelectedRow();
                 if (viewRow != -1) {
                     int modelRow = prTable.convertRowIndexToModel(viewRow);
@@ -479,10 +465,6 @@ public class GitPullRequestsTab extends JPanel implements SettingsChangeListener
                     updatePrTableContextMenuState();
 
                     this.contextManager.submitBackgroundTask("Updating PR #" + prNumber + " local status", () -> {
-                        // String prHeadSha = selectedPr.getHead().getSha(); // Unused
-                        // Optional<String> existingBranchOpt = existsLocalPrBranch(selectedPr); // Unused
-                        // String syncStatus = getLocalSyncStatus(selectedPr, prHeadSha); // Unused
-
                         SwingUtilities.invokeLater(() -> {
                             int currentRow = prTable.getSelectedRow();
                             if (currentRow != -1 && currentRow < displayedPrs.size() && displayedPrs.get(currentRow).getNumber() == prNumber) {
@@ -502,11 +484,11 @@ public class GitPullRequestsTab extends JPanel implements SettingsChangeListener
         prCommitsTable.getSelectionModel().addListSelectionListener(e -> {
             if (!e.getValueIsAdjusting()) {
                 updateFilesForSelectedCommits();
-                updatePrCommitsContextMenuState(); // Update context menu based on selection
+                updatePrCommitsContextMenuState();
             }
         });
-        setupPrCommitsTableContextMenu(); // Setup context menu for prCommitsTable
-        setupPrCommitsTableDoubleClick(); // Setup double-click for prCommitsTable
+        setupPrCommitsTableContextMenu();
+        setupPrCommitsTableDoubleClick();
 
         MainProject.addSettingsChangeListener(this);
         updatePrList(); // async
@@ -516,7 +498,7 @@ public class GitPullRequestsTab extends JPanel implements SettingsChangeListener
         @Override
         public void mouseClicked(MouseEvent e) {
             if (e.getClickCount() == 2) {
-                if (prTable.getSelectedRowCount() == 1) { // Ensure only one PR is selected
+                if (prTable.getSelectedRowCount() == 1) {
                     viewFullPrDiff();
                 }
             }
