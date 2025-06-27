@@ -327,7 +327,8 @@ public class GitPanel extends JPanel
         }
     }
 
-    public GitCommitTab getCommitTab() {
+    public GitCommitTab getCommitTab()
+    {
         return commitTab;
     }
 

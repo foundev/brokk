@@ -8,6 +8,7 @@ import io.github.jbellis.brokk.difftool.ui.BrokkDiffPanel;
 import io.github.jbellis.brokk.difftool.ui.BufferSource;
 import io.github.jbellis.brokk.git.GitRepo;
 import io.github.jbellis.brokk.git.GitWorkflowService;
+import io.github.jbellis.brokk.gui.CommitDialog;
 import io.github.jbellis.brokk.gui.widgets.FileStatusTable;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
@@ -15,16 +16,11 @@ import org.eclipse.jgit.api.errors.GitAPIException;
 import org.jetbrains.annotations.Nullable;
 
 import javax.swing.*;
-import javax.swing.event.DocumentEvent;
-import javax.swing.event.DocumentListener;
 import javax.swing.table.DefaultTableModel;
 import java.awt.*;
 import java.util.ArrayList;
-import java.util.Arrays;
 import java.util.HashSet;
 import java.util.List;
-import java.util.concurrent.CompletableFuture;
-import java.util.stream.Collectors;
 
 /**
  * Panel for the "Changes" tab (formerly "Commit" tab) in the Git Panel.
@@ -42,8 +38,6 @@ public class GitCommitTab extends JPanel {
     // Commit tab UI
     private JTable uncommittedFilesTable; // Initialized via fileStatusPane
     private FileStatusTable fileStatusPane;
-    // private JButton suggestMessageButton; // Removed
-    // private JTextArea commitMessageArea; // Removed
     private JButton commitButton;
     private JButton stashButton;
     @Nullable
@@ -191,18 +185,15 @@ public class GitCommitTab extends JPanel {
         add(fileStatusPane, BorderLayout.CENTER);
 
         // Bottom panel for buttons
-        JPanel commitBottomPanel = new JPanel(new BorderLayout()); // Keep this outer panel for structure
         JPanel buttonPanel = new JPanel(new FlowLayout(FlowLayout.LEFT));
 
         // Stash Button
-        stashButton = new JButton("Stash"); // Static label
+        stashButton = new JButton("Stash All"); // Default label
         stashButton.setToolTipText("Save your changes to the stash");
         stashButton.setEnabled(false);
         stashButton.addActionListener(e -> {
             List<ProjectFile> selectedFiles = getSelectedFilesFromTable();
             // Stash without asking for a message, using a default one.
-            // The spec implies "git stash push" with no message, which typically generates one.
-            // We'll use a generic message.
             String stashMessage = "Stash created by Brokk";
             contextManager.submitUserTask("Stashing changes", () -> {
                 try {
@@ -242,7 +233,6 @@ public class GitCommitTab extends JPanel {
                         chrome.systemOutput("Committed "
                                 + GitUiUtil.shortenCommitId(commitResult.commitId())
                                 + ": " + commitResult.firstLine());
-                        // commitMessageArea.setText(""); // Removed
                         updateCommitPanel(); // Refresh file list
                         gitPanel.updateLogTab();
                         gitPanel.selectCurrentBranchInLogTab();
@@ -261,8 +251,7 @@ public class GitCommitTab extends JPanel {
             }
         });
 
-        commitBottomPanel.add(buttonPanel, BorderLayout.SOUTH);
-        add(commitBottomPanel, BorderLayout.SOUTH);
+        add(buttonPanel, BorderLayout.SOUTH);
     }
 
     /**
@@ -319,15 +308,15 @@ public class GitCommitTab extends JPanel {
                     // This also populates the statusMap within FileStatusTable
                     fileStatusPane.setFiles(uncommittedFilesList);
 
-                    fileStatusPane.setFiles(uncommittedFilesList); // This populates the table
-
                     // Restore selection
                     List<Integer> rowsToSelect = new ArrayList<>();
-                    for (int i = 0; i < uncommittedFilesList.size(); i++) {
-                        if (previouslySelectedFiles.contains(uncommittedFilesList.get(i).file())) {
+                    var model = (DefaultTableModel) uncommittedFilesTable.getModel();
+                    for (int i = 0; i < model.getRowCount(); i++) {
+                        if (previouslySelectedFiles.contains(model.getValueAt(i, 2))) {
                             rowsToSelect.add(i);
                         }
                     }
+
                     if (!rowsToSelect.isEmpty()) {
                         for (int rowIndex : rowsToSelect) {
                             uncommittedFilesTable.addRowSelectionInterval(rowIndex, rowIndex);
@@ -353,21 +342,21 @@ public class GitCommitTab extends JPanel {
     }
 
     /**
-     * Adjusts the commit button label depending on selected vs all.
-     * Stash button label is now static ("Stash").
+     * Adjusts the commit and stash button labels depending on file selection.
      */
     private void updateCommitButtonText() {
         int selectedRowCount = uncommittedFilesTable.getSelectedRowCount();
         if (selectedRowCount > 0) {
             commitButton.setText("Commit Selected...");
             commitButton.setToolTipText("Commit the selected files...");
+            stashButton.setText("Stash Selected");
+            stashButton.setToolTipText("Save selected changes to the stash");
         } else {
             commitButton.setText("Commit All...");
             commitButton.setToolTipText("Commit all files...");
+            stashButton.setText("Stash All");
+            stashButton.setToolTipText("Save all changes to the stash");
         }
-        // Stash button label is static "Stash", its behavior (all/selected) is handled in its action listener.
-        // Stash button tooltip can remain generic or be updated if desired, but label is fixed.
-        stashButton.setToolTipText("Save changes to the stash (selected if any, otherwise all)");
     }
 
     /**
@@ -550,7 +539,7 @@ public class GitCommitTab extends JPanel {
     private void rollbackChangesWithUndo(List<ProjectFile> selectedFiles) {
         if (selectedFiles.isEmpty()) {
             chrome.toolError("No files selected for rollback");
-            return;
+return;
         }
 
         contextManager.submitUserTask("Rolling back files", () -> {
@@ -614,13 +603,10 @@ public class GitCommitTab extends JPanel {
                 String fileList = GitUiUtil.formatFileList(selectedFiles);
                 chrome.systemOutput("Stashed " + fileList + ": " + stashDescription);
             }
-            // commitMessageArea.setText(""); // Removed
             updateCommitPanel(); // Refresh file list
             gitPanel.updateLogTab(); // Refresh log
         });
     }
-
-    // setCommitMessageText is removed as commitMessageArea is removed.
 
     public void disableButtons() {
         SwingUtilities.invokeLater(() -> {
