@@ -90,7 +90,6 @@ public final class MainProject extends AbstractProject {
     private static final Path GLOBAL_PROPERTIES_PATH = BROKK_CONFIG_DIR.resolve("brokk.properties");
 
     private final Path sessionsDir;
-    private final Path legacySessionsIndexPath;
 
     public enum LlmProxySetting {BROKK, LOCALHOST, STAGING}
 
@@ -128,7 +127,6 @@ public final class MainProject extends AbstractProject {
         this.styleGuidePath = this.masterRootPathForConfig.resolve(".brokk").resolve("style.md");
         this.reviewGuidePath = this.masterRootPathForConfig.resolve(".brokk").resolve("review.md");
         this.sessionsDir = this.masterRootPathForConfig.resolve(".brokk").resolve("sessions");
-        this.legacySessionsIndexPath = this.sessionsDir.resolve("sessions.jsonl");
         this.mainWorkspacePropertiesPath = this.root.resolve(".brokk").resolve("workspace.properties");
         this.mainWorkspaceProps = new Properties();
 
@@ -752,11 +750,6 @@ public final class MainProject extends AbstractProject {
     }
 
     private void writeSessionInfoToZip(Path zipPath, SessionInfo sessionInfo) throws IOException {
-        writeSessionInfoToZipWithoutCaching(zipPath, sessionInfo);
-        sessionsCache.put(sessionInfo.id(), sessionInfo);
-    }
-
-    private void writeSessionInfoToZipWithoutCaching(Path zipPath, SessionInfo sessionInfo) throws IOException {
         try (var fs = FileSystems.newFileSystem(zipPath, Map.of("create", Files.notExists(zipPath) ? "true" : "false"))) {
             Path manifestPath = fs.getPath("manifest.json");
             String json = objectMapper.writeValueAsString(sessionInfo);
@@ -765,6 +758,7 @@ public final class MainProject extends AbstractProject {
             logger.error("Error writing manifest.json to {}: {}", zipPath.getFileName(), e.getMessage());
             throw e;
         }
+        sessionsCache.put(sessionInfo.id(), sessionInfo);
     }
 
     @Override
@@ -1410,64 +1404,16 @@ public final class MainProject extends AbstractProject {
 
     private Map<UUID, SessionInfo> loadSessions() {
         var sessions = new ConcurrentHashMap<UUID, SessionInfo>();
-        var sessionIdsFromManifests = new HashSet<UUID>();
         try {
             Files.createDirectories(sessionsDir);
             try (var stream = Files.list(sessionsDir)) {
                 stream.filter(path -> path.toString().endsWith(".zip"))
                         .forEach(zipPath -> readSessionInfoFromZip(zipPath).ifPresent(sessionInfo -> {
                             sessions.put(sessionInfo.id(), sessionInfo);
-                            sessionIdsFromManifests.add(sessionInfo.id());
                         }));
             }
         } catch (IOException e) {
             logger.error("Error listing session zip files in {}: {}", sessionsDir, e.getMessage());
-        }
-        var legacySessionIds = new HashSet<UUID>();
-        if (Files.exists(legacySessionsIndexPath)) {
-            logger.debug("Attempting to read legacy sessions from {}", legacySessionsIndexPath);
-            try {
-                var lines = Files.readAllLines(legacySessionsIndexPath);
-                for (String line : lines) {
-                    if (!line.trim().isEmpty()) {
-                        try {
-                            var legacySessionInfo = objectMapper.readValue(line, SessionInfo.class);
-                            legacySessionIds.add(legacySessionInfo.id());
-                            if (!sessionIdsFromManifests.contains(legacySessionInfo.id())) {
-                                Path correspondingZip = getSessionHistoryPath(legacySessionInfo.id());
-                                if (Files.exists(correspondingZip)) {
-                                    sessions.put(legacySessionInfo.id(), legacySessionInfo);
-                                    
-                                    // Migrate on the spot - write manifest to zip
-                                    try {
-                                        writeSessionInfoToZipWithoutCaching(correspondingZip, legacySessionInfo);
-                                        sessionIdsFromManifests.add(legacySessionInfo.id());
-                                        logger.info("Migrated session {} into its zip manifest", legacySessionInfo.id());
-                                    } catch (IOException e) {
-                                        logger.warn("Unable to migrate legacy session {}: {}", legacySessionInfo.id(), e.getMessage());
-                                    }
-                                } else {
-                                    logger.warn("Orphaned session {} in legacy sessions.jsonl (no zip found), skipping.", legacySessionInfo.id());
-                                }
-                            }
-                        } catch (JsonProcessingException e) {
-                            logger.error("Failed to parse legacy SessionInfo from line: {}", line, e);
-                        }
-                    }
-                }
-                
-                // Delete legacy file if all sessions were successfully migrated
-                if (sessionIdsFromManifests.containsAll(legacySessionIds)) {
-                    try {
-                        Files.delete(legacySessionsIndexPath);
-                        logger.info("Successfully migrated all legacy sessions and deleted {}", legacySessionsIndexPath.getFileName());
-                    } catch (IOException e) {
-                        logger.warn("Could not delete legacy sessions.jsonl: {}", e.getMessage());
-                    }
-                }
-            } catch (IOException e) {
-                logger.error("Error reading legacy sessions index {}: {}", legacySessionsIndexPath, e.getMessage());
-            }
         }
         return sessions;
     }
