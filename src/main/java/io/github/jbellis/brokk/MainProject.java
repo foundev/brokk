@@ -26,6 +26,7 @@ import java.nio.file.StandardOpenOption;
 import java.util.*;
 import java.util.ArrayList;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.ExecutionException;
 import java.util.stream.Collectors;
@@ -108,6 +109,8 @@ public final class MainProject extends AbstractProject {
             - does it conform to the style guidelines
             - what parts are the trickiest and how could they be simplified
             """.stripIndent();
+
+    private final Map<UUID, SessionInfo> sessionsCache;
 
     public record ProjectPersistentInfo(long lastOpened, List<String> openWorktrees) {
         public ProjectPersistentInfo {
@@ -208,6 +211,7 @@ public final class MainProject extends AbstractProject {
 
         // Initialize cache and trigger migration/defaulting if necessary
         this.issuesProviderCache = getIssuesProvider();
+        this.sessionsCache = loadSessions();
     }
 
     @Override
@@ -748,6 +752,11 @@ public final class MainProject extends AbstractProject {
     }
 
     private void writeSessionInfoToZip(Path zipPath, SessionInfo sessionInfo) throws IOException {
+        writeSessionInfoToZipWithoutCaching(zipPath, sessionInfo);
+        sessionsCache.put(sessionInfo.id(), sessionInfo);
+    }
+
+    private void writeSessionInfoToZipWithoutCaching(Path zipPath, SessionInfo sessionInfo) throws IOException {
         try (var fs = FileSystems.newFileSystem(zipPath, Map.of("create", Files.notExists(zipPath) ? "true" : "false"))) {
             Path manifestPath = fs.getPath("manifest.json");
             String json = objectMapper.writeValueAsString(sessionInfo);
@@ -1399,16 +1408,15 @@ public final class MainProject extends AbstractProject {
     }
 
 
-    @Override
-    public List<SessionInfo> listSessions() {
-        var sessions = new ArrayList<SessionInfo>();
+    private Map<UUID, SessionInfo> loadSessions() {
+        var sessions = new ConcurrentHashMap<UUID, SessionInfo>();
         var sessionIdsFromManifests = new HashSet<UUID>();
         try {
             Files.createDirectories(sessionsDir);
             try (var stream = Files.list(sessionsDir)) {
                 stream.filter(path -> path.toString().endsWith(".zip"))
                         .forEach(zipPath -> readSessionInfoFromZip(zipPath).ifPresent(sessionInfo -> {
-                            sessions.add(sessionInfo);
+                            sessions.put(sessionInfo.id(), sessionInfo);
                             sessionIdsFromManifests.add(sessionInfo.id());
                         }));
             }
@@ -1428,11 +1436,11 @@ public final class MainProject extends AbstractProject {
                             if (!sessionIdsFromManifests.contains(legacySessionInfo.id())) {
                                 Path correspondingZip = getSessionHistoryPath(legacySessionInfo.id());
                                 if (Files.exists(correspondingZip)) {
-                                    sessions.add(legacySessionInfo);
+                                    sessions.put(legacySessionInfo.id(), legacySessionInfo);
                                     
                                     // Migrate on the spot - write manifest to zip
                                     try {
-                                        writeSessionInfoToZip(correspondingZip, legacySessionInfo);
+                                        writeSessionInfoToZipWithoutCaching(correspondingZip, legacySessionInfo);
                                         sessionIdsFromManifests.add(legacySessionInfo.id());
                                         logger.info("Migrated session {} into its zip manifest", legacySessionInfo.id());
                                     } catch (IOException e) {
@@ -1461,6 +1469,12 @@ public final class MainProject extends AbstractProject {
                 logger.error("Error reading legacy sessions index {}: {}", legacySessionsIndexPath, e.getMessage());
             }
         }
+        return sessions;
+    }
+
+    @Override
+    public List<SessionInfo> listSessions() {
+        var sessions = new ArrayList<>(sessionsCache.values());
         sessions.sort(Comparator.comparingLong(SessionInfo::modified).reversed());
         return sessions;
     }
@@ -1516,6 +1530,7 @@ public final class MainProject extends AbstractProject {
             } else {
                 logger.warn("Session zip {} not found for deletion, or already deleted.", historyZipPath.getFileName());
             }
+            sessionsCache.remove(sessionId);
         } catch (IOException e) {
             logger.error("Error deleting history zip for session {}: {}", sessionId, e.getMessage());
         }
