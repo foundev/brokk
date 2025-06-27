@@ -3,6 +3,7 @@ package io.github.jbellis.brokk.context;
 import dev.langchain4j.data.message.ChatMessage;
 import io.github.jbellis.brokk.AnalyzerUtil;
 import io.github.jbellis.brokk.IContextManager;
+import io.github.jbellis.brokk.TaskResult;
 import org.jetbrains.annotations.Nullable;
 import io.github.jbellis.brokk.IProject;
 import io.github.jbellis.brokk.TaskEntry;
@@ -806,15 +807,15 @@ public interface ContextFragment {
     class SearchFragment extends TaskFragment { // Non-dynamic (content-hashed via TaskFragment)
         private final Set<CodeUnit> sources; // This is pre-computed, so SearchFragment is not dynamic in content
 
-        public SearchFragment(IContextManager contextManager, String sessionName, List<ChatMessage> messages, Set<CodeUnit> sources) {
+        public SearchFragment(IContextManager contextManager, String sessionName, List<ChatMessage> messages, Set<CodeUnit> sources, TaskResult.InteractionMode mode) {
             // The ID (hash) is calculated by the TaskFragment constructor based on sessionName and messages.
-            super(contextManager, messages, sessionName);
+            super(contextManager, messages, sessionName, mode);
             this.sources = sources;
         }
 
         // Constructor for DTOs/unfreezing where ID is a pre-calculated hash
-        public SearchFragment(String existingHashId, IContextManager contextManager, String sessionName, List<ChatMessage> messages, Set<CodeUnit> sources) {
-            super(existingHashId, contextManager, EditBlockParser.instance, messages, sessionName); // existingHashId is expected to be a content hash
+        public SearchFragment(String existingHashId, IContextManager contextManager, String sessionName, List<ChatMessage> messages, Set<CodeUnit> sources, TaskResult.InteractionMode mode) {
+            super(existingHashId, contextManager, EditBlockParser.instance, messages, sessionName, true, mode); // existingHashId is expected to be a content hash
             this.sources = sources;
         }
 
@@ -1508,56 +1509,63 @@ public interface ContextFragment {
         private final List<ChatMessage> messages; // Content is fixed once created
         private final String sessionName;
         private final boolean escapeHtml;
+        private final TaskResult.InteractionMode mode;
 
-        private static String calculateId(String sessionName, List<ChatMessage> messages) {
+        private static String calculateId(String sessionName, List<ChatMessage> messages, TaskResult.InteractionMode mode) {
             return FragmentUtils.calculateContentHash(
-                    FragmentType.TASK, // Or SEARCH if SearchFragment calls this path
-                    sessionName,
-                    TaskEntry.formatMessages(messages),
-                    SyntaxConstants.SYNTAX_STYLE_MARKDOWN,
-                    TaskFragment.class.getName() // Note: SearchFragment might want its own class name if it were hashing independently
+                    FragmentType.TASK,                      // type
+                    sessionName,                            // description
+                    TaskEntry.formatMessages(messages),     // textContent
+                    null,                                   // imageBytes
+                    true,                                   // isTextFragment
+                    SyntaxConstants.SYNTAX_STYLE_MARKDOWN,  // syntaxStyle
+                    Set.of(),                               // files
+                    TaskFragment.class.getName(),           // originalClassName
+                    Map.of("mode", mode.name())             // meta
             );
         }
 
-        public TaskFragment(IContextManager contextManager, EditBlockParser parser, List<ChatMessage> messages, String sessionName, boolean escapeHtml) {
-            super(calculateId(sessionName, messages), contextManager); // ID is content hash
+        public TaskFragment(IContextManager contextManager, EditBlockParser parser, List<ChatMessage> messages, String sessionName, boolean escapeHtml, TaskResult.InteractionMode mode) {
+            super(calculateId(sessionName, messages, mode), contextManager); // ID is content hash
             this.parser = parser;
             this.messages = List.copyOf(messages);
             this.sessionName = sessionName;
             this.escapeHtml = escapeHtml;
+            this.mode = mode;
         }
 
-        public TaskFragment(IContextManager contextManager, EditBlockParser parser, List<ChatMessage> messages, String sessionName) {
-            this(contextManager, parser, messages, sessionName, true);
-        }
-
-        public TaskFragment(IContextManager contextManager, List<ChatMessage> messages, String sessionName, boolean escapeHtml) {
-            this(contextManager, EditBlockParser.instance, messages, sessionName, escapeHtml);
+        public TaskFragment(IContextManager contextManager, List<ChatMessage> messages, String sessionName, TaskResult.InteractionMode mode) {
+            this(contextManager, EditBlockParser.instance, messages, sessionName, true, mode);
         }
 
         public TaskFragment(IContextManager contextManager, List<ChatMessage> messages, String sessionName) {
-            this(contextManager, EditBlockParser.instance, messages, sessionName, true);
+            this(contextManager, EditBlockParser.instance, messages, sessionName, true, TaskResult.InteractionMode.UNKNOWN);
+        }
+
+        public TaskFragment(IContextManager contextManager, List<ChatMessage> messages, String sessionName, boolean escapeHtml) {
+            this(contextManager, EditBlockParser.instance, messages, sessionName, escapeHtml, TaskResult.InteractionMode.UNKNOWN);
         }
 
         // Constructor for DTOs/unfreezing where ID is a pre-calculated hash
-        public TaskFragment(String existingHashId, IContextManager contextManager, EditBlockParser parser, List<ChatMessage> messages, String sessionName, boolean escapeHtml) {
+        public TaskFragment(String existingHashId, IContextManager contextManager, EditBlockParser parser, List<ChatMessage> messages, String sessionName, boolean escapeHtml, TaskResult.InteractionMode mode) {
             super(existingHashId, contextManager); // existingHashId is expected to be a content hash
             this.parser = parser;
             this.messages = List.copyOf(messages);
             this.sessionName = sessionName;
             this.escapeHtml = escapeHtml;
+            this.mode = mode;
         }
 
-        public TaskFragment(String existingHashId, IContextManager contextManager, EditBlockParser parser, List<ChatMessage> messages, String sessionName) {
-            this(existingHashId, contextManager, parser, messages, sessionName, true);
+        public TaskFragment(String existingHashId, IContextManager contextManager, List<ChatMessage> messages, String sessionName, TaskResult.InteractionMode mode) {
+            this(existingHashId, contextManager, EditBlockParser.instance, messages, sessionName, true, mode);
         }
 
         public TaskFragment(String existingHashId, IContextManager contextManager, List<ChatMessage> messages, String sessionName, boolean escapeHtml) {
-            this(existingHashId, contextManager, EditBlockParser.instance, messages, sessionName, escapeHtml);
+            this(existingHashId, contextManager, EditBlockParser.instance, messages, sessionName, escapeHtml, TaskResult.InteractionMode.UNKNOWN);
         }
 
         public TaskFragment(String existingHashId, IContextManager contextManager, List<ChatMessage> messages, String sessionName) {
-            this(existingHashId, contextManager, EditBlockParser.instance, messages, sessionName, true);
+            this(existingHashId, contextManager, messages, sessionName, true);
         }
 
         @Override
@@ -1614,6 +1622,10 @@ public interface ContextFragment {
 
         public EditBlockParser parser() {
             return parser;
+        }
+
+        public TaskResult.InteractionMode mode() {
+            return mode;
         }
     }
 }

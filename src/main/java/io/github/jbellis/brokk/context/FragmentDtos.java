@@ -1,6 +1,7 @@
 package io.github.jbellis.brokk.context;
 
 import com.fasterxml.jackson.annotation.JsonTypeInfo;
+import io.github.jbellis.brokk.TaskResult;
 import org.jetbrains.annotations.Nullable;
 
 import java.util.List;
@@ -93,11 +94,14 @@ public class FragmentDtos {
     /**
      * DTO for TaskFragment - represents a session's chat messages.
      */
-    public record TaskFragmentDto(String id, List<ChatMessageDto> messages, String sessionName) implements VirtualFragmentDto { // id changed to String
+    public record TaskFragmentDto(String id, List<ChatMessageDto> messages, String sessionName, @Nullable TaskResult.InteractionMode mode) implements VirtualFragmentDto { // id changed to String
         public TaskFragmentDto {
             messages = List.copyOf(messages);
             if (sessionName == null) {
                 throw new IllegalArgumentException("sessionName cannot be null");
+            }
+            if (mode == null) {
+                mode = TaskResult.InteractionMode.UNKNOWN;
             }
         }
     }
@@ -136,7 +140,7 @@ public class FragmentDtos {
     /**
      * DTO for SearchFragment - contains search query, explanation, sources and messages.
      */
-    public record SearchFragmentDto(String id, String query, String explanation, Set<CodeUnitDto> sources, List<ChatMessageDto> messages) implements VirtualFragmentDto { // id changed to String
+    public record SearchFragmentDto(String id, String query, String explanation, Set<CodeUnitDto> sources, List<ChatMessageDto> messages, @Nullable TaskResult.InteractionMode mode) implements VirtualFragmentDto { // id changed to String
         public SearchFragmentDto {
             if (query == null) {
                 throw new IllegalArgumentException("query cannot be null");
@@ -146,6 +150,9 @@ public class FragmentDtos {
             }
             sources = Set.copyOf(sources);
             messages = List.copyOf(messages);
+            if (mode == null) {
+                mode = TaskResult.InteractionMode.UNKNOWN;
+            }
         }
     }
     

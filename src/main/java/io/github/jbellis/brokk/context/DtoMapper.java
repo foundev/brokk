@@ -3,6 +3,7 @@ package io.github.jbellis.brokk.context;
 import dev.langchain4j.data.message.ChatMessage;
 import io.github.jbellis.brokk.IContextManager;
 import io.github.jbellis.brokk.TaskEntry;
+import io.github.jbellis.brokk.TaskResult;
 import io.github.jbellis.brokk.analyzer.BrokkFile;
 import io.github.jbellis.brokk.analyzer.CodeUnit;
 import io.github.jbellis.brokk.analyzer.ExternalFile;
@@ -156,7 +157,8 @@ public class DtoMapper {
         var messages = dto.messages().stream()
                 .map(DtoMapper::fromChatMessageDto)
                 .toList();
-        return new ContextFragment.TaskFragment(dto.id(), mgr, messages, dto.sessionName());
+        var mode = dto.mode() == null ? TaskResult.InteractionMode.UNKNOWN : dto.mode();
+        return new ContextFragment.TaskFragment(dto.id(), mgr, messages, dto.sessionName(), mode);
     }
 
     private static @Nullable ContextFragment.VirtualFragment _buildVirtualFragment(@Nullable VirtualFragmentDto dto, IContextManager mgr, @Nullable Map<String, byte[]> imageBytesMap,
@@ -189,7 +191,8 @@ public class DtoMapper {
                 var messages = searchDto.messages().stream()
                         .map(DtoMapper::fromChatMessageDto)
                         .toList();
-                yield new ContextFragment.SearchFragment(searchDto.id(), mgr, searchDto.query(), messages, sources);
+                var mode = searchDto.mode() == null ? TaskResult.InteractionMode.UNKNOWN : searchDto.mode();
+                yield new ContextFragment.SearchFragment(searchDto.id(), mgr, searchDto.query(), messages, sources, mode);
             }
             case TaskFragmentDto taskDto ->
                 _buildTaskFragment(taskDto, mgr);
@@ -337,7 +340,8 @@ private static BrokkFile fromImageFileDtoToBrokkFile(ImageFileDto ifd, IContextM
                         searchFragment.description(), // sessionName for TaskFragment
                         "", // explanation - no longer a separate field for SearchFragmentDto itself
                         sourcesDto,
-                        messagesDto
+                        messagesDto,
+                        searchFragment.mode()
                 );
             }
             case ContextFragment.TaskFragment taskFragment -> toTaskFragmentDto(taskFragment); // Handles general TaskFragments
@@ -401,7 +405,7 @@ private static BrokkFile fromImageFileDtoToBrokkFile(ImageFileDto ifd, IContextM
             var messagesDto = entry.log().messages().stream()
                     .map(DtoMapper::toChatMessageDto)
                     .toList();
-            logDto = new TaskFragmentDto(entry.log().id(), messagesDto, entry.log().description()); // entry.log().id() is String
+            logDto = new TaskFragmentDto(entry.log().id(), messagesDto, entry.log().description(), entry.log().mode()); // entry.log().id() is String
         }
 
         return new TaskEntryDto(entry.sequence(), logDto, entry.summary());
@@ -411,7 +415,7 @@ private static BrokkFile fromImageFileDtoToBrokkFile(ImageFileDto ifd, IContextM
         var messagesDto = fragment.messages().stream()
                 .map(DtoMapper::toChatMessageDto)
                 .toList();
-        return new TaskFragmentDto(fragment.id(), messagesDto, fragment.description()); // fragment.id() is String
+        return new TaskFragmentDto(fragment.id(), messagesDto, fragment.description(), fragment.mode()); // fragment.id() is String
     }
 
     private static ChatMessageDto toChatMessageDto(ChatMessage message) {

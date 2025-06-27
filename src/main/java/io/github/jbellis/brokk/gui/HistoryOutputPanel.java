@@ -529,8 +529,11 @@ public class HistoryOutputPanel extends JPanel {
 
             // Add rows for each context in history
             for (var ctx : contextManager.getContextHistoryList()) {
-                // Add icon for AI responses, null for user actions
-                Icon iconEmoji = (ctx.getParsedOutput() != null) ? SwingUtil.uiIcon("Brokk.ai-robot") : null;
+                Icon iconEmoji = null;
+                var parsedOutput = ctx.getParsedOutput();
+                if (parsedOutput != null) {
+                    iconEmoji = SwingUtil.uiIcon(parsedOutput.mode().toIconName());
+                }
                 historyModel.addRow(new Object[]{
                         iconEmoji,
                         ctx.getAction(),

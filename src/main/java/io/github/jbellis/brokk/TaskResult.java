@@ -5,7 +5,6 @@ import io.github.jbellis.brokk.analyzer.ProjectFile;
 import io.github.jbellis.brokk.context.ContextFragment;
 
 import java.util.List;
-import java.util.Map;
 import java.util.Set;
 
 /**
@@ -17,13 +16,36 @@ public record TaskResult(String actionDescription,
                          Set<ProjectFile> changedFiles,
                          StopDetails stopDetails)
 {
+    /**
+     * The kind of user/agent interaction that produced this result.
+     * This determines the icon shown in the history view.
+     */
+    public enum InteractionMode
+    {
+        ARCHITECT, CODE, ASK, SEARCH, RUN, UNKNOWN;
+
+        public String toIconName()
+        {
+            return switch (this)
+            {
+                case ARCHITECT -> "Brokk.ai-robot";
+                case CODE -> "Brokk.ai-robot";
+                case ASK -> "Brokk.ask";
+                case SEARCH -> "Brokk.search";
+                case RUN -> "Brokk.run";
+                default -> "Brokk.ai-robot";
+            };
+        }
+    }
+
     public TaskResult(IContextManager contextManager, String actionDescription,
                       List<ChatMessage> uiMessages,
                       Set<ProjectFile> changedFiles,
-                      StopDetails stopDetails)
+                      StopDetails stopDetails,
+                      InteractionMode mode)
     {
         this(actionDescription,
-             new ContextFragment.TaskFragment(contextManager, uiMessages, actionDescription),
+             new ContextFragment.TaskFragment(contextManager, uiMessages, actionDescription, mode),
              changedFiles,
              stopDetails);
     }
@@ -31,12 +53,29 @@ public record TaskResult(String actionDescription,
     public TaskResult(IContextManager contextManager, String actionDescription,
                       List<ChatMessage> uiMessages,
                       Set<ProjectFile> changedFiles,
-                      StopReason simpleReason)
+                      StopReason simpleReason,
+                      InteractionMode mode)
     {
         this(actionDescription,
-             new ContextFragment.TaskFragment(contextManager, uiMessages, actionDescription),
+             new ContextFragment.TaskFragment(contextManager, uiMessages, actionDescription, mode),
              changedFiles,
              new StopDetails(simpleReason));
+    }
+
+    public TaskResult(IContextManager contextManager, String actionDescription,
+                      List<ChatMessage> uiMessages,
+                      Set<ProjectFile> changedFiles,
+                      StopDetails stopDetails)
+    {
+        this(contextManager, actionDescription, uiMessages, changedFiles, stopDetails, InteractionMode.UNKNOWN);
+    }
+
+    public TaskResult(IContextManager contextManager, String actionDescription,
+                      List<ChatMessage> uiMessages,
+                      Set<ProjectFile> changedFiles,
+                      StopReason simpleReason)
+    {
+        this(contextManager, actionDescription, uiMessages, changedFiles, simpleReason, InteractionMode.UNKNOWN);
     }
 
     /**

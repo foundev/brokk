@@ -306,7 +306,7 @@ public class CodeAgent {
         // Prepare messages for TaskEntry log: filter raw messages and keep S/R blocks verbatim
         var finalMessages = forArchitect ? List.copyOf(io.getLlmRawMessages()) : prepareMessagesForTaskEntryLog();
         return new TaskResult("Code: " + finalActionDescription,
-                              new ContextFragment.TaskFragment(contextManager, finalMessages, userInput),
+                              new ContextFragment.TaskFragment(contextManager, finalMessages, userInput, TaskResult.InteractionMode.CODE),
                               changedFiles,
                               stopDetails);
     }
@@ -596,7 +596,7 @@ public class CodeAgent {
 
         // Return TaskResult containing conversation and original content
         return new TaskResult("Quick Edit: " + file.getFileName(),
-                              new ContextFragment.TaskFragment(contextManager, pendingHistory, "Quick Edit: " + file.getFileName()),
+                              new ContextFragment.TaskFragment(contextManager, pendingHistory, "Quick Edit: " + file.getFileName(), TaskResult.InteractionMode.CODE),
                               Set.of(file),
                               stopDetails);
     }

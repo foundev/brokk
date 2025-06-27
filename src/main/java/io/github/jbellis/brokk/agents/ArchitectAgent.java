@@ -451,7 +451,8 @@ public class ArchitectAgent {
                 logger.debug("Project final answer: {}", toolResult.resultText());
                 var fragment = new ContextFragment.TaskFragment(contextManager,
                                                                 List.of(new AiMessage(toolResult.resultText())),
-                                                                goal);
+                                                                goal,
+                                                                TaskResult.InteractionMode.ARCHITECT);
                 var stopDetails = new TaskResult.StopDetails(TaskResult.StopReason.SUCCESS, toolResult.resultText());
                 return new TaskResult("Architect: " + goal, fragment, Set.of(), stopDetails);
             }
@@ -461,7 +462,8 @@ public class ArchitectAgent {
                 logger.debug("Project aborted: {}", toolResult.resultText());
                 var fragment = new ContextFragment.TaskFragment(contextManager,
                                                                   List.of(new AiMessage(toolResult.resultText())),
-                                                                  goal);
+                                                                  goal,
+                                                                  TaskResult.InteractionMode.ARCHITECT);
                 var stopDetails = new TaskResult.StopDetails(TaskResult.StopReason.LLM_ABORTED, toolResult.resultText());
                 return new TaskResult("Architect: " + goal, fragment, Set.of(), stopDetails);
             }
@@ -549,7 +551,8 @@ public class ArchitectAgent {
                               "Architect: " + goal,
                               List.of(),
                               Set.of(),
-                              new TaskResult.StopDetails(TaskResult.StopReason.LLM_ERROR));
+                              new TaskResult.StopDetails(TaskResult.StopReason.LLM_ERROR),
+                              TaskResult.InteractionMode.ARCHITECT);
     }
 
     /**

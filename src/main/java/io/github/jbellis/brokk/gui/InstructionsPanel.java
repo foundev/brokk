@@ -1177,7 +1177,8 @@ public class InstructionsPanel extends JPanel implements IContextManager.Context
                                                    "Ask: " + question,
                                                    List.copyOf(chrome.getLlmRawMessages()),
                                                    Set.of(), // No undo contents for Ask
-                                                   new TaskResult.StopDetails(TaskResult.StopReason.SUCCESS));
+                                                   new TaskResult.StopDetails(TaskResult.StopReason.SUCCESS),
+                                                   TaskResult.InteractionMode.ASK);
                 chrome.setSkipNextUpdateOutputPanelOnContextChange(true);
                 contextManager.addToHistory(sessionResult, false);
                 chrome.systemOutput("Ask command complete!");
@@ -1192,8 +1193,16 @@ public class InstructionsPanel extends JPanel implements IContextManager.Context
         private void maybeAddInterruptedResult(String action, String input) {
             if (chrome.getLlmRawMessages().stream().anyMatch(m -> m instanceof AiMessage)) {
                 logger.debug(action + " command cancelled with partial results");
+                var mode = switch (action) {
+                    case ACTION_ARCHITECT -> TaskResult.InteractionMode.ARCHITECT;
+                    case ACTION_CODE -> TaskResult.InteractionMode.CODE;
+                    case ACTION_ASK -> TaskResult.InteractionMode.ASK;
+                    case ACTION_SEARCH -> TaskResult.InteractionMode.SEARCH;
+                    case ACTION_RUN -> TaskResult.InteractionMode.RUN;
+                    default -> TaskResult.InteractionMode.UNKNOWN;
+                };
                 var sessionResult = new TaskResult("%s (Cancelled): %s".formatted(action, input),
-                                                   new TaskFragment(chrome.getContextManager(), List.copyOf(chrome.getLlmRawMessages()), input),
+                                                   new TaskFragment(chrome.getContextManager(), List.copyOf(chrome.getLlmRawMessages()), input, mode),
                                                    Set.of(),
                                                    new TaskResult.StopDetails(TaskResult.StopReason.INTERRUPTED));
                 chrome.getContextManager().addToHistory(sessionResult, false);
@@ -1287,7 +1296,7 @@ public class InstructionsPanel extends JPanel implements IContextManager.Context
         // Add to context history with the action message (which includes success/failure)
         final String finalActionMessage = actionMessage; // Effectively final for lambda
         contextManager.pushContext(ctx -> {
-            var parsed = new TaskFragment(chrome.getContextManager(), List.copyOf(chrome.getLlmRawMessages()), finalActionMessage);
+            var parsed = new TaskFragment(chrome.getContextManager(), List.copyOf(chrome.getLlmRawMessages()), finalActionMessage, TaskResult.InteractionMode.RUN);
                 return ctx.withParsedOutput(parsed, CompletableFuture.completedFuture(finalActionMessage));
             });
     }
@@ -1569,9 +1578,17 @@ public class InstructionsPanel extends JPanel implements IContextManager.Context
      */
     public Future<?> submitAction(String action, String input, Runnable task) {
         var cm = chrome.getContextManager();
+        var mode = switch (action) {
+            case ACTION_ARCHITECT -> TaskResult.InteractionMode.ARCHITECT;
+            case ACTION_CODE -> TaskResult.InteractionMode.CODE;
+            case ACTION_ASK -> TaskResult.InteractionMode.ASK;
+            case ACTION_SEARCH -> TaskResult.InteractionMode.SEARCH;
+            case ACTION_RUN -> TaskResult.InteractionMode.RUN;
+            default -> TaskResult.InteractionMode.UNKNOWN;
+        };
         // need to set the correct parser here since we're going to append to the same fragment during the action
         String finalAction = (action + " MODE").toUpperCase(Locale.ROOT);
-        chrome.setLlmOutput(new ContextFragment.TaskFragment(cm, cm.getParserForWorkspace(), List.of(new UserMessage(finalAction, input)), input));
+        chrome.setLlmOutput(new ContextFragment.TaskFragment(cm, cm.getParserForWorkspace(), List.of(new UserMessage(finalAction, input)), input, true, mode));
         return cm.submitUserTask(finalAction, true, () -> {
             try {
                 chrome.showOutputSpinner("Executing " + action + " command...");

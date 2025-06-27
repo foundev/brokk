@@ -384,7 +384,7 @@ public class SearchAgent {
 
     private TaskResult errorResult(TaskResult.StopDetails details, String explanation) {
         return new TaskResult("Search: " + query,
-                              new ContextFragment.TaskFragment(contextManager, List.of(new UserMessage(query), new AiMessage(explanation)), query), 
+                              new ContextFragment.TaskFragment(contextManager, List.of(new UserMessage(query), new AiMessage(explanation)), query, TaskResult.InteractionMode.SEARCH),
                               Set.of(),
                               details);
     }
@@ -1186,9 +1186,9 @@ public class SearchAgent {
 
         io.llmOutput("\n# Answer\n%s".formatted(explanationText), ChatMessageType.AI);
         var sessionName = "Search: " + query;
-        var fragment = new ContextFragment.SearchFragment(contextManager, sessionName, List.copyOf(io.getLlmRawMessages()), coalesced);
+        var fragment = new ContextFragment.SearchFragment(contextManager, sessionName, List.copyOf(io.getLlmRawMessages()), coalesced, TaskResult.InteractionMode.SEARCH);
         return new TaskResult(sessionName,
-                              fragment, 
+                              fragment,
                               Set.of(),
                               new TaskResult.StopDetails(TaskResult.StopReason.SUCCESS));
     }
