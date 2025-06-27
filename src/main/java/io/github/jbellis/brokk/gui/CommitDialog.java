@@ -23,13 +23,13 @@ public class CommitDialog extends JDialog {
     private final transient GitWorkflowService workflowService;
     private final transient List<ProjectFile> filesToCommit;
     private final transient Consumer<GitWorkflowService.CommitResult> onCommitSuccessCallback;
-    private final transient Chrome chrome; // Added for toolError
+    private final transient Chrome chrome;
 
     private static final String PLACEHOLDER_INFERRING = "Inferring commit message...";
     private static final String PLACEHOLDER_FAILURE = "Unable to infer message. Please write one manually.";
 
     public CommitDialog(Frame owner,
-                        Chrome chrome, // Added chrome
+                        Chrome chrome,
                         ContextManager contextManager,
                         GitWorkflowService workflowService,
                         List<ProjectFile> filesToCommit,
@@ -112,8 +112,6 @@ public class CommitDialog extends JDialog {
                         commitMessageArea.setText(suggestedMessage);
                     } else {
                         commitMessageArea.setText(""); // Clear placeholder if suggestion is empty
-                        // If filesToCommit is not empty but message is, it implies no changes or only whitespace.
-                        // User might still want to commit with their own message.
                     }
                     commitMessageArea.setEnabled(true);
                     commitMessageArea.requestFocusInWindow(); // Focus for editing
