@@ -13,6 +13,8 @@ import io.github.jbellis.brokk.IConsoleIO;
 import java.nio.file.Path;
 import java.util.HashSet;
 import java.util.Set;
+import io.github.jbellis.brokk.context.Context;
+import io.github.jbellis.brokk.prompts.EditBlockParser;
 
 public final class TestContextManager implements IContextManager {
     private final TestProject project;
@@ -22,6 +24,7 @@ public final class TestContextManager implements IContextManager {
     private final Set<ProjectFile> readonlyFiles = new HashSet<>();
     private final IConsoleIO consoleIO;
     private final StubService stubService;
+    private final Context liveContext;
 
     public TestContextManager(Path projectRoot) {
         this(projectRoot, null);
@@ -33,6 +36,11 @@ public final class TestContextManager implements IContextManager {
         this.inMemoryRepo = new InMemoryRepo();
         this.consoleIO = consoleIO;
         this.stubService = new StubService(this.project);
+        if (this.consoleIO != null) {
+            this.liveContext = new Context(this, "Test context");
+        } else {
+            this.liveContext = null;
+        }
     }
 
     @Override
@@ -100,8 +108,21 @@ public final class TestContextManager implements IContextManager {
     }
 
     @Override
+    public Context liveContext() {
+        if (liveContext == null) {
+            throw new UnsupportedOperationException("liveContext requires IConsoleIO to be provided in TestContextManager constructor");
+        }
+        return liveContext;
+    }
+
+    @Override
     public Service getService() {
         return stubService;
+    }
+
+    @Override
+    public EditBlockParser getParserForWorkspace() {
+        return EditBlockParser.getParserFor("");
     }
 
     /**
