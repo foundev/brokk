@@ -61,8 +61,6 @@ public class LineNumberBorder extends EmptyBorder {
         // Initialize the colours once; they will be refreshed on every paint call
         updateColors();
         // Ensure background and lineColor are initialized even if updateColors() doesn't set them due to some theme issue
-        if (this.background == null) this.background = Color.LIGHT_GRAY;
-        if (this.lineColor == null) this.lineColor = Color.DARK_GRAY;
     }
 
     /**

@@ -19,9 +19,6 @@ import java.util.function.BiFunction;
  * A modal dialog to configure the tools available to the Architect agent.
  */
 public class ArchitectOptionsDialog {
-    // Remember last selections for the current session (used as fallback or if project is null)
-    private static ArchitectAgent.ArchitectOptions lastArchitectOptionsCache = ArchitectAgent.ArchitectOptions.DEFAULTS;
-    private static boolean lastRunInWorktreeCache = false;
 
     private static boolean isCodeIntelConfigured(IProject project) {
         var langs = project.getAnalyzerLanguages();
@@ -47,23 +44,14 @@ public class ArchitectOptionsDialog {
             // Initial checks must happen *inside* the EDT task now
             var project = chrome.getProject();
             var isCpg = contextManager.getAnalyzerWrapper().isCpg();
-            boolean codeIntelConfigured = project != null && isCodeIntelConfigured(project);
+            boolean codeIntelConfigured = isCodeIntelConfigured(project);
 
             // Load from project settings, fallback to static cache if project is null or settings not present
             var currentOptions = ArchitectAgent.ArchitectOptions.DEFAULTS;
             boolean currentRunInWorktree = false;
 
-            if (project != null) {
-                currentOptions = project.getArchitectOptions();
-                currentRunInWorktree = project.getArchitectRunInWorktree();
-                // Update static cache if project settings were different (e.g. first time opening this project in this session)
-                lastArchitectOptionsCache = currentOptions;
-                lastRunInWorktreeCache = currentRunInWorktree;
-            } else {
-                // No project, use last known static values
-                currentOptions = lastArchitectOptionsCache;
-                currentRunInWorktree = lastRunInWorktreeCache;
-            }
+            currentOptions = project.getArchitectOptions();
+            currentRunInWorktree = project.getArchitectRunInWorktree();
 
             JDialog dialog = new JDialog(chrome.getFrame(), "Architect Tools", true); // Modal dialog
             dialog.setDefaultCloseOperation(JDialog.DISPOSE_ON_CLOSE); // Dispose on close
@@ -124,7 +112,7 @@ public class ArchitectOptionsDialog {
             var worktreeCb = new JCheckBox("<html>Run in New Git worktree<br><i><font size='-2'>Create a new worktree for the Architect to work in, leaving your current one open for other tasks. The Architect will start with a copy of the current Workspace</font></i></html>");
             worktreeCb.setAlignmentX(Component.LEFT_ALIGNMENT);
             worktreeCb.setToolTipText("Create and run the Architect agent in a new Git worktree based on the current commit.");
-            boolean gitAvailable = project != null && project.hasGit();
+            boolean gitAvailable = project.hasGit();
             boolean worktreesSupported = gitAvailable && project.getRepo().supportsWorktrees();
             worktreeCb.setEnabled(worktreesSupported);
             worktreeCb.setSelected(currentRunInWorktree && worktreesSupported); // Only selected if supported
@@ -159,14 +147,8 @@ public class ArchitectOptionsDialog {
                 );
                 boolean runInWorktreeSelected = worktreeCb.isSelected();
 
-                // Update static cache for immediate next use in this session
-                lastArchitectOptionsCache = selectedOptions;
-                lastRunInWorktreeCache = runInWorktreeSelected;
-
                 // Persist to project settings if a project is available
-                if (project != null) {
-                    project.setArchitectOptions(selectedOptions, runInWorktreeSelected);
-                }
+                project.setArchitectOptions(selectedOptions, runInWorktreeSelected);
 
                 resultHolder.set(new ArchitectChoices(selectedOptions, runInWorktreeSelected)); // Set result
                 dialog.dispose(); // Close dialog

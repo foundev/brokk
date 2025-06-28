@@ -354,11 +354,6 @@ public class SessionsDialog extends JDialog {
     }
 
     private void updatePreviewPanels(Context context) {
-        if (context == null) {
-            clearPreviewPanels();
-            return;
-        }
-
         // Update workspace panel with selected context
         workspacePanel.populateContextTable(context);
 
@@ -506,9 +501,7 @@ public class SessionsDialog extends JDialog {
     @Override
     public void dispose() {
         // Clean up MOP resources
-        if (markdownOutputPanel != null) {
-            markdownOutputPanel.dispose();
-        }
+        markdownOutputPanel.dispose();
         super.dispose();
     }
 }

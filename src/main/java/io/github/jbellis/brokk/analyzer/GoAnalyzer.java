@@ -14,7 +14,6 @@ import org.treesitter.TreeSitterGo;
 
 import java.util.Collections;
 import java.util.Set;
-import java.util.Map;
 
 public final class GoAnalyzer extends TreeSitterAnalyzer {
     static final Logger log = LoggerFactory.getLogger(GoAnalyzer.class); // Changed to package-private
@@ -93,11 +92,6 @@ public final class GoAnalyzer extends TreeSitterAnalyzer {
                 log.error("Failed to compile temporary package query for GoAnalyzer in determinePackageName for file {}: {}", file, e.getMessage(), e);
                 return ""; // Cannot proceed without the query
             }
-        }
-
-        if (currentPackageQuery == null) {
-             log.error("GoAnalyzer.packageQuery (currentPackageQuery) is unexpectedly null for file {}. Cannot determine package name.", file);
-            return "";
         }
 
         TSQueryCursor cursor = new TSQueryCursor();
@@ -193,7 +187,7 @@ public final class GoAnalyzer extends TreeSitterAnalyzer {
     @Override
     protected String renderFunctionDeclaration(TSNode funcNode, String src, String exportPrefix, String asyncPrefix, String functionName, String paramsText, String returnTypeText, String indent) {
         log.trace("GoAnalyzer.renderFunctionDeclaration for node type '{}', functionName '{}'. Params: '{}', Return: '{}'", funcNode.getType(), functionName, paramsText, returnTypeText);
-        String rt = (returnTypeText != null && !returnTypeText.isEmpty()) ? " " + returnTypeText : "";
+        String rt = !returnTypeText.isEmpty() ? " " + returnTypeText : "";
         String signature;
         if ("method_declaration".equals(funcNode.getType())) {
             TSNode receiverNode = funcNode.getChildByFieldName("receiver");

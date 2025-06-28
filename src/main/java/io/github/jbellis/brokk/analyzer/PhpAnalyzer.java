@@ -6,7 +6,6 @@ import org.treesitter.*;
 
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
-import java.util.stream.Collectors;
 
 public final class PhpAnalyzer extends TreeSitterAnalyzer {
     // PHP_LANGUAGE field removed, createTSLanguage will provide new instances.
@@ -133,11 +132,6 @@ public final class PhpAnalyzer extends TreeSitterAnalyzer {
             }
         }
 
-        if (currentPhpNamespaceQuery == null) {
-            log.warn("PhpAnalyzer.phpNamespaceQuery (currentPhpNamespaceQuery) is unexpectedly null for {}. Cannot determine package name.", file);
-            return ""; // Fallback
-        }
-
         TSQueryCursor cursor = new TSQueryCursor();
         cursor.exec(currentPhpNamespaceQuery, rootNode);
         TSQueryMatch match = new TSQueryMatch(); // Reusable match object
@@ -262,7 +256,7 @@ public final class PhpAnalyzer extends TreeSitterAnalyzer {
         }
 
         String formattedReturnType = "";
-        if (returnTypeText != null && !returnTypeText.isEmpty()) {
+        if (!returnTypeText.isEmpty()) {
             formattedReturnType = ": " + returnTypeText.strip();
         }
 

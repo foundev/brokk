@@ -77,11 +77,7 @@ public class MultiFileSelectionDialog extends JDialog {
                                     boolean allowExternalFiles, Future<Set<ProjectFile>> completableFiles,
                                     Set<SelectionMode> modes) {
         super(parent, title, true);
-        assert parent != null;
-        assert contextManager != null;
-        assert title != null;
-        assert completableFiles != null;
-        assert modes != null && !modes.isEmpty();
+        assert !modes.isEmpty();
 
         this.project = contextManager.getProject();
         this.analyzerWrapper = contextManager.getAnalyzerWrapper();
@@ -242,7 +238,7 @@ public class MultiFileSelectionDialog extends JDialog {
 
         if ("FilesPanel".equals(componentName) && fileSelectionPanel != null) {
             List<BrokkFile> filesResult = fileSelectionPanel.resolveAndGetSelectedFiles();
-            selectionResult = new Selection((filesResult != null && !filesResult.isEmpty()) ? List.copyOf(filesResult) : null, null);
+            selectionResult = new Selection(!filesResult.isEmpty() ? List.copyOf(filesResult) : null, null);
             confirmed = !selectionResult.isEmpty();
             if (!confirmed) selectionResult = null;
             dispose();
@@ -281,7 +277,7 @@ public class MultiFileSelectionDialog extends JDialog {
                             selectionResult = null;
                             confirmed = false;
                         } else {
-                            List<CodeUnit> finalClasses = (finalResolvedClasses != null && !finalResolvedClasses.isEmpty()) ? List.copyOf(finalResolvedClasses) : null;
+                            List<CodeUnit> finalClasses = !finalResolvedClasses.isEmpty() ? List.copyOf(finalResolvedClasses) : null;
                             selectionResult = new Selection(null, finalClasses);
                             confirmed = !selectionResult.isEmpty();
                             if (!confirmed) selectionResult = null;
@@ -325,7 +321,7 @@ public class MultiFileSelectionDialog extends JDialog {
             return List.of();
         }
 
-        if (activeAnalyzer == null || !activeAnalyzer.isCpg()) {
+        if (!activeAnalyzer.isCpg()) {
             logger.warn("Cannot resolve classes: Analyzer is not available or not a CPG analyzer.");
             return List.of();
         }
@@ -400,8 +396,6 @@ public class MultiFileSelectionDialog extends JDialog {
 
         public SymbolCompletionProvider(AnalyzerWrapper analyzerWrapperParam, ExecutorService backgroundExecutor) {
             super();
-            assert analyzerWrapperParam != null;
-            assert backgroundExecutor != null;
             this.analyzerWrapperField = analyzerWrapperParam;
 
             this.completionsFuture = backgroundExecutor.submit(() -> {
