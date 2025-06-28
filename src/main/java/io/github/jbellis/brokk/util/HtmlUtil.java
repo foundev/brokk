@@ -1,6 +1,7 @@
 package io.github.jbellis.brokk.util;
 
-import io.github.jbellis.brokk.gui.mop.stream.BadgeConstants;
+import io.github.jbellis.brokk.util.AtomicWrites;
+import io.github.jbellis.brokk.util.CssStyleGenerator;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 import org.jsoup.nodes.Element;
@@ -39,24 +40,28 @@ public final class HtmlUtil {
         return "<!-- HTML Content (conversion to Markdown pending) -->\n" + htmlContent;
     }
 
-    public static void writeSearchHtml(String searchTerm, Element root) {
+    
+    /**
+     * Writes HTML debug output from actual rendered Swing components.
+     * This shows the exact HTML that Swing is rendering, which is more accurate
+     * than reconstructing from the DOM.
+     * 
+     * @param filename the filename for the debug output
+     * @param title the title for the HTML page
+     * @param extractedHtml the HTML content extracted from Swing components
+     */
+    public static void writeActualHtml(String filename, String title, String extractedHtml) {
         if (!ENABLE_HTML_DEBUG_OUTPUT) {
             return;
         }
 
-        var title = "Search Results for '" + searchTerm + "'";
-        var content = "<h1>" + title + "</h1>\n" + root.html();
-        writeHtmlWithCss("search.html", title, content);
+        writeHtmlWithCss(filename, title, extractedHtml);
     }
 
-    public static void writeInitialRenderHtml(String content) {
-        if (!ENABLE_HTML_DEBUG_OUTPUT) {
-            return;
-        }
-
+    public static void writeInitialRenderHtml(String extractedHtml) {
         var title = "Initial Render Debug - Looking for File Badges";
-        var htmlContent = "<h1>" + title + "</h1>\n" + content;
-        writeHtmlWithCss("initial-render.html", title, htmlContent);
+        var content = "<h1>" + title + "</h1>\n" + extractedHtml;
+        writeActualHtml("initial-render.html", title, content);
     }
 
     private static void writeHtmlWithCss(String filename, String title, String content) {
@@ -64,25 +69,23 @@ public final class HtmlUtil {
         html.append("<!DOCTYPE html>\n<html>\n<head>\n");
         html.append("<title>").append(title).append("</title>\n");
         html.append("<style>\n");
-        addCssRules(html);
+        // Use dark theme for debug output since it's more readable for debugging
+        addCssRules(html, true);
         html.append("</style>\n</head>\n<body>\n");
         html.append(content);
         html.append("\n</body>\n</html>");
 
         try {
-            var htmlFile = Path.of(filename);
+            var htmlFile = Path.of(filename).toAbsolutePath();
             AtomicWrites.atomicOverwrite(htmlFile, html.toString());
+            logger.info("HTML debug output written to: {}", htmlFile);
         } catch (Exception e) {
             logger.warn("Failed to write HTML debug file {}: {}", filename, e.getMessage());
         }
     }
 
-    private static void addCssRules(StringBuilder css) {
-        css.append(".search-highlight { background-color: yellow; font-weight: bold; }\n");
-        css.append(".file-badge { background: #007bff; color: white; padding: 2px 6px; border-radius: 3px; }\n");
-        css.append(BadgeConstants.SELECTOR_CLICKABLE_FILE_BADGE + " { color: #0066cc; " + BadgeConstants.STYLE_TEXT_DECORATION_UNDERLINE + "; border: 2px solid red; }\n");
-        css.append(".badge { background: #28a745; color: white; padding: 2px 6px; }\n");
-        css.append("body { font-family: Arial, sans-serif; margin: 20px; }\n");
-        css.append("h1 { color: #333; }\n");
+    private static void addCssRules(StringBuilder css, boolean isDarkTheme) {
+        // Use the shared CSS generator to ensure consistency with MarkdownComponentData
+        css.append(CssStyleGenerator.generateCssString(isDarkTheme));
     }
 }

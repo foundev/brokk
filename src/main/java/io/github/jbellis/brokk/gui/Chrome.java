@@ -1470,9 +1470,7 @@ public class Chrome implements AutoCloseable, IConsoleIO, IContextManager.Contex
      */
     @Override
     public void enableHistoryPanel() {
-        if (historyOutputPanel != null) {
-            historyOutputPanel.enableHistory();
-        }
+        historyOutputPanel.enableHistory();
     }
 
     /**

@@ -4,6 +4,7 @@ import io.github.jbellis.brokk.difftool.ui.JMHighlightPainter;
 import io.github.jbellis.brokk.gui.mop.MarkdownOutputPanel;
 import io.github.jbellis.brokk.gui.mop.stream.*;
 import io.github.jbellis.brokk.gui.mop.util.ComponentUtils;
+import io.github.jbellis.brokk.util.HtmlUtil;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 import org.fife.ui.rsyntaxtextarea.RSyntaxTextArea;
@@ -47,12 +48,11 @@ public class MarkdownSearchableComponent extends BaseSearchableComponent {
     private SearchMatch previousMatch = null;
     private final List<RTextAreaSearchableComponent> codeSearchComponents = new ArrayList<>();
 
-
     public MarkdownSearchableComponent(List<MarkdownOutputPanel> panels, io.github.jbellis.brokk.IContextManager contextManager) {
         this.panels = panels;
         this.contextManager = contextManager;
         this.debugger = new MarkdownSearchDebugger(DEBUG_SEARCH_COLLECTION);
-        
+
         // Apply SymbolBadgeCustomizer immediately to all panels if contextManager is available
         if (contextManager != null) {
             applySymbolBadgeCustomizer();
@@ -127,14 +127,14 @@ public class MarkdownSearchableComponent extends BaseSearchableComponent {
         }
 
         final String finalSearchTerm = searchText.trim();
-        
+
         // If a search is already in progress, store the pending search and return
         if (searchInProgress) {
             pendingSearchTerm = finalSearchTerm;
             pendingCaseSensitive = caseSensitive;
             return;
         }
-        
+
         searchInProgress = true;
         updateSearchState(finalSearchTerm, caseSensitive);
 
@@ -172,18 +172,18 @@ public class MarkdownSearchableComponent extends BaseSearchableComponent {
             if (!originalCustomizers.containsKey(panel)) {
                 originalCustomizers.put(panel, panel.getHtmlCustomizer());
             }
-            
+
             // Create composite customizer that adds search highlighting to existing customizers
             // IMPORTANT: Always use the original stored customizer to prevent nesting
             var baseCustomizer = originalCustomizers.get(panel);
             HtmlCustomizer compositeCustomizer;
-            
+
             if (baseCustomizer == HtmlCustomizer.DEFAULT) {
                 compositeCustomizer = searchCustomizer;
             } else {
                 compositeCustomizer = new CompositeHtmlCustomizer(baseCustomizer, searchCustomizer);
             }
-            
+
             Runnable processMarkdownSearchResults = () -> {
                 if (remainingMarkdownOperations.decrementAndGet() == 0) {
                     handleSearchComplete(); // All Markdown highlighting done, now consolidate
@@ -210,7 +210,7 @@ public class MarkdownSearchableComponent extends BaseSearchableComponent {
         searchInProgress = false;
         pendingSearchTerm = null;
         pendingCaseSensitive = null;
-        
+
         // Clear Markdown highlights and restore original customizers
         for (MarkdownOutputPanel panel : panels) {
             var originalCustomizer = originalCustomizers.remove(panel);
@@ -257,8 +257,12 @@ public class MarkdownSearchableComponent extends BaseSearchableComponent {
         debugger.logNavigation(forward, oldIndex, currentMatchIndex, allMatches);
 
         updateCurrentMatchHighlighting();
-        // Ensure scroll happens after highlighting is complete
-        SwingUtilities.invokeLater(this::scrollToCurrentMatch);
+
+        // Write HTML debug output after navigation if enabled
+        SwingUtilities.invokeLater(() -> {
+            scrollToCurrentMatch();
+            writeNavigationDebugHtml(forward, oldIndex, currentMatchIndex);
+        });
 
         notifySearchComplete(allMatches.size(), currentMatchIndex + 1);
         return true;
@@ -288,6 +292,8 @@ public class MarkdownSearchableComponent extends BaseSearchableComponent {
 
 
         if (!allMatches.isEmpty()) {
+            // Clean up all marker classes to ensure consistent styling
+            cleanupAllMarkerClasses();
             updateCurrentMatchHighlighting();
             // Scroll to first match after a short delay to ensure rendering is complete
             SwingUtilities.invokeLater(() -> {
@@ -302,17 +308,17 @@ public class MarkdownSearchableComponent extends BaseSearchableComponent {
         int total = allMatches.size();
         int currentIdxDisplay = total == 0 ? 0 : currentMatchIndex + 1;
         notifySearchComplete(total, currentIdxDisplay);
-        
+
         // Mark search as complete and check for pending search
         searchInProgress = false;
-        
+
         // If there's a pending search, start it now
         if (pendingSearchTerm != null && pendingCaseSensitive != null) {
             String nextTerm = pendingSearchTerm;
             Boolean nextCaseSensitive = pendingCaseSensitive;
             pendingSearchTerm = null;
             pendingCaseSensitive = null;
-            
+
             // Start the pending search on the next event dispatch cycle to avoid deep recursion
             SwingUtilities.invokeLater(() -> highlightAll(nextTerm, nextCaseSensitive));
         }
@@ -751,24 +757,81 @@ public class MarkdownSearchableComponent extends BaseSearchableComponent {
         }
         return null;
     }
-    
+
+    /**
+     * Cleans up all marker classes to ensure they only contain the appropriate search highlight class.
+     * This removes the extra 'brokk-search-marker' class that gets added during initial highlighting.
+     */
+    private void cleanupAllMarkerClasses() {
+        for (SearchMatch match : allMatches) {
+            if (match instanceof MarkdownSearchMatch markdownMatch) {
+                // Update all matches to use only the standard highlight class (not current)
+                updateMarkdownMarkerStyle(markdownMatch.markerId(), false);
+            }
+        }
+    }
+
+    /**
+     * Writes debug HTML output after navigation to show the state of components.
+     * Uses HtmlUtil for consistent formatting and HTML debug output handling.
+     */
+    private void writeNavigationDebugHtml(boolean forward, int oldIndex, int newIndex) {
+        try {
+            StringBuilder content = new StringBuilder();
+
+            String direction = forward ? "Next" : "Previous";
+            content.append("<h1>Navigation Debug - ").append(direction)
+                   .append(" from ").append(oldIndex).append(" to ").append(newIndex).append("</h1>\n");
+
+            // Write each panel's content
+            for (int panelIdx = 0; panelIdx < panels.size(); panelIdx++) {
+                var panel = panels.get(panelIdx);
+                content.append("<h2>Panel ").append(panelIdx).append("</h2>\n");
+
+                for (var renderer : panel.renderers().toList()) {
+                    content.append("<div style='border: 1px solid blue; margin: 10px; padding: 10px;'>\n");
+                    content.append("<h3>JEditorPane Content:</h3>\n");
+
+                    var root = renderer.getRoot();
+                    for (var comp : root.getComponents()) {
+                        if (comp instanceof JEditorPane editor) {
+                            String editorContent = editor.getText();
+                            if (editorContent != null && !editorContent.isEmpty()) {
+                                content.append(editorContent).append("\n");
+                            }
+                        }
+                    }
+                    content.append("</div>\n");
+                }
+            }
+
+            String filename = "navigation-" + (forward ? "next" : "prev") + "-" + oldIndex + "-to-" + newIndex + ".html";
+            String title = "Navigation Debug - " + direction + " from " + oldIndex + " to " + newIndex;
+
+            HtmlUtil.writeActualHtml(filename, title, content.toString());
+
+        } catch (Exception e) {
+            logger.warn("Failed to write navigation debug HTML", e);
+        }
+    }
+
     /**
      * Applies SymbolBadgeCustomizer to all panels immediately upon construction.
      * This ensures symbol badges are visible even before any search is performed.
      */
     private void applySymbolBadgeCustomizer() {
         var symbolBadgeCustomizer = SymbolBadgeCustomizer.create(contextManager);
-        
+
         for (MarkdownOutputPanel panel : panels) {
             var existingCustomizer = panel.getHtmlCustomizer();
             HtmlCustomizer newCustomizer;
-            
+
             if (existingCustomizer == HtmlCustomizer.DEFAULT) {
                 newCustomizer = symbolBadgeCustomizer;
             } else {
                 newCustomizer = new CompositeHtmlCustomizer(existingCustomizer, symbolBadgeCustomizer);
             }
-            
+
             panel.setHtmlCustomizer(newCustomizer);
         }
     }

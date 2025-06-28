@@ -20,20 +20,12 @@ public final class BadgeConstants {
     public static final String CLASS_BADGE_FILE = "badge-file";
     public static final String CLASS_CLICKABLE_BADGE = "clickable-badge";
     public static final String CLASS_CLICKABLE_FILE_BADGE = "clickable-file-badge";
-    public static final String CLASS_BADGE_FILE_DARK = "badge-file-dark";
-    public static final String CLASS_BADGE_FILE_LIGHT = "badge-file-light";
     
     // CSS selectors
     public static final String SELECTOR_BADGE_SYMBOL = "> .badge-symbol";
-    public static final String SELECTOR_BADGE = ".badge";
-    public static final String SELECTOR_BADGE_SYMBOL_CSS = ".badge-symbol";
-    public static final String SELECTOR_BADGE_FILE = ".badge-file";
-    public static final String SELECTOR_CLICKABLE_FILE_BADGE = ".clickable-file-badge";
-    
+
     // Style constants
-    public static final String STYLE_CLICKABLE = "cursor: pointer; text-decoration: underline; font-size: 0.9em; margin-left: 2px;";
-    public static final String STYLE_TEXT_DECORATION_UNDERLINE = "text-decoration: underline";
-    
+    public static final String STYLE_CLICKABLE = "text-decoration: underline;";
     // Template strings
     public static final String TITLE_FORMAT = "file:%s:id:%d";
     public static final String BADGE_TITLE_FORMAT = "%s %s (%s)";

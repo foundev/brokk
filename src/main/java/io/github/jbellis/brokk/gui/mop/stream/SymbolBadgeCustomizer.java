@@ -38,10 +38,12 @@ import java.util.regex.Pattern;
 public final class SymbolBadgeCustomizer implements HtmlCustomizer {
 
     // Configuration flags to enable/disable specific badge types (configurable via system properties)
+    // Default to devmode setting for development convenience
+    private static final String DEFAULT_BADGE_SETTING = Boolean.toString(Boolean.getBoolean("brokk.devmode"));
     private static final boolean ENABLE_SYMBOL_BADGES = Boolean.parseBoolean(
-        System.getProperty("brokk.badges.symbols", "true"));
+        System.getProperty("brokk.badges.symbols", DEFAULT_BADGE_SETTING));
     private static final boolean ENABLE_FILE_BADGES = Boolean.parseBoolean(
-        System.getProperty("brokk.badges.files", "true"));
+        System.getProperty("brokk.badges.files", DEFAULT_BADGE_SETTING));
 
     private static final Pattern SYMBOL_PATTERN =
             Pattern.compile("[A-Z][A-Za-z0-9_]*(?:\\.[A-Z][A-Za-z0-9_]*)*(?:\\.[a-z][A-Za-z0-9_]+\\(\\))?");
@@ -254,9 +256,10 @@ public final class SymbolBadgeCustomizer implements HtmlCustomizer {
         // Set user-friendly title showing just the filename (relative path)
         String userFriendlyTitle = Path.of(filename).getFileName().toString();
 
-        // Add theme-aware color class for file badges
+        // Get theme-appropriate link color for inline styling (required for Swing)
         boolean isDarkTheme = isDarkTheme();
-        String themeClass = isDarkTheme ? BadgeConstants.CLASS_BADGE_FILE_DARK : BadgeConstants.CLASS_BADGE_FILE_LIGHT;
+        String linkColor = ThemeColors.getColorHex(isDarkTheme, "link_color_hex");
+        String inlineStyle = BadgeConstants.STYLE_CLICKABLE + " color: " + linkColor + ";";
 
         // PRESERVE existing content (including search highlights) instead of clearing
         // Only add styling and attributes to make it a clickable badge
@@ -264,11 +267,10 @@ public final class SymbolBadgeCustomizer implements HtmlCustomizer {
                .addClass(BadgeConstants.CLASS_BADGE_SYMBOL)
                .addClass(BadgeConstants.CLASS_BADGE_FILE)
                .addClass(BadgeConstants.CLASS_CLICKABLE_BADGE)
-               .addClass(BadgeConstants.CLASS_CLICKABLE_FILE_BADGE) // Keep for backward compatibility
-               .addClass(themeClass) // Theme-specific color class
+               .addClass(BadgeConstants.CLASS_CLICKABLE_FILE_BADGE) // Also set via CSS for HTML debug output
                .attr(BadgeConstants.ATTR_DATA_BADGE_INFO, encodedBadgeInfo) // Encoded data for processing
                .attr(BadgeConstants.ATTR_TITLE, userFriendlyTitle) // User-friendly file path for display
-               .attr(BadgeConstants.ATTR_STYLE, BadgeConstants.STYLE_CLICKABLE);
+               .attr(BadgeConstants.ATTR_STYLE, inlineStyle); // Inline style takes precedence in Swing
 
         // If element has no content, set the filename text
         if (element.text().trim().isEmpty()) {

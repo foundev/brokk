@@ -172,7 +172,10 @@ public final class TextNodeMarkerCustomizer implements HtmlCustomizer {
         
         // Write HTML debug output if matches found
         if (visitor.matchCount > 0) {
-            HtmlUtil.writeSearchHtml(searchTerm, root);
+            // Extract actual HTML from the DOM instead of reconstructing
+            String actualHtml = root.html();
+            HtmlUtil.writeActualHtml("search.html", "Search Results for '" + searchTerm + "'", 
+                    "<h1>Search Results for '" + searchTerm + "'</h1>\n" + actualHtml);
         }
     }
 
