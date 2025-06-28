@@ -464,9 +464,7 @@ public class HistoryOutputPanel extends JPanel {
         popup.add(newSessionFromWorkspaceItem);
 
         // Register popup with theme manager
-        if (chrome.themeManager != null) {
-            chrome.themeManager.registerPopupMenu(popup);
-        }
+        chrome.themeManager.registerPopupMenu(popup);
 
         // Show popup menu
         popup.show(historyTable, e.getX(), e.getY());
@@ -628,7 +626,7 @@ public class HistoryOutputPanel extends JPanel {
                 List<ChatMessage> currentMessages = llmStreamArea.getRawMessages();
                 var tempFragment = new ContextFragment.TaskFragment(contextManager, currentMessages, "Streaming Output...");
                 String titleHint = lastSpinnerMessage;
-                OutputWindow newStreamingWindow = new OutputWindow(this, tempFragment, titleHint, chrome.themeManager != null && chrome.themeManager.isDarkTheme(), true);
+                OutputWindow newStreamingWindow = new OutputWindow(this, tempFragment, titleHint, chrome.themeManager.isDarkTheme(), true);
                 if (lastSpinnerMessage != null) {
                     newStreamingWindow.getMarkdownOutputPanel().showSpinner(lastSpinnerMessage);
                 }
@@ -648,7 +646,7 @@ public class HistoryOutputPanel extends JPanel {
                 var output = context.getParsedOutput();
                 if (output != null) {
                     String titleHint = context.getAction();
-                    new OutputWindow(this, output, titleHint, chrome.themeManager != null && chrome.themeManager.isDarkTheme(), false);
+                    new OutputWindow(this, output, titleHint, chrome.themeManager.isDarkTheme(), false);
                 }
             }
         });
@@ -717,9 +715,7 @@ public class HistoryOutputPanel extends JPanel {
      * Shows the loading spinner with a message in the Markdown area.
      */
     public void showSpinner(String message) {
-        if (llmStreamArea != null) {
-            llmStreamArea.showSpinner(message);
-        }
+        llmStreamArea.showSpinner(message);
         lastSpinnerMessage = message;
         activeStreamingWindows.forEach(window -> window.getMarkdownOutputPanel().showSpinner(message));
     }
@@ -728,9 +724,7 @@ public class HistoryOutputPanel extends JPanel {
      * Hides the loading spinner in the Markdown area.
      */
     public void hideSpinner() {
-        if (llmStreamArea != null) {
-            llmStreamArea.hideSpinner();
-        }
+        llmStreamArea.hideSpinner();
         lastSpinnerMessage = null;
         activeStreamingWindows.forEach(window -> window.getMarkdownOutputPanel().hideSpinner());
     }
@@ -756,14 +750,10 @@ public class HistoryOutputPanel extends JPanel {
      * @param blocked true to prevent clear/reset, false otherwise.
      */
     public void setMarkdownOutputPanelBlocking(boolean blocked) {
-        if (llmStreamArea != null) {
-            llmStreamArea.setBlocking(blocked);
-            if (!blocked) {
-                activeStreamingWindows.forEach(window -> window.getMarkdownOutputPanel().setBlocking(false));
-                activeStreamingWindows.clear();
-            }
-        } else {
-            logger.warn("Attempted to set blocking state on null llmStreamArea");
+        llmStreamArea.setBlocking(blocked);
+        if (!blocked) {
+            activeStreamingWindows.forEach(window -> window.getMarkdownOutputPanel().setBlocking(false));
+            activeStreamingWindows.clear();
         }
     }
 

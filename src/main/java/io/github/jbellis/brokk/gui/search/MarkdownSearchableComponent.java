@@ -62,9 +62,9 @@ public class MarkdownSearchableComponent extends BaseSearchableComponent {
     @Override
     public String getText() {
         String result = panels.stream()
-                .map(p -> p.getText() != null ? p.getText() : "")
+                .map(p -> p.getText())
                 .reduce("", (a, b) -> a.isEmpty() ? b : a + "\n\n" + b);
-        return result != null ? result : "";
+        return result;
     }
 
     @Override
@@ -105,7 +105,7 @@ public class MarkdownSearchableComponent extends BaseSearchableComponent {
 
     @Override
     public void highlightAll(String searchText, boolean caseSensitive) {
-        if (searchText == null || searchText.trim().isEmpty()) {
+        if (searchText.trim().isEmpty()) {
             clearHighlights();
             // Still notify callback for empty searches
             notifySearchComplete(0, 0);

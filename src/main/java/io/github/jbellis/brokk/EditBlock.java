@@ -64,11 +64,6 @@ public class EditBlock {
     }
 
     public record FailedBlock(SearchReplaceBlock block, EditBlockFailureReason reason, String commentary) {
-        public FailedBlock {
-            assert block != null;
-            assert reason != null;
-            assert commentary != null;
-        }
 
         public FailedBlock(SearchReplaceBlock block, EditBlockFailureReason reason) {
             this(block, reason, "");

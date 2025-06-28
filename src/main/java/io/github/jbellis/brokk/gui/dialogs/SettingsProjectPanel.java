@@ -16,7 +16,6 @@ import org.apache.logging.log4j.Logger;
 
 import javax.swing.*;
 import java.awt.*;
-import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
@@ -30,7 +29,6 @@ import io.github.jbellis.brokk.issues.JiraIssueService;
 import io.github.jbellis.brokk.issues.FilterOptions;
 
 import java.io.IOException;
-import java.nio.file.Path;
 import java.util.stream.Stream;
 import javax.swing.UIManager;
 import javax.swing.BorderFactory;

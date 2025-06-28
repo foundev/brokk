@@ -9,7 +9,6 @@ import io.github.jbellis.brokk.context.Context;
 
 import javax.swing.*;
 import java.awt.*;
-import java.awt.event.ActionListener;
 import java.util.List;
 import java.util.Objects;
 import java.util.stream.Collectors;
@@ -243,7 +242,7 @@ public class UpgradeAgentDialog extends JDialog {
             if (selectedLanguageString != null && !ALL_LANGUAGES_OPTION.equals(selectedLanguageString)) {
                 filesToProcess = filesToProcess.filter(pf -> {
                     Language lang = pf.getLanguage();
-                    return lang != null && selectedLanguageString.equals(lang.toString());
+                    return selectedLanguageString.equals(lang.toString());
                 });
             }
         } else { // Workspace Files

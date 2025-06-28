@@ -167,7 +167,7 @@ public class ProjectFilesPanel extends JPanel {
 
         try {
             ProjectFile targetFile = contextManager.toFile(searchText);
-            if (targetFile != null && targetFile.exists()) {
+            if (targetFile.exists()) {
                 projectTree.selectAndExpandToFile(targetFile);
                 SwingUtilities.invokeLater(() -> projectTree.requestFocusInWindow());
                 return;
@@ -189,7 +189,7 @@ public class ProjectFilesPanel extends JPanel {
     }
 
     public void showFileInTree(@Nullable ProjectFile file) {
-        if (projectTree != null && file != null) {
+        if (file != null) {
             projectTree.selectAndExpandToFile(file);
         }
     }
@@ -214,7 +214,7 @@ public class ProjectFilesPanel extends JPanel {
         @Override
         protected List<Completion> getCompletionsImpl(JTextComponent comp) {
             String pattern = getAlreadyEnteredText(comp);
-            if (pattern.isEmpty() || project == null || !project.hasGit()) {
+            if (pattern.isEmpty() || !project.hasGit()) {
                 return Collections.emptyList();
             }
 

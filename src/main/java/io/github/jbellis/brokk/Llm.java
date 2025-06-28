@@ -45,7 +45,6 @@ import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
-import java.util.Objects;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
@@ -997,10 +996,6 @@ public class Llm {
      * Writes history information to task-specific files.
      */
     private synchronized void logRequest(StreamingChatLanguageModel model, ChatRequest request, @Nullable StreamingResult result) {
-        if (taskHistoryDir == null) {
-            // History directory creation failed in constructor, do nothing.
-            return;
-        }
         try {
             var timestamp = LocalDateTime.now(java.time.ZoneId.systemDefault()); // timestamp finished, not started
 

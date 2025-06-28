@@ -11,17 +11,12 @@ import io.github.jbellis.brokk.gui.components.LoadingButton;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 import org.eclipse.jgit.api.MergeResult;
-import org.eclipse.jgit.api.RebaseCommand;
-import org.eclipse.jgit.api.RebaseResult;
 import org.eclipse.jgit.api.errors.GitAPIException;
-import org.eclipse.jgit.lib.ObjectId;
-import org.jetbrains.annotations.Nullable;
 import org.eclipse.jgit.lib.ProgressMonitor;
 
 import javax.swing.*;
 import javax.swing.table.DefaultTableModel;
 import javax.swing.table.TableCellRenderer;
-import io.github.jbellis.brokk.gui.MergeBranchDialogPanel;
 import java.awt.*;
 import java.awt.event.MouseAdapter;
 import java.awt.event.MouseEvent;
@@ -220,7 +215,7 @@ public class GitLogTab extends JPanel {
                 String branchName = (String) branchTableModel.getValueAt(branchTable.getSelectedRow(), 1);
                 remoteBranchTable.clearSelection();
                 updateCommitsForBranch(branchName);
-                if (gitCommitBrowserPanel != null) gitCommitBrowserPanel.clearSearchField(); // Clear search in panel
+                gitCommitBrowserPanel.clearSearchField(); // Clear search in panel
             }
         });
         remoteBranchTable.getSelectionModel().addListSelectionListener(e -> {
@@ -228,21 +223,13 @@ public class GitLogTab extends JPanel {
                 String branchName = (String) remoteBranchTableModel.getValueAt(remoteBranchTable.getSelectedRow(), 0);
                 branchTable.clearSelection();
                 updateCommitsForBranch(branchName);
-                if (gitCommitBrowserPanel != null) gitCommitBrowserPanel.clearSearchField(); // Clear search in panel
+                gitCommitBrowserPanel.clearSearchField(); // Clear search in panel
             }
         });
 
         // Local branch context menu
         JPopupMenu branchContextMenu = new JPopupMenu();
-        if (chrome.themeManager != null) {
-            chrome.themeManager.registerPopupMenu(branchContextMenu);
-        } else {
-            SwingUtilities.invokeLater(() -> {
-                if (chrome.themeManager != null) {
-                    chrome.themeManager.registerPopupMenu(branchContextMenu);
-                }
-            });
-        }
+        chrome.themeManager.registerPopupMenu(branchContextMenu);
         JMenuItem checkoutItem = new JMenuItem("Checkout");
         JMenuItem newBranchItem = new JMenuItem("New Branch From This");
         JMenuItem mergeItem = new JMenuItem("Merge into HEAD");
@@ -348,9 +335,7 @@ public class GitLogTab extends JPanel {
         // Remote branch context menu
         JPopupMenu remoteBranchContextMenu = new JPopupMenu();
         SwingUtilities.invokeLater(() -> {
-            if (chrome.themeManager != null) {
-                chrome.themeManager.registerPopupMenu(remoteBranchContextMenu);
-            }
+            chrome.themeManager.registerPopupMenu(remoteBranchContextMenu);
         });
         JMenuItem remoteCheckoutItem = new JMenuItem("Checkout");
         JMenuItem remoteNewBranchItem = new JMenuItem("New Branch From This");
@@ -492,7 +477,7 @@ public class GitLogTab extends JPanel {
                         remoteBranchTableModel.addRow(rowData);
                     }
 
-                    if (finalTargetSelectionIndex >= 0 && finalSelectedBranchName != null) {
+                    if (finalTargetSelectionIndex >= 0) {
                         branchTable.setRowSelectionInterval(finalTargetSelectionIndex, finalTargetSelectionIndex);
                         // Ensure selected branch is visible by scrolling to it
                         branchTable.scrollRectToVisible(branchTable.getCellRect(finalTargetSelectionIndex, 0, true));
