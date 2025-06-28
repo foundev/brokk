@@ -8,7 +8,6 @@ import io.github.jbellis.brokk.context.ContextFragment;
 import io.github.jbellis.brokk.gui.dialogs.SessionsDialog;
 import io.github.jbellis.brokk.gui.mop.MarkdownOutputPanel;
 import io.github.jbellis.brokk.gui.mop.stream.BadgeClickHandler;
-import io.github.jbellis.brokk.gui.mop.stream.BadgeClickHandlerFactory;
 import io.github.jbellis.brokk.gui.mop.stream.CompositeHtmlCustomizer;
 import io.github.jbellis.brokk.gui.mop.stream.SymbolBadgeCustomizer;
 import org.apache.logging.log4j.LogManager;
@@ -75,7 +74,7 @@ public class HistoryOutputPanel extends JPanel {
         this.instructionsPanel = instructionsPanel;
 
         // Create the standard badge click handler once and reuse it
-        this.standardBadgeClickHandler = BadgeClickHandlerFactory.createFileClickHandler(contextManager, chrome);
+        this.standardBadgeClickHandler = BadgeClickHandler.forFileClicks(contextManager, chrome);
 
         // commandResultLabel initialization removed
 

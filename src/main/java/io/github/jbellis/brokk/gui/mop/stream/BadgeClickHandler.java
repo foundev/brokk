@@ -1,21 +1,74 @@
 package io.github.jbellis.brokk.gui.mop.stream;
 
+import io.github.jbellis.brokk.IContextManager;
+import io.github.jbellis.brokk.gui.Chrome;
+import io.github.jbellis.brokk.gui.TableUtils;
+import io.github.jbellis.brokk.gui.util.ContextMenuUtils;
+import io.github.jbellis.brokk.EditBlock;
+import org.apache.logging.log4j.LogManager;
+import org.apache.logging.log4j.Logger;
+
 import javax.swing.*;
 import java.awt.event.MouseEvent;
 
-/**
- * Interface for handling clicks on badges in the rendered HTML content.
- * Implementations can respond to clicks on file badges, symbol badges, etc.
- */
 @FunctionalInterface
 public interface BadgeClickHandler {
-    /**
-     * Called when a badge is clicked.
-     * 
-     * @param badgeType The type of badge clicked (e.g., "file", "symbol")
-     * @param badgeData The data associated with the badge (e.g., file path, symbol name)
-     * @param event The mouse event that triggered the click
-     * @param component The component where the click occurred
-     */
     void onBadgeClick(String badgeType, String badgeData, MouseEvent event, JComponent component);
+    
+    static BadgeClickHandler forFileClicks(IContextManager contextManager, Chrome chrome) {
+        return forFileClicks(contextManager, chrome, () -> {});
+    }
+    
+    static BadgeClickHandler forFileClicks(IContextManager contextManager, Chrome chrome, Runnable onRefresh) {
+        return new FileClickHandler(contextManager, chrome, onRefresh);
+    }
+    
+    final class FileClickHandler implements BadgeClickHandler {
+        private static final Logger logger = LogManager.getLogger(FileClickHandler.class);
+        private final IContextManager contextManager;
+        private final Chrome chrome;
+        private final Runnable onRefresh;
+        
+        private FileClickHandler(IContextManager contextManager, Chrome chrome, Runnable onRefresh) {
+            this.contextManager = contextManager;
+            this.chrome = chrome;
+            this.onRefresh = onRefresh;
+        }
+        
+        @Override
+        public void onBadgeClick(String badgeType, String badgeData, MouseEvent event, JComponent component) {
+            if ("file".equals(badgeType)) {
+                handleFileClick(badgeData, event, component);
+            }
+        }
+        
+        private void handleFileClick(String fileName, MouseEvent event, JComponent component) {
+            try {
+                var projectFile = EditBlock.resolveProjectFile(contextManager, fileName);
+                var fileRefData = new TableUtils.FileReferenceList.FileReferenceData(
+                        fileName,
+                        projectFile.absPath().toString(),
+                        projectFile
+                );
+                
+                showFileContextMenu(component, event, fileRefData);
+                
+            } catch (Exception e) {
+                logger.debug("Failed to resolve file for badge: {}", fileName, e);
+                
+                var fileRefData = new TableUtils.FileReferenceList.FileReferenceData(
+                        fileName,
+                        fileName,
+                        null
+                );
+                
+                showFileContextMenu(component, event, fileRefData);
+            }
+        }
+        
+        private void showFileContextMenu(JComponent component, MouseEvent event,
+                                       TableUtils.FileReferenceList.FileReferenceData fileRefData) {
+            ContextMenuUtils.showFileRefMenu(component, event.getX(), event.getY(), fileRefData, chrome, onRefresh);
+        }
+    }
 }

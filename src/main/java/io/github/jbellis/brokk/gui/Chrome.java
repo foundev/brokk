@@ -16,7 +16,6 @@ import io.github.jbellis.brokk.gui.dialogs.PreviewTextPanel;
 import io.github.jbellis.brokk.gui.mop.MarkdownOutputPanel;
 import io.github.jbellis.brokk.gui.mop.ThemeColors;
 import io.github.jbellis.brokk.gui.mop.stream.BadgeClickHandler;
-import io.github.jbellis.brokk.gui.mop.stream.BadgeClickHandlerFactory;
 import io.github.jbellis.brokk.gui.mop.stream.CompositeHtmlCustomizer;
 import io.github.jbellis.brokk.gui.mop.stream.SymbolBadgeCustomizer;
 import io.github.jbellis.brokk.gui.search.GenericSearchBar;
@@ -916,7 +915,7 @@ public class Chrome implements AutoCloseable, IConsoleIO, IContextManager.Contex
                 var escapeHtml = outputFragment.isEscapeHtml();
 
                 // Configure badge click handler for file badges using factory
-                BadgeClickHandler badgeClickHandler = BadgeClickHandlerFactory.createFileClickHandler(contextManager, this);
+                BadgeClickHandler badgeClickHandler = BadgeClickHandler.forFileClicks(contextManager, this);
 
                 for (TaskEntry entry : outputFragment.entries()) {
                     var markdownPanel = new MarkdownOutputPanel(escapeHtml);
