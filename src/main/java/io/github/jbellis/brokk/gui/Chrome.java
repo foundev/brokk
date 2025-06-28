@@ -15,6 +15,10 @@ import io.github.jbellis.brokk.gui.dialogs.PreviewImagePanel;
 import io.github.jbellis.brokk.gui.dialogs.PreviewTextPanel;
 import io.github.jbellis.brokk.gui.mop.MarkdownOutputPanel;
 import io.github.jbellis.brokk.gui.mop.ThemeColors;
+import io.github.jbellis.brokk.gui.mop.stream.BadgeClickHandler;
+import io.github.jbellis.brokk.gui.mop.stream.BadgeClickHandlerFactory;
+import io.github.jbellis.brokk.gui.mop.stream.CompositeHtmlCustomizer;
+import io.github.jbellis.brokk.gui.mop.stream.SymbolBadgeCustomizer;
 import io.github.jbellis.brokk.gui.search.GenericSearchBar;
 import io.github.jbellis.brokk.gui.search.MarkdownSearchableComponent;
 import org.apache.logging.log4j.LogManager;
@@ -581,7 +585,7 @@ public class Chrome implements AutoCloseable, IConsoleIO, IContextManager.Contex
     public void actionComplete() {
         SwingUtilities.invokeLater(() -> instructionsPanel.clearCommandResultText());
     }
-    
+
     @Override
     public void llmOutput(String token, ChatMessageType type, boolean isNewMessage) {
         SwingUtilities.invokeLater(() -> historyOutputPanel.appendLlmOutput(token, type, isNewMessage));
@@ -683,9 +687,10 @@ public class Chrome implements AutoCloseable, IConsoleIO, IContextManager.Contex
      *
      * @param markdownPanels List of MarkdownOutputPanel instances to make searchable
      * @param toolbarPanel Optional panel to add to the right of the search bar
+     * @param contextManager Context manager for symbol badge customization
      * @return A JPanel containing the search bar, optional toolbar, and content
      */
-    public static JPanel createSearchableContentPanel(List<MarkdownOutputPanel> markdownPanels, @Nullable JPanel toolbarPanel) {
+    public static JPanel createSearchableContentPanel(List<MarkdownOutputPanel> markdownPanels, @Nullable JPanel toolbarPanel, IContextManager contextManager) {
         if (markdownPanels.isEmpty()) {
             return new JPanel(); // Return empty panel if no content
         }
@@ -719,7 +724,7 @@ public class Chrome implements AutoCloseable, IConsoleIO, IContextManager.Contex
         componentsWithChatBackground.add(contentPanel);
 
         // Create searchable component adapter and generic search bar
-        var searchableComponent = new MarkdownSearchableComponent(markdownPanels);
+        var searchableComponent = new MarkdownSearchableComponent(markdownPanels, contextManager);
         var searchBar = new GenericSearchBar(searchableComponent);
         componentsWithChatBackground.add(searchBar);
 
@@ -741,7 +746,7 @@ public class Chrome implements AutoCloseable, IConsoleIO, IContextManager.Contex
 
         // Add 5px gap below the top panel
         topPanel.setBorder(new EmptyBorder(0, 0, 5, 0));
-    
+
         // Add components to content panel
         contentPanel.add(topPanel, BorderLayout.NORTH);
         contentPanel.add(contentComponent, BorderLayout.CENTER);
@@ -910,8 +915,16 @@ public class Chrome implements AutoCloseable, IConsoleIO, IContextManager.Contex
                 var markdownPanels = new ArrayList<MarkdownOutputPanel>();
                 var escapeHtml = outputFragment.isEscapeHtml();
 
+                // Configure badge click handler for file badges using factory
+                BadgeClickHandler badgeClickHandler = BadgeClickHandlerFactory.createFileClickHandler(contextManager, this);
+
                 for (TaskEntry entry : outputFragment.entries()) {
                     var markdownPanel = new MarkdownOutputPanel(escapeHtml);
+                    markdownPanel.setBadgeClickHandler(badgeClickHandler);
+
+                    // Configure symbol badge customizer
+                    var symbolBadgeCustomizer = SymbolBadgeCustomizer.create(contextManager);
+                    markdownPanel.setHtmlCustomizer(new CompositeHtmlCustomizer(symbolBadgeCustomizer));
                     markdownPanel.updateTheme(themeManager.isDarkTheme());
                     markdownPanel.setText(entry);
                     markdownPanel.setBorder(BorderFactory.createMatteBorder(0, 0, 1, 0, Color.GRAY));
@@ -921,7 +934,7 @@ public class Chrome implements AutoCloseable, IConsoleIO, IContextManager.Contex
                 }
 
                 // Use shared utility method to create searchable content panel (without navigation for preview)
-                JPanel previewContentPanel = createSearchableContentPanel(markdownPanels, null);
+                JPanel previewContentPanel = createSearchableContentPanel(markdownPanels, null, this.contextManager);
 
                 // When all panels are compacted, scroll to the top
                 CompletableFuture
@@ -1448,7 +1461,9 @@ public class Chrome implements AutoCloseable, IConsoleIO, IContextManager.Contex
      */
     @Override
     public void disableHistoryPanel() {
-        historyOutputPanel.disableHistory();
+        if (historyOutputPanel != null) {
+            historyOutputPanel.disableHistory();
+        }
     }
 
     /**
@@ -1456,7 +1471,9 @@ public class Chrome implements AutoCloseable, IConsoleIO, IContextManager.Contex
      */
     @Override
     public void enableHistoryPanel() {
-        historyOutputPanel.enableHistory();
+        if (historyOutputPanel != null) {
+            historyOutputPanel.enableHistory();
+        }
     }
 
     /**
@@ -1468,7 +1485,9 @@ public class Chrome implements AutoCloseable, IConsoleIO, IContextManager.Contex
     public void blockLlmOutput(boolean blocked) {
         // Ensure that prev setText calls are processed before blocking => we need the invokeLater
         SwingUtilities.invokeLater(() -> {
-            historyOutputPanel.setMarkdownOutputPanelBlocking(blocked);
+            if (historyOutputPanel != null) {
+                historyOutputPanel.setMarkdownOutputPanelBlocking(blocked);
+            }
         });
     }
 

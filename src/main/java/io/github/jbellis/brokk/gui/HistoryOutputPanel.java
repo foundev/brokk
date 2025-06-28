@@ -7,6 +7,10 @@ import io.github.jbellis.brokk.context.Context;
 import io.github.jbellis.brokk.context.ContextFragment;
 import io.github.jbellis.brokk.gui.dialogs.SessionsDialog;
 import io.github.jbellis.brokk.gui.mop.MarkdownOutputPanel;
+import io.github.jbellis.brokk.gui.mop.stream.BadgeClickHandler;
+import io.github.jbellis.brokk.gui.mop.stream.BadgeClickHandlerFactory;
+import io.github.jbellis.brokk.gui.mop.stream.CompositeHtmlCustomizer;
+import io.github.jbellis.brokk.gui.mop.stream.SymbolBadgeCustomizer;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 import org.jetbrains.annotations.Nullable;
@@ -55,6 +59,7 @@ public class HistoryOutputPanel extends JPanel {
     private final List<OutputWindow> activeStreamingWindows = new ArrayList<>();
 
     @Nullable private String lastSpinnerMessage = null; // Explicitly initialize
+    private BadgeClickHandler standardBadgeClickHandler;
 
     /**
      * Constructs a new HistoryOutputPane.
@@ -69,11 +74,14 @@ public class HistoryOutputPanel extends JPanel {
         this.contextManager = contextManager;
         this.instructionsPanel = instructionsPanel;
 
+        // Create the standard badge click handler once and reuse it
+        this.standardBadgeClickHandler = BadgeClickHandlerFactory.createFileClickHandler(contextManager, chrome);
+
         // commandResultLabel initialization removed
 
         // Build combined Output + Instructions panel (Center)
         this.llmStreamArea = new MarkdownOutputPanel();
-        this.llmScrollPane = buildLLMStreamScrollPane(this.llmStreamArea);
+        this.llmScrollPane = buildLLMStreamScrollPane();
         this.copyButton = new JButton("Copy");
         var centerPanel = buildCombinedOutputInstructionsPanel(this.llmScrollPane, this.copyButton);
         add(centerPanel, BorderLayout.CENTER);
@@ -223,16 +231,16 @@ public class HistoryOutputPanel extends JPanel {
             for (var listener : listeners) {
                 sessionComboBox.removeActionListener(listener);
             }
-            
+
             // Clear and repopulate
             sessionComboBox.removeAllItems();
             var sessions = contextManager.getProject().listSessions();
             sessions.sort(java.util.Comparator.comparingLong(IProject.SessionInfo::modified).reversed()); // Most recent first
-            
+
             for (var session : sessions) {
                 sessionComboBox.addItem(session);
             }
-            
+
             // Select current session
             var currentSessionId = contextManager.getCurrentSessionId();
             for (int i = 0; i < sessionComboBox.getItemCount(); i++) {
@@ -242,7 +250,7 @@ public class HistoryOutputPanel extends JPanel {
                     break;
                 }
             }
-            
+
             // Restore action listeners
             for (var listener : listeners) {
                 sessionComboBox.addActionListener(listener);
@@ -572,7 +580,15 @@ public class HistoryOutputPanel extends JPanel {
     /**
      * Builds the LLM streaming area where markdown output is displayed
      */
-    private JScrollPane buildLLMStreamScrollPane(MarkdownOutputPanel llmStreamArea) {
+    private JScrollPane buildLLMStreamScrollPane() {
+
+        // Configure symbol badge customizer
+        var symbolBadgeCustomizer = SymbolBadgeCustomizer.create(contextManager);
+        llmStreamArea.setHtmlCustomizer(new CompositeHtmlCustomizer(symbolBadgeCustomizer));
+
+        // Set badge click handler for all current and future renderers
+        llmStreamArea.setBadgeClickHandler(standardBadgeClickHandler);
+
         // Wrap it in a scroll pane so it can scroll if content is large
         var jsp = new JScrollPane(llmStreamArea);
         jsp.setBorder(BorderFactory.createEmptyBorder(5, 5, 5, 5));
@@ -696,7 +712,7 @@ public class HistoryOutputPanel extends JPanel {
     public void setLlmOutput(ContextFragment.TaskFragment newOutput) {
         llmStreamArea.setText(newOutput);
     }
-    
+
     /**
      * Sets the text in the LLM output area
      */
@@ -811,21 +827,29 @@ public class HistoryOutputPanel extends JPanel {
             } catch (Exception e) {
                 // Silently ignore icon setting failures in child windows
             }
-            
+
             this.project = parentPanel.contextManager.getProject(); // Get project reference
             setDefaultCloseOperation(JFrame.DISPOSE_ON_CLOSE);
 
             // Create markdown panel with the text
             outputPanel = new MarkdownOutputPanel();
+
+            // Configure symbol badge customizer
+            var symbolBadgeCustomizer = SymbolBadgeCustomizer.create(parentPanel.contextManager);
+            outputPanel.setHtmlCustomizer(new CompositeHtmlCustomizer(symbolBadgeCustomizer));
+
+            // Use the standard badge click handler from parent panel
+            outputPanel.setBadgeClickHandler(parentPanel.standardBadgeClickHandler);
+
             outputPanel.updateTheme(isDark);
             outputPanel.setText(output);
-            
+
             // Create toolbar panel with capture button if not in blocking mode
             JPanel toolbarPanel = null;
             if (!isBlockingMode) {
                 toolbarPanel = new JPanel(new FlowLayout(FlowLayout.RIGHT, 5, 0));
                 toolbarPanel.setBorder(BorderFactory.createEmptyBorder(0, 5, 0, 0));
-                
+
                 JButton captureButton = new JButton("Capture");
                 captureButton.setToolTipText("Add the output to context");
                 captureButton.addActionListener(e -> {
@@ -836,13 +860,13 @@ public class HistoryOutputPanel extends JPanel {
                 });
                 toolbarPanel.add(captureButton);
             }
-            
+
             // Use shared utility method to create searchable content panel with optional toolbar
-            JPanel contentPanel = Chrome.createSearchableContentPanel(List.of(outputPanel), toolbarPanel);
+            JPanel contentPanel = Chrome.createSearchableContentPanel(List.of(outputPanel), toolbarPanel, parentPanel.contextManager);
 
             // Add the content panel to the frame
             add(contentPanel);
-            
+
             if (!isBlockingMode) {
                 // Schedule compaction after everything is set up
                 outputPanel.scheduleCompaction();
@@ -910,7 +934,7 @@ public class HistoryOutputPanel extends JPanel {
                         taskType = InstructionsPanel.ACTION_ASK;
                     } else if (titleHint.contains(InstructionsPanel.ACTION_RUN)) {
                         taskType = InstructionsPanel.ACTION_RUN;
-                    } 
+                    }
                     if (taskType != null) {
                         windowTitle = String.format("Output (%s in progress)", taskType);
                     }

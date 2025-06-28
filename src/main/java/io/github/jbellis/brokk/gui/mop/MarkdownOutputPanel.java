@@ -8,6 +8,7 @@ import io.github.jbellis.brokk.TaskEntry;
 import io.github.jbellis.brokk.gui.GuiTheme;
 import io.github.jbellis.brokk.gui.SwingUtil;
 import io.github.jbellis.brokk.gui.ThemeAware;
+import io.github.jbellis.brokk.gui.mop.stream.BadgeClickHandler;
 import io.github.jbellis.brokk.gui.mop.stream.IncrementalBlockRenderer;
 import io.github.jbellis.brokk.gui.mop.stream.TextNodeMarkerCustomizer;
 import io.github.jbellis.brokk.util.Messages;
@@ -73,6 +74,10 @@ public class MarkdownOutputPanel extends JPanel implements Scrollable, ThemeAwar
 
     // Global HtmlCustomizer applied to every renderer
     private HtmlCustomizer htmlCustomizer = HtmlCustomizer.DEFAULT;
+    
+    // Global BadgeClickHandler applied to every renderer
+    @Nullable
+    private BadgeClickHandler badgeClickHandler;
 
     public MarkdownOutputPanel(boolean escapeHtml) {
         this.escapeHtml = escapeHtml;
@@ -301,6 +306,7 @@ public class MarkdownOutputPanel extends JPanel implements Scrollable, ThemeAwar
         boolean enableEditBlocks = message.type() != ChatMessageType.USER;
         var renderer = new IncrementalBlockRenderer(isDarkTheme, enableEditBlocks, escapeHtml);
         renderer.setHtmlCustomizer(htmlCustomizer);
+        renderer.setBadgeClickHandler(requireNonNull(badgeClickHandler));
 
         // Create a new worker for this message
         var worker = new StreamingWorker(renderer);
@@ -417,6 +423,13 @@ public class MarkdownOutputPanel extends JPanel implements Scrollable, ThemeAwar
     }
 
     /**
+     * Gets the current HtmlCustomizer.
+     */
+    public HtmlCustomizer getHtmlCustomizer() {
+        return htmlCustomizer;
+    }
+
+    /**
      * Sets or clears a global HtmlCustomizer for all renderers.
      */
     public void setHtmlCustomizer(HtmlCustomizer customizer) {
@@ -428,19 +441,37 @@ public class MarkdownOutputPanel extends JPanel implements Scrollable, ThemeAwar
     }
     
     /**
+     * Sets or clears a global BadgeClickHandler for all renderers.
+     */
+    public void setBadgeClickHandler(BadgeClickHandler handler) {
+        this.badgeClickHandler = handler;
+        renderers().forEach(r -> r.setBadgeClickHandler(handler));
+    }
+    
+    /**
      * Sets or clears a global HtmlCustomizer for all renderers and executes a callback
      * after the customizer has been applied and rendered.
      */
     public void setHtmlCustomizerWithCallback(HtmlCustomizer customizer, Runnable callback) {
         this.htmlCustomizer = customizer == null ? HtmlCustomizer.DEFAULT : customizer;
         var renderersList = renderers().toList();
-        renderersList.forEach(r -> {
-            r.setHtmlCustomizer(this.htmlCustomizer);
-            r.reprocessForCustomizer();           // Refresh already rendered content
-        });
         
-        // Execute callback on EDT after all customizers have been processed
-        SwingUtilities.invokeLater(callback);
+        if (renderersList.isEmpty()) {
+            // No renderers to process, execute callback immediately
+            SwingUtilities.invokeLater(callback);
+            return;
+        }
+        
+        // Process each renderer and execute callback after all are done
+        for (var renderer : renderersList) {
+            renderer.setHtmlCustomizer(this.htmlCustomizer);
+            renderer.reprocessForCustomizer();           // Refresh already rendered content
+        }
+        
+        // Add a small delay to ensure all DOM processing is complete before callback
+        SwingUtilities.invokeLater(() -> {
+            SwingUtilities.invokeLater(callback); // Double invokeLater for extra safety
+        });
     }
 
 
