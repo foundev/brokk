@@ -38,7 +38,7 @@ public interface BadgeClickHandler {
                 var projectFile = EditBlock.resolveProjectFile(contextManager, fileName);
                 var fileRefData = new TableUtils.FileReferenceList.FileReferenceData(
                         fileName,
-                        projectFile.absPath().toString(),
+                        projectFile.toString(),
                         projectFile
                 );
 

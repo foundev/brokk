@@ -10,6 +10,7 @@ public final class BadgeConstants {
     // HTML attributes
     public static final String ATTR_DATA_SYMBOL_ID = "data-symbol-id";
     public static final String ATTR_DATA_FILE_ID = "data-file-id";
+    public static final String ATTR_DATA_BADGE_INFO = "data-badge-info";
     public static final String ATTR_TITLE = "title";
     public static final String ATTR_STYLE = "style";
     

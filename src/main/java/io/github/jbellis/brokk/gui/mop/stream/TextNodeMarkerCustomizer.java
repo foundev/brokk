@@ -364,7 +364,7 @@ public final class TextNodeMarkerCustomizer implements HtmlCustomizer {
         Node parent = textNode.parent();
         while (parent instanceof Element element) {
             if (element.hasClass(BadgeConstants.CLASS_CLICKABLE_FILE_BADGE) ||
-                (element.hasAttr(BadgeConstants.ATTR_TITLE) && element.attr(BadgeConstants.ATTR_TITLE).startsWith("file:"))) {
+                (element.hasAttr(BadgeConstants.ATTR_DATA_BADGE_INFO) && element.attr(BadgeConstants.ATTR_DATA_BADGE_INFO).startsWith("file:"))) {
                 return true;
             }
             parent = parent.parent();

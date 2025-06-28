@@ -889,7 +889,18 @@ public final class IncrementalBlockRenderer {
                 var clazz = t.getAttribute(HTML.Attribute.CLASS);
                 var title = t.getAttribute(HTML.Attribute.TITLE);
                 if (Objects.requireNonNull(clazz) instanceof String s && s.contains(classId)) {
-                    return Optional.of(title.toString());
+                    // For backward compatibility, check if title contains encoded format and parse it
+                    String titleStr = title.toString();
+                    if (titleStr.startsWith("file:") && titleStr.contains(":id:")) {
+                        // Parse the encoded format "file:filename:id:123" to extract just "filename"
+                        int fileStart = 5; // After "file:"
+                        int idStart = titleStr.indexOf(":id:");
+                        if (idStart > fileStart) {
+                            return Optional.of(titleStr.substring(fileStart, idStart)); // Return just the filename part
+                        }
+                    }
+                    // Otherwise, return the title as-is (should be just the filename now)
+                    return Optional.of(titleStr);
                 }
             }
             // Valid element types for badges

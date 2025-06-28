@@ -248,8 +248,11 @@ public final class SymbolBadgeCustomizer implements HtmlCustomizer {
 
     private void replaceWithClickableFilenameBadge(Element element, String filename) {
         int badgeId = badgeIdCounter.incrementAndGet();
-        // Encode the file information in the title attribute since Swing doesn't preserve data- attributes
-        String encodedTitle = String.format(BadgeConstants.TITLE_FORMAT, filename, badgeId);
+        // Store encoded badge info in data attribute for internal processing
+        String encodedBadgeInfo = String.format(BadgeConstants.TITLE_FORMAT, filename, badgeId);
+        
+        // Set user-friendly title showing just the filename (relative path)
+        String userFriendlyTitle = Path.of(filename).getFileName().toString();
 
         // Add theme-aware color class for file badges
         boolean isDarkTheme = isDarkTheme();
@@ -263,7 +266,8 @@ public final class SymbolBadgeCustomizer implements HtmlCustomizer {
                .addClass(BadgeConstants.CLASS_CLICKABLE_BADGE)
                .addClass(BadgeConstants.CLASS_CLICKABLE_FILE_BADGE) // Keep for backward compatibility
                .addClass(themeClass) // Theme-specific color class
-               .attr(BadgeConstants.ATTR_TITLE, encodedTitle)
+               .attr(BadgeConstants.ATTR_DATA_BADGE_INFO, encodedBadgeInfo) // Encoded data for processing
+               .attr(BadgeConstants.ATTR_TITLE, userFriendlyTitle) // User-friendly file path for display
                .attr(BadgeConstants.ATTR_STYLE, BadgeConstants.STYLE_CLICKABLE);
 
         // If element has no content, set the filename text
