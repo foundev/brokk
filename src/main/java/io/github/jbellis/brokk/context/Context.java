@@ -623,6 +623,20 @@ public class Context {
                            action);
     }
 
+    /* ============================================================
+     * Static factory used by deserialisation to preserve UUID
+     * ============================================================ */
+    static Context createWithId(UUID id,
+                                IContextManager cm,
+                                List<ContextFragment> editable,
+                                List<ContextFragment> readonly,
+                                List<ContextFragment.VirtualFragment> virtuals,
+                                List<TaskEntry> history,
+                                @Nullable ContextFragment.TaskFragment parsed,
+                                java.util.concurrent.Future<String> action) {
+        return new Context(id, cm, editable, readonly, virtuals, history, parsed, action);
+    }
+
     /**
      * Creates a new Context with a modified task history list.
      * This generates a new context state with a new ID and action.
