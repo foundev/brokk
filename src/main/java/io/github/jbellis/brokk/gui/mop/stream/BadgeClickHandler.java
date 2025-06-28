@@ -14,34 +14,25 @@ import java.awt.event.MouseEvent;
 @FunctionalInterface
 public interface BadgeClickHandler {
     void onBadgeClick(String badgeType, String badgeData, MouseEvent event, JComponent component);
-    
+
     static BadgeClickHandler forFileClicks(IContextManager contextManager, Chrome chrome) {
         return forFileClicks(contextManager, chrome, () -> {});
     }
-    
+
     static BadgeClickHandler forFileClicks(IContextManager contextManager, Chrome chrome, Runnable onRefresh) {
         return new FileClickHandler(contextManager, chrome, onRefresh);
     }
-    
-    final class FileClickHandler implements BadgeClickHandler {
+
+    record FileClickHandler(IContextManager contextManager, Chrome chrome, Runnable onRefresh) implements BadgeClickHandler {
         private static final Logger logger = LogManager.getLogger(FileClickHandler.class);
-        private final IContextManager contextManager;
-        private final Chrome chrome;
-        private final Runnable onRefresh;
-        
-        private FileClickHandler(IContextManager contextManager, Chrome chrome, Runnable onRefresh) {
-            this.contextManager = contextManager;
-            this.chrome = chrome;
-            this.onRefresh = onRefresh;
-        }
-        
+
         @Override
         public void onBadgeClick(String badgeType, String badgeData, MouseEvent event, JComponent component) {
             if ("file".equals(badgeType)) {
                 handleFileClick(badgeData, event, component);
             }
         }
-        
+
         private void handleFileClick(String fileName, MouseEvent event, JComponent component) {
             try {
                 var projectFile = EditBlock.resolveProjectFile(contextManager, fileName);
@@ -50,22 +41,22 @@ public interface BadgeClickHandler {
                         projectFile.absPath().toString(),
                         projectFile
                 );
-                
+
                 showFileContextMenu(component, event, fileRefData);
-                
+
             } catch (Exception e) {
                 logger.debug("Failed to resolve file for badge: {}", fileName, e);
-                
+
                 var fileRefData = new TableUtils.FileReferenceList.FileReferenceData(
                         fileName,
                         fileName,
                         null
                 );
-                
+
                 showFileContextMenu(component, event, fileRefData);
             }
         }
-        
+
         private void showFileContextMenu(JComponent component, MouseEvent event,
                                        TableUtils.FileReferenceList.FileReferenceData fileRefData) {
             ContextMenuUtils.showFileRefMenu(component, event.getX(), event.getY(), fileRefData, chrome, onRefresh);

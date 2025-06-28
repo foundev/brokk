@@ -301,9 +301,6 @@ public final class TextNodeMarkerCustomizer implements HtmlCustomizer {
             pieces.add(new TextNode(remainingText));
         }
 
-        // Find parent badge before removing the text node
-        Element parentBadge = findParentFileBadge(textNode);
-
         // Replace the original text node with all the pieces
         Node ref = textNode;
         for (Node n : pieces) {
@@ -311,16 +308,6 @@ public final class TextNodeMarkerCustomizer implements HtmlCustomizer {
             ref = n;
         }
         textNode.remove();
-
-        // Print the generated structure for debugging
-        if (parentBadge != null) {
-            System.out.println("=== FILE BADGE HIGHLIGHTING APPLIED ===");
-            System.out.println("Search term: '" + searchTerm + "'");
-            System.out.println("Original text: '" + text + "'");
-            System.out.println("Matches found: " + ranges.size());
-            System.out.println("Generated HTML: " + parentBadge.outerHtml());
-            System.out.println("=== END FILE BADGE HIGHLIGHTING ===");
-        }
     }
 
     /**
@@ -376,8 +363,8 @@ public final class TextNodeMarkerCustomizer implements HtmlCustomizer {
     private boolean isInsideFileBadge(TextNode textNode) {
         Node parent = textNode.parent();
         while (parent instanceof Element element) {
-            if (element.hasClass("clickable-file-badge") ||
-                (element.hasAttr("title") && element.attr("title").startsWith("file:"))) {
+            if (element.hasClass(BadgeConstants.CLASS_CLICKABLE_FILE_BADGE) ||
+                (element.hasAttr(BadgeConstants.ATTR_TITLE) && element.attr(BadgeConstants.ATTR_TITLE).startsWith("file:"))) {
                 return true;
             }
             parent = parent.parent();
@@ -385,20 +372,6 @@ public final class TextNodeMarkerCustomizer implements HtmlCustomizer {
         return false;
     }
 
-    /**
-     * Finds the parent file badge element for debugging output.
-     */
-    private @Nullable Element findParentFileBadge(TextNode textNode) {
-        Node parent = textNode.parent();
-        while (parent instanceof Element element) {
-            if (element.hasClass("clickable-file-badge") ||
-                (element.hasAttr("title") && element.attr("title").startsWith("file:"))) {
-                return element;
-            }
-            parent = parent.parent();
-        }
-        return null;
-    }
 
     @Override
     public int getCustomizerId() {

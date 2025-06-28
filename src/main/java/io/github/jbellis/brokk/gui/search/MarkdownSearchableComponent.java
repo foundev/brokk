@@ -2,10 +2,7 @@ package io.github.jbellis.brokk.gui.search;
 
 import io.github.jbellis.brokk.difftool.ui.JMHighlightPainter;
 import io.github.jbellis.brokk.gui.mop.MarkdownOutputPanel;
-import io.github.jbellis.brokk.gui.mop.stream.CompositeHtmlCustomizer;
-import io.github.jbellis.brokk.gui.mop.stream.HtmlCustomizer;
-import io.github.jbellis.brokk.gui.mop.stream.IncrementalBlockRenderer;
-import io.github.jbellis.brokk.gui.mop.stream.TextNodeMarkerCustomizer;
+import io.github.jbellis.brokk.gui.mop.stream.*;
 import io.github.jbellis.brokk.gui.mop.util.ComponentUtils;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
@@ -123,7 +120,6 @@ public class MarkdownSearchableComponent extends BaseSearchableComponent {
     @Override
     public void highlightAll(String searchText, boolean caseSensitive) {
         if (searchText == null || searchText.trim().isEmpty()) {
-            logger.debug("Empty search term, clearing highlights");
             clearHighlights();
             // Still notify callback for empty searches
             notifySearchComplete(0, 0);
@@ -134,15 +130,12 @@ public class MarkdownSearchableComponent extends BaseSearchableComponent {
         
         // If a search is already in progress, store the pending search and return
         if (searchInProgress) {
-            logger.warn("SEARCH COORDINATION: Search already in progress, storing pending search for term '{}'", finalSearchTerm);
             pendingSearchTerm = finalSearchTerm;
             pendingCaseSensitive = caseSensitive;
             return;
         }
         
         searchInProgress = true;
-        logger.warn("SEARCH COORDINATION: Starting search highlighting for term '{}', caseSensitive={}, panels={}", 
-                    finalSearchTerm, caseSensitive, panels.size());
         updateSearchState(finalSearchTerm, caseSensitive);
 
         // No render listener needed for initial scroll - we'll handle it in handleSearchComplete
@@ -164,8 +157,6 @@ public class MarkdownSearchableComponent extends BaseSearchableComponent {
             "<span class=\"" + SearchConstants.SEARCH_HIGHLIGHT_CLASS + "\">",
             "</span>"
         );
-        logger.debug("Created search customizer for term '{}' with class '{}'", 
-                    finalSearchTerm, SearchConstants.SEARCH_HIGHLIGHT_CLASS);
 
         // Track how many panels need to be processed for Markdown highlighting
         var panelCount = panels.size();
@@ -180,7 +171,6 @@ public class MarkdownSearchableComponent extends BaseSearchableComponent {
             // Store original customizer before applying search (only if not already stored)
             if (!originalCustomizers.containsKey(panel)) {
                 originalCustomizers.put(panel, panel.getHtmlCustomizer());
-                logger.debug("Stored original customizer for panel: {}", panel.getHtmlCustomizer().getClass().getSimpleName());
             }
             
             // Create composite customizer that adds search highlighting to existing customizers
@@ -194,42 +184,7 @@ public class MarkdownSearchableComponent extends BaseSearchableComponent {
                 compositeCustomizer = new CompositeHtmlCustomizer(baseCustomizer, searchCustomizer);
             }
             
-            logger.debug("Creating composite with base: {} + search: {}", 
-                        baseCustomizer.getClass().getSimpleName(), 
-                        searchCustomizer.getClass().getSimpleName());
-            
-            // Debug: Check what badges are currently in the DOM before search
-            String panelText = panel.getText();
-            logger.warn("BADGE DETECTION: Panel DOM before search for '{}' (first 500 chars): {}", 
-                        finalSearchTerm,
-                        panelText != null && panelText.length() > 500 ? 
-                        panelText.substring(0, 500) + "..." : panelText);
-            
-            // Look for file badge indicators in the current DOM
-            if (panelText != null) {
-                boolean hasClickableBadges = panelText.contains("clickable-file-badge");
-                boolean hasBadgeFile = panelText.contains("badge-file");
-                boolean hasGitLogTab = panelText.toLowerCase(java.util.Locale.ROOT).contains("gitlogtab");
-                logger.warn("BADGE DETECTION: Before search - hasClickableBadges: {}, hasBadgeFile: {}, hasGitLogTab: {}", 
-                           hasClickableBadges, hasBadgeFile, hasGitLogTab);
-            }
-            
             Runnable processMarkdownSearchResults = () -> {
-                // Log the panel state after search customization
-                String panelTextAfter = panel.getText();
-                if (panelTextAfter != null) {
-                    boolean hasClickableBadges = panelTextAfter.contains("clickable-file-badge");
-                    boolean hasBadgeFile = panelTextAfter.contains("badge-file");
-                    boolean hasGitLogTab = panelTextAfter.toLowerCase(java.util.Locale.ROOT).contains("gitlogtab");
-                    boolean hasSearchMarkers = panelTextAfter.contains("brokk-search-marker");
-                    logger.warn("BADGE DETECTION: After search '{}' - hasClickableBadges: {}, hasBadgeFile: {}, hasGitLogTab: {}, hasSearchMarkers: {}", 
-                               finalSearchTerm, hasClickableBadges, hasBadgeFile, hasGitLogTab, hasSearchMarkers);
-                    
-                    if (panelTextAfter.length() <= 500) {
-                        logger.warn("BADGE DETECTION: Complete DOM after search: {}", panelTextAfter);
-                    }
-                }
-                
                 if (remainingMarkdownOperations.decrementAndGet() == 0) {
                     handleSearchComplete(); // All Markdown highlighting done, now consolidate
                 }
@@ -252,7 +207,6 @@ public class MarkdownSearchableComponent extends BaseSearchableComponent {
     @Override
     public void clearHighlights() {
         // Reset search state
-        logger.warn("SEARCH COORDINATION: Clearing search state, resetting searchInProgress");
         searchInProgress = false;
         pendingSearchTerm = null;
         pendingCaseSensitive = null;
@@ -261,10 +215,8 @@ public class MarkdownSearchableComponent extends BaseSearchableComponent {
         for (MarkdownOutputPanel panel : panels) {
             var originalCustomizer = originalCustomizers.remove(panel);
             if (originalCustomizer != null) {
-                logger.debug("Restoring original customizer: {}", originalCustomizer.getClass().getSimpleName());
                 panel.setHtmlCustomizer(originalCustomizer);
             } else {
-                logger.debug("No original customizer found, using DEFAULT");
                 panel.setHtmlCustomizer(HtmlCustomizer.DEFAULT);
             }
         }
@@ -334,8 +286,6 @@ public class MarkdownSearchableComponent extends BaseSearchableComponent {
         currentMatchIndex = allMatches.isEmpty() ? -1 : 0;
         previousMatch = null; // Reset previous match before new highlighting sequence
 
-        logger.debug("Search complete: found {} total matches for term '{}'", 
-                    allMatches.size(), currentSearchTerm);
 
         if (!allMatches.isEmpty()) {
             updateCurrentMatchHighlighting();
@@ -351,16 +301,13 @@ public class MarkdownSearchableComponent extends BaseSearchableComponent {
 
         int total = allMatches.size();
         int currentIdxDisplay = total == 0 ? 0 : currentMatchIndex + 1;
-        logger.debug("Notifying search complete: total={}, current={}", total, currentIdxDisplay);
         notifySearchComplete(total, currentIdxDisplay);
         
         // Mark search as complete and check for pending search
-        logger.warn("SEARCH COORDINATION: Search complete, resetting searchInProgress. Pending: {}", pendingSearchTerm);
         searchInProgress = false;
         
         // If there's a pending search, start it now
         if (pendingSearchTerm != null && pendingCaseSensitive != null) {
-            logger.warn("SEARCH COORDINATION: Starting pending search for term '{}'", pendingSearchTerm);
             String nextTerm = pendingSearchTerm;
             Boolean nextCaseSensitive = pendingCaseSensitive;
             pendingSearchTerm = null;
@@ -810,7 +757,7 @@ public class MarkdownSearchableComponent extends BaseSearchableComponent {
      * This ensures symbol badges are visible even before any search is performed.
      */
     private void applySymbolBadgeCustomizer() {
-        var symbolBadgeCustomizer = io.github.jbellis.brokk.gui.mop.stream.SymbolBadgeCustomizer.create(contextManager);
+        var symbolBadgeCustomizer = SymbolBadgeCustomizer.create(contextManager);
         
         for (MarkdownOutputPanel panel : panels) {
             var existingCustomizer = panel.getHtmlCustomizer();

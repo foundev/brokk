@@ -1,6 +1,7 @@
 package io.github.jbellis.brokk.gui.mop.stream.blocks;
 
 import io.github.jbellis.brokk.gui.mop.ThemeColors;
+import io.github.jbellis.brokk.gui.mop.stream.BadgeConstants;
 import io.github.jbellis.brokk.gui.mop.stream.IncrementalBlockRenderer;
 import io.github.jbellis.brokk.gui.search.SearchConstants;
 import io.github.jbellis.brokk.difftool.utils.Colors;
@@ -127,20 +128,20 @@ public record MarkdownComponentData(int id, String html) implements ComponentDat
         ss.addRule("." + SearchConstants.SEARCH_CURRENT_CLASS + " { background-color: " + currentSearchColorHex + "; color: black; }");
 
         // Badge styling
-        ss.addRule(".badge { display: inline-block; padding: 0.15em 0.4em; margin-left: 0.25em; " +
+        ss.addRule(BadgeConstants.SELECTOR_BADGE + " { display: inline-block; padding: 0.15em 0.4em; margin-left: 0.25em; " +
                    "font-size: 75%; font-weight: 700; line-height: 1; text-align: center; " +
                    "white-space: nowrap; vertical-align: baseline; border-radius: 0.25rem; }");
-        ss.addRule(".badge-symbol { background-color: #17a2b8; color: white; }");
+        ss.addRule(BadgeConstants.SELECTOR_BADGE_SYMBOL_CSS + " { background-color: #17a2b8; color: white; }");
         ss.addRule(".badge-class { background-color: #6610f2; color: white; }");
         ss.addRule(".badge-function { background-color: #fd7e14; color: white; }");
         ss.addRule(".badge-field { background-color: #20c997; color: white; }");
         ss.addRule(".badge-module { background-color: #6f42c1; color: white; }");
 
         // Regular file badges (non-clickable)
-        ss.addRule(".badge-file { background-color: #28a745; color: white; }");
+        ss.addRule(BadgeConstants.SELECTOR_BADGE_FILE + " { background-color: #28a745; color: white; }");
 
         // Clickable file badges should look like code elements, not badges
-        ss.addRule(".clickable-file-badge { color: " + linkColor + "; text-decoration: underline; }");
+        ss.addRule(BadgeConstants.SELECTOR_CLICKABLE_FILE_BADGE + " { color: " + linkColor + "; " + BadgeConstants.STYLE_TEXT_DECORATION_UNDERLINE + "; }");
 
         return htmlPane;
     }

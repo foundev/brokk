@@ -1,5 +1,6 @@
 package io.github.jbellis.brokk.util;
 
+import io.github.jbellis.brokk.gui.mop.stream.BadgeConstants;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 import org.jsoup.nodes.Element;
@@ -67,7 +68,7 @@ public final class HtmlUtil {
     private static void addCssRules(StringBuilder css) {
         css.append(".search-highlight { background-color: yellow; font-weight: bold; }\n");
         css.append(".file-badge { background: #007bff; color: white; padding: 2px 6px; border-radius: 3px; }\n");
-        css.append(".clickable-file-badge { color: #0066cc; text-decoration: underline; border: 2px solid red; }\n");
+        css.append(BadgeConstants.SELECTOR_CLICKABLE_FILE_BADGE + " { color: #0066cc; " + BadgeConstants.STYLE_TEXT_DECORATION_UNDERLINE + "; border: 2px solid red; }\n");
         css.append(".badge { background: #28a745; color: white; padding: 2px 6px; }\n");
         css.append("body { font-family: Arial, sans-serif; margin: 20px; }\n");
         css.append("h1 { color: #333; }\n");

@@ -2,6 +2,8 @@ package io.github.jbellis.brokk.gui.mop.stream;
 
 import io.github.jbellis.brokk.IContextManager;
 import io.github.jbellis.brokk.MainProject;
+import io.github.jbellis.brokk.analyzer.CodeUnit;
+import io.github.jbellis.brokk.analyzer.IAnalyzer;
 import io.github.jbellis.brokk.gui.GuiTheme;
 import io.github.jbellis.brokk.gui.mop.ThemeColors;
 import org.apache.logging.log4j.LogManager;
@@ -25,7 +27,6 @@ import java.util.regex.Pattern;
  * avoids impacting existing behaviour while the feature is developed.
  */
 public final class SymbolBadgeCustomizer implements HtmlCustomizer {
-    private static final Logger logger = LogManager.getLogger(SymbolBadgeCustomizer.class);
 
     // Compilation flags to enable/disable specific badge types
     private static final boolean ENABLE_SYMBOL_BADGES = true;
@@ -40,6 +41,11 @@ public final class SymbolBadgeCustomizer implements HtmlCustomizer {
 
     private static final String BADGE_TYPE_SYMBOL = "symbol";
     private static final String BADGE_TYPE_FILE = "file";
+    
+    // HTML element tag names
+    private static final String TAG_ANCHOR = "a";
+    private static final String TAG_CODE = "code";
+    private static final String TAG_SPAN = "span";
 
     // Unique ID for this customizer type
     private static final int CUSTOMIZER_ID = 1001;
@@ -47,67 +53,47 @@ public final class SymbolBadgeCustomizer implements HtmlCustomizer {
     // Local counter for unique badge IDs within this customizer instance
     private final AtomicInteger badgeIdCounter = new AtomicInteger(0);
 
-    private final io.github.jbellis.brokk.analyzer.IAnalyzer analyzer;
+    private final IAnalyzer analyzer;
     private final boolean analyzerReady;
 
-    private SymbolBadgeCustomizer(io.github.jbellis.brokk.analyzer.IAnalyzer analyzer, boolean analyzerReady) {
+    private SymbolBadgeCustomizer(IAnalyzer analyzer, boolean analyzerReady) {
         this.analyzer = analyzer;
         this.analyzerReady = analyzerReady;
     }
 
     @Override
     public void customize(Element root) {
-        if (root == null) {
-            return;
-        }
 
         if (!analyzerReady) {
-            logger.debug("[SymbolBadgeCustomizer] Analyzer not ready, skipping badge customization");
             return;
         }
 
-        logger.debug("[SymbolBadgeCustomizer] Starting customization. ENABLE_FILE_BADGES={}, ENABLE_SYMBOL_BADGES={}, DOM: {} chars",
-                    ENABLE_FILE_BADGES, ENABLE_SYMBOL_BADGES, root.html().length());
-
-        // Use single traversal with visitor pattern for better performance
-        var visitor = new BadgeElementVisitor();
-        traverseAndProcess(root, visitor);
-
-        logger.debug("[SymbolBadgeCustomizer] processed {} element(s), injected {} badges, final DOM: {} chars",
-                    visitor.elementsProcessed, visitor.badgesInjected, root.html().length());
+        traverseAndProcess(root);
     }
 
     /**
      * Single traversal of DOM tree to process all relevant elements.
      */
-    private void traverseAndProcess(Element element, BadgeElementVisitor visitor) {
+    private void traverseAndProcess(Element element) {
         // Process current element if it's relevant
-        if ("a".equals(element.tagName())) {
-            processAnchorElement(element, visitor);
-        } else if ("code".equals(element.tagName())) {
-            processCodeElement(element, visitor);
+        if (TAG_ANCHOR.equals(element.tagName())) {
+            processAnchorElement(element);
+        } else if (TAG_CODE.equals(element.tagName())) {
+            processCodeElement(element);
         }
 
         // Recursively process children
         for (Element child : element.children()) {
-            traverseAndProcess(child, visitor);
+            traverseAndProcess(child);
         }
     }
 
-    /**
-     * Visitor class to collect statistics during traversal.
-     */
-    private static class BadgeElementVisitor {
-        int elementsProcessed = 0;
-        int badgesInjected = 0;
-    }
 
     /**
      * Process anchor elements for symbol/file badges.
      */
-    private void processAnchorElement(Element anchor, BadgeElementVisitor visitor) {
-        visitor.elementsProcessed++;
-        String symbolId = anchor.attr("data-symbol-id");
+    private void processAnchorElement(Element anchor) {
+        String symbolId = anchor.attr(BadgeConstants.ATTR_DATA_SYMBOL_ID);
         String badgeType = null;
 
         if (symbolId.isBlank()) {
@@ -116,11 +102,11 @@ public final class SymbolBadgeCustomizer implements HtmlCustomizer {
                 symbolId = candidate;
                 badgeType = BADGE_TYPE_SYMBOL;
                 // write back so other customizers can rely on it later
-                anchor.attr("data-symbol-id", symbolId);
+                anchor.attr(BadgeConstants.ATTR_DATA_SYMBOL_ID, symbolId);
             } else if (FILENAME_PATTERN.matcher(candidate).matches()) {
                 symbolId = candidate;
                 badgeType = BADGE_TYPE_FILE;
-                anchor.attr("data-file-id", symbolId);
+                anchor.attr(BadgeConstants.ATTR_DATA_FILE_ID, symbolId);
             }
         } else {
             badgeType = BADGE_TYPE_SYMBOL;
@@ -132,8 +118,7 @@ public final class SymbolBadgeCustomizer implements HtmlCustomizer {
         }
 
         // Check if this element is already clickable to prevent double-processing
-        if (anchor.hasClass("clickable-file-badge") || !anchor.select("> .badge-symbol").isEmpty()) {
-            logger.trace("[SymbolBadgeCustomizer] Skipping anchor, already processed for symbolId '{}': {}", symbolId, anchor.outerHtml());
+        if (anchor.hasClass(BadgeConstants.CLASS_CLICKABLE_FILE_BADGE) || !anchor.select(BadgeConstants.SELECTOR_BADGE_SYMBOL).isEmpty()) {
             return;
         }
 
@@ -142,29 +127,24 @@ public final class SymbolBadgeCustomizer implements HtmlCustomizer {
             // Validate symbol exists in project
             var definition = analyzer.getDefinition(symbolId);
             if (definition.isEmpty()) {
-                logger.trace("[SymbolBadgeCustomizer] Symbol '{}' not found in project, skipping badge", symbolId);
                 return;
             }
             badge = createBadgeForSymbol(definition.get());
         } else if (BADGE_TYPE_FILE.equals(badgeType) && ENABLE_FILE_BADGES) {
             // Replace the anchor content with clickable filename badge
             replaceWithClickableFilenameBadge(anchor, symbolId);
-            logger.debug("[SymbolBadgeCustomizer] Replaced anchor with clickable filename badge for '{}'", symbolId);
-            visitor.badgesInjected++;
-            return; // Skip the normal badge creation since we replaced the element
+            return;
         }
 
         if (badge != null) {
             anchor.appendChild(badge);
-            visitor.badgesInjected++;
         }
     }
 
     /**
      * Process code elements for symbol/file badges.
      */
-    private void processCodeElement(Element code, BadgeElementVisitor visitor) {
-        visitor.elementsProcessed++;
+    private void processCodeElement(Element code) {
         String codeText = code.text();
         String badgeType = null;
         Element badge = null;
@@ -173,20 +153,16 @@ public final class SymbolBadgeCustomizer implements HtmlCustomizer {
             badgeType = BADGE_TYPE_SYMBOL;
         } else if (FILENAME_PATTERN.matcher(codeText).matches()) {
             badgeType = BADGE_TYPE_FILE;
-            logger.warn("[SymbolBadgeCustomizer] FOUND FILENAME: '{}' - will create badge", codeText);
         } else {
-            logger.trace("[SymbolBadgeCustomizer] Code element '{}' doesn't match symbol or filename patterns", codeText);
             return;
         }
 
         // Skip if this code element is already clickable or has a badge
-        if (code.hasClass("clickable-file-badge")) {
-            logger.trace("[SymbolBadgeCustomizer] Skipping code element, already clickable for text '{}': {}", codeText, code.outerHtml());
+        if (code.hasClass(BadgeConstants.CLASS_CLICKABLE_FILE_BADGE)) {
             return;
         }
         Element nextSibling = code.nextElementSibling();
-        if (nextSibling != null && nextSibling.hasClass("badge-symbol")) {
-            logger.trace("[SymbolBadgeCustomizer] Skipping code element, badge already exists for text '{}': {}", codeText, code.outerHtml());
+        if (nextSibling != null && nextSibling.hasClass(BadgeConstants.CLASS_BADGE_SYMBOL)) {
             return;
         }
 
@@ -194,55 +170,45 @@ public final class SymbolBadgeCustomizer implements HtmlCustomizer {
             // Validate symbol exists in project
             var definition = analyzer.getDefinition(codeText);
             if (definition.isEmpty()) {
-                logger.trace("[SymbolBadgeCustomizer] Symbol '{}' not found in project, skipping badge", codeText);
                 return;
             }
             badge = createBadgeForSymbol(definition.get());
         } else if (BADGE_TYPE_FILE.equals(badgeType) && ENABLE_FILE_BADGES) {
             // Replace the code element content with clickable filename badge
             replaceWithClickableFilenameBadge(code, codeText);
-            logger.warn("[SymbolBadgeCustomizer] CREATED FILE BADGE for '{}'. Element now: {}",
-                        codeText, code.outerHtml());
-            visitor.badgesInjected++;
-            return; // Skip the normal badge creation since we replaced the element
-        } else {
-            logger.debug("[SymbolBadgeCustomizer] No badge created for '{}' - badgeType: {}, ENABLE_FILE_BADGES: {}, ENABLE_SYMBOL_BADGES: {}",
-                        codeText, badgeType, ENABLE_FILE_BADGES, ENABLE_SYMBOL_BADGES);
+            return;
         }
 
         if (badge != null) {
             code.after(badge);
-            visitor.badgesInjected++;
-            logger.debug("[SymbolBadgeCustomizer] Injected badge after code element: {}", badge.outerHtml());
         }
     }
 
-    private Element createBadgeForSymbol(io.github.jbellis.brokk.analyzer.CodeUnit symbol) {
+    private Element createBadgeForSymbol(CodeUnit symbol) {
         String badgeText = getBadgeText(symbol);
         String badgeClass = getBadgeClass(symbol);
 
-        return new Element("span")
-                .addClass("badge")
-                .addClass("badge-symbol")
+        return new Element(TAG_SPAN)
+                .addClass(BadgeConstants.CLASS_BADGE)
+                .addClass(BadgeConstants.CLASS_BADGE_SYMBOL)
                 .addClass(badgeClass)
                 .text(badgeText)
-                .attr("title", String.format("%s %s (%s)",
+                .attr(BadgeConstants.ATTR_TITLE, String.format(BadgeConstants.BADGE_TITLE_FORMAT,
                       symbol.kind().name().toLowerCase(Locale.ROOT),
-                      symbol.fqName(),
-                      symbol.source().toString()));
+                      symbol.fqName(), symbol.source()));
     }
 
-    private String getBadgeText(io.github.jbellis.brokk.analyzer.CodeUnit symbol) {
+    private String getBadgeText(CodeUnit symbol) {
         return switch (symbol.kind()) {
-            case CLASS -> "C";
-            case FUNCTION -> "F";
-            case FIELD -> "V";
-            case MODULE -> "M";
+            case CLASS -> BadgeConstants.BADGE_TEXT_CLASS;
+            case FUNCTION -> BadgeConstants.BADGE_TEXT_FUNCTION;
+            case FIELD -> BadgeConstants.BADGE_TEXT_FIELD;
+            case MODULE -> BadgeConstants.BADGE_TEXT_MODULE;
         };
     }
 
-    private String getBadgeClass(io.github.jbellis.brokk.analyzer.CodeUnit symbol) {
-        return "badge-" + symbol.kind().name().toLowerCase(Locale.ROOT);
+    private String getBadgeClass(CodeUnit symbol) {
+        return BadgeConstants.BADGE_CLASS_PREFIX + symbol.kind().name().toLowerCase(Locale.ROOT);
     }
 
 
@@ -251,12 +217,9 @@ public final class SymbolBadgeCustomizer implements HtmlCustomizer {
      * Returns a no-op customizer if the analyzer is not ready.
      */
     public static HtmlCustomizer create(IContextManager contextManager) {
-        if (contextManager == null) {
-            return HtmlCustomizer.DEFAULT;
-        }
 
         var analyzerWrapper = contextManager.getAnalyzerWrapper();
-        if (analyzerWrapper == null || !analyzerWrapper.isReady()) {
+        if (!analyzerWrapper.isReady()) {
             return HtmlCustomizer.DEFAULT;
         }
 
@@ -272,24 +235,22 @@ public final class SymbolBadgeCustomizer implements HtmlCustomizer {
     private void replaceWithClickableFilenameBadge(Element element, String filename) {
         int badgeId = badgeIdCounter.incrementAndGet();
         // Encode the file information in the title attribute since Swing doesn't preserve data- attributes
-        String encodedTitle = String.format("file:%s:id:%d", filename, badgeId);
+        String encodedTitle = String.format(BadgeConstants.TITLE_FORMAT, filename, badgeId);
 
         // Add theme-aware color class for file badges
         boolean isDarkTheme = isDarkTheme();
-        String themeClass = isDarkTheme ? "badge-file-dark" : "badge-file-light";
-        System.out.println(element);
-        System.out.println(filename);
+        String themeClass = isDarkTheme ? BadgeConstants.CLASS_BADGE_FILE_DARK : BadgeConstants.CLASS_BADGE_FILE_LIGHT;
 
         // PRESERVE existing content (including search highlights) instead of clearing
         // Only add styling and attributes to make it a clickable badge
-        element.addClass("badge")
-               .addClass("badge-symbol")
-               .addClass("badge-file")
-               .addClass("clickable-badge")
-               .addClass("clickable-file-badge") // Keep for backward compatibility
+        element.addClass(BadgeConstants.CLASS_BADGE)
+               .addClass(BadgeConstants.CLASS_BADGE_SYMBOL)
+               .addClass(BadgeConstants.CLASS_BADGE_FILE)
+               .addClass(BadgeConstants.CLASS_CLICKABLE_BADGE)
+               .addClass(BadgeConstants.CLASS_CLICKABLE_FILE_BADGE) // Keep for backward compatibility
                .addClass(themeClass) // Theme-specific color class
-               .attr("title", encodedTitle)
-               .attr("style", "cursor: pointer; text-decoration: underline; font-size: 0.9em; margin-left: 2px;"); // Removed color from inline style
+               .attr(BadgeConstants.ATTR_TITLE, encodedTitle)
+               .attr(BadgeConstants.ATTR_STYLE, BadgeConstants.STYLE_CLICKABLE);
 
         // If element has no content, set the filename text
         if (element.text().trim().isEmpty()) {
