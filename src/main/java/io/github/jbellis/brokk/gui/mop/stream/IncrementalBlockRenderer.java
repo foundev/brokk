@@ -13,6 +13,7 @@ import io.github.jbellis.brokk.gui.mop.stream.blocks.MarkdownFactory;
 import io.github.jbellis.brokk.gui.mop.stream.flex.BrokkMarkdownExtension;
 import io.github.jbellis.brokk.gui.mop.stream.flex.IdProvider;
 import io.github.jbellis.brokk.gui.search.SearchConstants;
+import io.github.jbellis.brokk.util.HtmlUtil;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 import org.jetbrains.annotations.Nullable;
@@ -375,7 +376,7 @@ public final class IncrementalBlockRenderer {
             logger.info("*** BADGE CLICK HANDLER IS NULL, skipping handler setup ***");
         }
 
-        // Write HTML debug output after first render (similar to search output)
+        // Write HTML debug output after first render
         writeInitialHtmlDebugOutput();
         
         // Notify listener that rendering has finished
@@ -649,33 +650,9 @@ public final class IncrementalBlockRenderer {
      * Writes HTML debug output after initial render to help debug file badge structure.
      */
     private void writeInitialHtmlDebugOutput() {
-        try {
-            // Get the current HTML content from all components
-            StringBuilder fullHtml = new StringBuilder();
-            fullHtml.append("<!DOCTYPE html>\n<html>\n<head>\n");
-            fullHtml.append("<title>Initial Render Debug</title>\n");
-            fullHtml.append("<style>\n");
-            
-            // Add minimal CSS for debugging
-            fullHtml.append(".clickable-file-badge { color: #0066cc; text-decoration: underline; border: 2px solid red; }\n");
-            fullHtml.append(".badge { background: #28a745; color: white; padding: 2px 6px; }\n");
-            fullHtml.append("</style>\n</head>\n<body>\n");
-            fullHtml.append("<h1>Initial Render Debug - Looking for File Badges</h1>\n");
-            
-            // Extract HTML from all components in the root panel
-            extractHtmlFromComponents(root, fullHtml);
-            
-            fullHtml.append("\n</body>\n</html>");
-            
-            // Write to initial-render.html file
-            var htmlFile = java.nio.file.Path.of("initial-render.html");
-            java.nio.file.Files.writeString(htmlFile, fullHtml.toString());
-            
-            logger.info("Initial render HTML written to: {}", htmlFile.toAbsolutePath());
-            
-        } catch (Exception e) {
-            logger.warn("Failed to write initial render HTML file: {}", e.getMessage());
-        }
+        StringBuilder content = new StringBuilder();
+        extractHtmlFromComponents(root, content);
+        HtmlUtil.writeInitialRenderHtml(content.toString());
     }
     
     /**
