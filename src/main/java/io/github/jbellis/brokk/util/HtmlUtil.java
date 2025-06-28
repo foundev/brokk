@@ -7,10 +7,22 @@ import org.jsoup.nodes.Element;
 
 import java.nio.file.Path;
 
+/**
+ * Utility class for HTML processing and debugging.
+ * 
+ * <h3>Configuration</h3>
+ * HTML debug output can be controlled via system property:
+ * <ul>
+ *   <li>{@code brokk.html.debug} - Enable/disable HTML debug file output (default: false)</li>
+ * </ul>
+ * 
+ * Example: {@code -Dbrokk.html.debug=true} to enable debug HTML file generation
+ */
 public final class HtmlUtil {
     private static final Logger logger = LogManager.getLogger(HtmlUtil.class);
 
-    public static final boolean ENABLE_HTML_DEBUG_OUTPUT = true;
+    public static final boolean ENABLE_HTML_DEBUG_OUTPUT = Boolean.parseBoolean(
+        System.getProperty("brokk.html.debug", "false"));
 
     private HtmlUtil() {}
 

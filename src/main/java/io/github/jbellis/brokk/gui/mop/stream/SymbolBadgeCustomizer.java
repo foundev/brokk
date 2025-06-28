@@ -25,12 +25,23 @@ import java.util.regex.Pattern;
  * Integration is intentionally left manual: callers must register an instance
  * via {@link IncrementalBlockRenderer#setHtmlCustomizer(HtmlCustomizer)}.  This
  * avoids impacting existing behaviour while the feature is developed.
+ * 
+ * <h3>Configuration</h3>
+ * Badge generation can be controlled via system properties:
+ * <ul>
+ *   <li>{@code brokk.badges.symbols} - Enable/disable symbol badges (default: true)</li>
+ *   <li>{@code brokk.badges.files} - Enable/disable file reference badges (default: true)</li>
+ * </ul>
+ * 
+ * Example: {@code -Dbrokk.badges.files=false} to disable file badges
  */
 public final class SymbolBadgeCustomizer implements HtmlCustomizer {
 
-    // Compilation flags to enable/disable specific badge types
-    private static final boolean ENABLE_SYMBOL_BADGES = true;
-    private static final boolean ENABLE_FILE_BADGES = true; // Re-enabled - badges with icons
+    // Configuration flags to enable/disable specific badge types (configurable via system properties)
+    private static final boolean ENABLE_SYMBOL_BADGES = Boolean.parseBoolean(
+        System.getProperty("brokk.badges.symbols", "true"));
+    private static final boolean ENABLE_FILE_BADGES = Boolean.parseBoolean(
+        System.getProperty("brokk.badges.files", "true"));
 
     private static final Pattern SYMBOL_PATTERN =
             Pattern.compile("[A-Z][A-Za-z0-9_]*(?:\\.[A-Z][A-Za-z0-9_]*)*(?:\\.[a-z][A-Za-z0-9_]+\\(\\))?");
@@ -217,9 +228,12 @@ public final class SymbolBadgeCustomizer implements HtmlCustomizer {
      * Returns a no-op customizer if the analyzer is not ready.
      */
     public static HtmlCustomizer create(IContextManager contextManager) {
+        if (contextManager == null) {
+            return HtmlCustomizer.DEFAULT;
+        }
 
         var analyzerWrapper = contextManager.getAnalyzerWrapper();
-        if (!analyzerWrapper.isReady()) {
+        if (analyzerWrapper == null || !analyzerWrapper.isReady()) {
             return HtmlCustomizer.DEFAULT;
         }
 
