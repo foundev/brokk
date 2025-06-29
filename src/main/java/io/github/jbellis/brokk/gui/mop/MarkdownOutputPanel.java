@@ -147,13 +147,16 @@ public class MarkdownOutputPanel extends JPanel implements Scrollable, ThemeAwar
     /**
      * Sets the blocking state that prevents clearing or resetting the panel contents.
      * When blocking is enabled, clear() and setText() methods will be ignored.
-     * 
+     *
      * @param blocked true to prevent clear/reset operations, false to allow them
      */
     public void setBlocking(boolean blocked) {
         this.blockClearAndReset = blocked;
         // use the unblocking state as trigger for compacting markdown
         if (!blocked) {
+            // Mark streaming complete for all customizers before compaction
+            htmlCustomizer.markStreamingComplete();
+
             final long roundId = ++compactionRoundIdCounter;
             var internalCompletionFuture = new CompletableFuture<Void>();
             internalCompletionFuture.exceptionally(ex -> {
@@ -182,7 +185,7 @@ public class MarkdownOutputPanel extends JPanel implements Scrollable, ThemeAwar
     public boolean isBlocking() {
         return blockClearAndReset;
     }
-    
+
     /**
      * Clears all text and displayed components.
      */
@@ -245,7 +248,7 @@ public class MarkdownOutputPanel extends JPanel implements Scrollable, ThemeAwar
      */
     private void updateLastMessage(String additionalText) {
         assert SwingUtilities.isEventDispatchThread();
-        
+
         if (bubbles.isEmpty()) return;
 
         var lastBubble = bubbles.getLast();
@@ -254,11 +257,11 @@ public class MarkdownOutputPanel extends JPanel implements Scrollable, ThemeAwar
 
         // Queue the chunk for background processing
         lastBubble.worker().appendChunk(additionalText);
-        
+
         // Update our model with the combined text
         var updatedText = Messages.getRepr(lastMessage) + additionalText;
         ChatMessage updatedMessage = Messages.create(updatedText, type);
-        
+
         // Replace the last bubble with an updated one
         bubbles.set(bubbles.size() - 1, new Bubble(updatedMessage,
                                                    lastBubble.renderer(),
@@ -317,7 +320,7 @@ public class MarkdownOutputPanel extends JPanel implements Scrollable, ThemeAwar
 
         // Create a new worker for this message
         var worker = new StreamingWorker(renderer);
-        
+
         // Create the UI component (MessageBubble)
         var bubbleUI = new MessageBubble(
             title,
@@ -329,10 +332,10 @@ public class MarkdownOutputPanel extends JPanel implements Scrollable, ThemeAwar
 
         // Add to our bubbles list
         bubbles.add(new Bubble(message, renderer, worker, bubbleUI));
-        
+
         // Add the component to the panel's UI
         add(bubbleUI);
-        
+
         // Process the message content through the new worker
         worker.appendChunk(Messages.getText(message));
 
@@ -446,8 +449,8 @@ public class MarkdownOutputPanel extends JPanel implements Scrollable, ThemeAwar
             r.reprocessForCustomizer();           // Refresh already rendered content
         });
     }
-    
-    
+
+
     /**
      * Sets or clears a global HtmlCustomizer for all renderers and executes a callback
      * after the customizer has been applied and rendered.
@@ -455,19 +458,19 @@ public class MarkdownOutputPanel extends JPanel implements Scrollable, ThemeAwar
     public void setHtmlCustomizerWithCallback(HtmlCustomizer customizer, Runnable callback) {
         this.htmlCustomizer = customizer == null ? HtmlCustomizer.DEFAULT : customizer;
         var renderersList = renderers().toList();
-        
+
         if (renderersList.isEmpty()) {
             // No renderers to process, execute callback immediately
             SwingUtilities.invokeLater(callback);
             return;
         }
-        
+
         // Process each renderer and execute callback after all are done
         for (var renderer : renderersList) {
             renderer.setHtmlCustomizer(this.htmlCustomizer);
             renderer.reprocessForCustomizer();           // Refresh already rendered content
         }
-        
+
         // Add a small delay to ensure all DOM processing is complete before callback
         SwingUtilities.invokeLater(() -> {
             SwingUtilities.invokeLater(callback); // Double invokeLater for extra safety
@@ -494,7 +497,7 @@ public class MarkdownOutputPanel extends JPanel implements Scrollable, ThemeAwar
                 return;
             }
             // Create a new spinner instance each time
-            spinnerPanel = new SpinnerIndicatorPanel(message, isDarkTheme, 
+            spinnerPanel = new SpinnerIndicatorPanel(message, isDarkTheme,
                                  ThemeColors.getColor(isDarkTheme, "chat_background"));
 
         // Add to the end of this panel. Since we have a BoxLayout (Y_AXIS),
@@ -605,7 +608,7 @@ public class MarkdownOutputPanel extends JPanel implements Scrollable, ThemeAwar
                         return renderer.buildCompactedSnapshot(roundId);
                     } catch (Exception e) {
                         logger.warn("[COMPACTION][{}] Error building compacted snapshot for a renderer", roundId, e);
-                        return null; 
+                        return null;
                     }
                 })
                 .toList();

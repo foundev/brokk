@@ -17,6 +17,7 @@ import java.nio.charset.StandardCharsets;
 import java.util.Locale;
 import java.util.Objects;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 /**
  * Decorates <a> tags that carry a data-symbol-id attribute (added by BrokkMarkdownExtension)
@@ -61,6 +62,7 @@ public final class SymbolBadgeCustomizer implements HtmlCustomizer {
 
     private final IAnalyzer analyzer;
     private final boolean analyzerReady;
+    private final AtomicBoolean streamingComplete = new AtomicBoolean(false);
 
     private SymbolBadgeCustomizer(IAnalyzer analyzer, boolean analyzerReady) {
         this.analyzer = analyzer;
@@ -69,11 +71,16 @@ public final class SymbolBadgeCustomizer implements HtmlCustomizer {
 
     @Override
     public void customize(Element root) {
-        if (!analyzerReady) {
+        if (!analyzerReady || !streamingComplete.get()) {
             return;
         }
 
         traverseAndProcess(root);
+    }
+
+    @Override
+    public void markStreamingComplete() {
+        streamingComplete.set(true);
     }
 
     /**
@@ -301,7 +308,7 @@ public final class SymbolBadgeCustomizer implements HtmlCustomizer {
     }
 
     /**
-     * Ensures we are working with an <a> element.  
+     * Ensures we are working with an <a> element.
      * If the supplied element is already an anchor it is returned unchanged,
      * otherwise the element is replaced in-place with a new anchor that
      * preserves any existing children (including search-highlight spans).

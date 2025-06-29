@@ -1066,7 +1066,7 @@ public class Chrome implements AutoCloseable, IConsoleIO, IContextManager.Contex
                 relativePath,
                 projectFile
             );
-            
+
             var p = java.awt.MouseInfo.getPointerInfo().getLocation();
             SwingUtilities.convertPointFromScreen(p, frame);
             ContextMenuUtils.showFileRefMenu(frame, p.x, p.y, fileRefData, this, () -> {});

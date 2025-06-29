@@ -34,6 +34,13 @@ public class CompositeHtmlCustomizer implements HtmlCustomizer {
         return CUSTOMIZER_ID;
     }
 
+    @Override
+    public void markStreamingComplete() {
+        for (var customizer : customizers) {
+            customizer.markStreamingComplete();
+        }
+    }
+
     // Removes duplicates by ID, preserving order
     private static List<HtmlCustomizer> deduplicateCustomizers(List<HtmlCustomizer> input) {
         if (input.isEmpty()) {
