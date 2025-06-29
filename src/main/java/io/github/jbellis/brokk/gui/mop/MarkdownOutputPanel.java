@@ -8,7 +8,6 @@ import io.github.jbellis.brokk.TaskEntry;
 import io.github.jbellis.brokk.gui.GuiTheme;
 import io.github.jbellis.brokk.gui.SwingUtil;
 import io.github.jbellis.brokk.gui.ThemeAware;
-import io.github.jbellis.brokk.gui.mop.stream.BadgeClickHandler;
 import io.github.jbellis.brokk.gui.mop.stream.IncrementalBlockRenderer;
 import io.github.jbellis.brokk.gui.mop.stream.TextNodeMarkerCustomizer;
 import io.github.jbellis.brokk.util.Messages;
@@ -74,12 +73,13 @@ public class MarkdownOutputPanel extends JPanel implements Scrollable, ThemeAwar
 
     // Global HtmlCustomizer applied to every renderer
     private HtmlCustomizer htmlCustomizer = HtmlCustomizer.DEFAULT;
-    
-    // Global BadgeClickHandler applied to every renderer
-    @Nullable
-    private BadgeClickHandler badgeClickHandler;
 
-    public MarkdownOutputPanel(boolean escapeHtml) {
+    // Link handler for brokk:// URIs
+    @Nullable
+    private final java.util.function.Consumer<java.net.URI> brokkLinkHandler;
+
+    public MarkdownOutputPanel(boolean escapeHtml, @Nullable java.util.function.Consumer<java.net.URI> brokkLinkHandler) {
+        this.brokkLinkHandler = brokkLinkHandler;
         this.escapeHtml = escapeHtml;
         setLayout(new BoxLayout(this, BoxLayout.Y_AXIS));
         setOpaque(true);
@@ -91,7 +91,15 @@ public class MarkdownOutputPanel extends JPanel implements Scrollable, ThemeAwar
     }
 
     public MarkdownOutputPanel() {
-        this(true); // Default to escaping HTML
+        this(true, null);
+    }
+
+    public MarkdownOutputPanel(boolean escapeHtml) {
+        this(escapeHtml, null);
+    }
+
+    public MarkdownOutputPanel(@Nullable java.util.function.Consumer<java.net.URI> brokkLinkHandler) {
+        this(true, brokkLinkHandler);
     }
 
     @Override
@@ -304,9 +312,8 @@ public class MarkdownOutputPanel extends JPanel implements Scrollable, ThemeAwar
 
         // Create a new renderer for this message - disable edit blocks for user messages
         boolean enableEditBlocks = message.type() != ChatMessageType.USER;
-        var renderer = new IncrementalBlockRenderer(isDarkTheme, enableEditBlocks, escapeHtml);
+        var renderer = new IncrementalBlockRenderer(isDarkTheme, enableEditBlocks, escapeHtml, brokkLinkHandler);
         renderer.setHtmlCustomizer(htmlCustomizer);
-        renderer.setBadgeClickHandler(requireNonNull(badgeClickHandler));
 
         // Create a new worker for this message
         var worker = new StreamingWorker(renderer);
@@ -440,13 +447,6 @@ public class MarkdownOutputPanel extends JPanel implements Scrollable, ThemeAwar
         });
     }
     
-    /**
-     * Sets or clears a global BadgeClickHandler for all renderers.
-     */
-    public void setBadgeClickHandler(BadgeClickHandler handler) {
-        this.badgeClickHandler = handler;
-        renderers().forEach(r -> r.setBadgeClickHandler(handler));
-    }
     
     /**
      * Sets or clears a global HtmlCustomizer for all renderers and executes a callback

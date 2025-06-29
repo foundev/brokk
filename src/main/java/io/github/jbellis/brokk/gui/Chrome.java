@@ -15,11 +15,12 @@ import io.github.jbellis.brokk.gui.dialogs.PreviewImagePanel;
 import io.github.jbellis.brokk.gui.dialogs.PreviewTextPanel;
 import io.github.jbellis.brokk.gui.mop.MarkdownOutputPanel;
 import io.github.jbellis.brokk.gui.mop.ThemeColors;
-import io.github.jbellis.brokk.gui.mop.stream.BadgeClickHandler;
 import io.github.jbellis.brokk.gui.mop.stream.CompositeHtmlCustomizer;
 import io.github.jbellis.brokk.gui.mop.stream.SymbolBadgeCustomizer;
 import io.github.jbellis.brokk.gui.search.GenericSearchBar;
 import io.github.jbellis.brokk.gui.search.MarkdownSearchableComponent;
+import io.github.jbellis.brokk.gui.util.ContextMenuUtils;
+import io.github.jbellis.brokk.gui.TableUtils;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 import org.jetbrains.annotations.Nullable;
@@ -29,8 +30,13 @@ import javax.swing.border.EmptyBorder;
 import java.awt.*;
 import java.awt.event.*;
 import java.io.IOException;
-import java.lang.reflect.InvocationTargetException;
 import java.nio.file.Files;
+import java.lang.reflect.InvocationTargetException;
+import java.net.URI;
+import java.net.URLDecoder;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Paths;
 import java.time.LocalTime;
 import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
@@ -914,12 +920,8 @@ public class Chrome implements AutoCloseable, IConsoleIO, IContextManager.Contex
                 var markdownPanels = new ArrayList<MarkdownOutputPanel>();
                 var escapeHtml = outputFragment.isEscapeHtml();
 
-                // Configure badge click handler for both file and symbol badges using factory
-                BadgeClickHandler badgeClickHandler = BadgeClickHandler.combined(contextManager, this, () -> {});
-
                 for (TaskEntry entry : outputFragment.entries()) {
-                    var markdownPanel = new MarkdownOutputPanel(escapeHtml);
-                    markdownPanel.setBadgeClickHandler(badgeClickHandler);
+                    var markdownPanel = new MarkdownOutputPanel(escapeHtml, this::handleBrokkLink);
 
                     // Configure symbol badge customizer
                     var symbolBadgeCustomizer = SymbolBadgeCustomizer.create(contextManager);
@@ -1043,6 +1045,41 @@ public class Chrome implements AutoCloseable, IConsoleIO, IContextManager.Contex
         } catch (Exception ex) {
             logger.debug("Error opening preview", ex);
             toolError("Error opening preview: " + ex.getMessage());
+        }
+    }
+
+    public void handleBrokkLink(URI uri) {
+        String host = uri.getHost();
+        String query = uri.getQuery();
+        if (query == null) {
+            return;
+        }
+        // query is like "path=..." or "fq=..."
+        String val = URLDecoder.decode(query.substring(query.indexOf('=') + 1), StandardCharsets.UTF_8);
+
+        if ("file".equals(host)) {
+            var path = Paths.get(val);
+            var relativePath = path.isAbsolute() ? getProject().getRoot().relativize(path).toString() : val;
+            var projectFile = new ProjectFile(getProject().getRoot(), relativePath);
+            var fileRefData = new TableUtils.FileReferenceList.FileReferenceData(
+                projectFile.getFileName(),
+                relativePath,
+                projectFile
+            );
+            
+            var p = java.awt.MouseInfo.getPointerInfo().getLocation();
+            SwingUtilities.convertPointFromScreen(p, frame);
+            ContextMenuUtils.showFileRefMenu(frame, p.x, p.y, fileRefData, this, () -> {});
+            return;
+        } else if ("symbol".equals(host)) {
+            var analyzer = contextManager.getAnalyzerWrapper().getNonBlocking();
+            if (analyzer != null) {
+                analyzer.getDefinition(val).ifPresent(codeUnit -> {
+                    var p = java.awt.MouseInfo.getPointerInfo().getLocation();
+                    SwingUtilities.convertPointFromScreen(p, frame);
+                    ContextMenuUtils.showSymbolMenu(frame, p.x, p.y, codeUnit, this);
+                });
+            }
         }
     }
 

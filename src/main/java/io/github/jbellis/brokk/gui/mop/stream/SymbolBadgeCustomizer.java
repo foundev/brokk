@@ -12,7 +12,6 @@ import org.apache.logging.log4j.Logger;
 import org.jsoup.nodes.Element;
 import org.jsoup.select.Elements;
 
-import java.nio.file.Path;
 import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
 import java.util.Locale;
@@ -59,8 +58,6 @@ public final class SymbolBadgeCustomizer implements HtmlCustomizer {
     // Unique ID for this customizer type
     private static final int CUSTOMIZER_ID = 1001;
 
-    // Local counter for unique badge IDs within this customizer instance
-    private final AtomicInteger badgeIdCounter = new AtomicInteger(0);
 
     private final IAnalyzer analyzer;
     private final boolean analyzerReady;
@@ -261,13 +258,9 @@ public final class SymbolBadgeCustomizer implements HtmlCustomizer {
     }
 
     private void replaceWithClickableFilenameBadge(Element element, String filename) {
-        int badgeId = badgeIdCounter.incrementAndGet();
-
         // Always operate on an <a> element
         Element anchor = ensureAnchor(element);
 
-        String encodedBadgeInfo = String.format(BadgeConstants.TITLE_FORMAT, filename, badgeId);
-        String userFriendlyTitle = Path.of(filename).getFileName().toString();
         String inlineStyle = BadgeConstants.STYLE_CLICKABLE + " color: #7ba7d4;";
 
         String href = "brokk://file?path="
@@ -279,8 +272,6 @@ public final class SymbolBadgeCustomizer implements HtmlCustomizer {
               .addClass(BadgeConstants.CLASS_BADGE_FILE)
               .addClass(BadgeConstants.CLASS_CLICKABLE_BADGE)
               .addClass(BadgeConstants.CLASS_CLICKABLE_FILE_BADGE)
-              .attr(BadgeConstants.ATTR_DATA_BADGE_INFO, encodedBadgeInfo)
-              .attr(BadgeConstants.ATTR_TITLE, userFriendlyTitle)
               .attr(BadgeConstants.ATTR_STYLE, inlineStyle);
 
         if (anchor.text().trim().isEmpty()) {
@@ -289,15 +280,10 @@ public final class SymbolBadgeCustomizer implements HtmlCustomizer {
     }
 
     private void replaceWithClickableSymbolBadge(Element element, String symbolName, CodeUnit codeUnit) {
-        int badgeId = badgeIdCounter.incrementAndGet();
-
         Element anchor = ensureAnchor(element);
 
-        String encodedSymbolId = symbolName + ":" + badgeId;
-        String symbolType       = getSymbolTypeDisplay(codeUnit);
-        String userFriendlyTitle = symbolType + " " + codeUnit.fqName()
-                                   + " (" + codeUnit.source() + ')';
-        String inlineStyle = BadgeConstants.STYLE_CLICKABLE + " color: #28a745;";
+        // Use the same blue tone as file badges
+        String inlineStyle = BadgeConstants.STYLE_CLICKABLE + " color: #7ba7d4;";
 
         String href = "brokk://symbol?fq="
                       + URLEncoder.encode(codeUnit.fqName(), StandardCharsets.UTF_8);
@@ -307,8 +293,6 @@ public final class SymbolBadgeCustomizer implements HtmlCustomizer {
               .addClass(BadgeConstants.CLASS_BADGE_SYMBOL)
               .addClass(getBadgeClass(codeUnit))
               .addClass(BadgeConstants.CLASS_CLICKABLE_BADGE)
-              .attr(BadgeConstants.ATTR_DATA_SYMBOL_ID, encodedSymbolId)
-              .attr(BadgeConstants.ATTR_TITLE, userFriendlyTitle)
               .attr(BadgeConstants.ATTR_STYLE, inlineStyle);
 
         if (anchor.text().trim().isEmpty()) {
@@ -340,13 +324,5 @@ public final class SymbolBadgeCustomizer implements HtmlCustomizer {
         return a;
     }
 
-    private String getSymbolTypeDisplay(CodeUnit codeUnit) {
-        return switch (codeUnit.kind()) {
-            case CLASS -> "class";
-            case FUNCTION -> "function";
-            case FIELD -> "field";
-            case MODULE -> "module";
-        };
-    }
 
 }

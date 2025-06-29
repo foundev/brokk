@@ -25,9 +25,6 @@ import org.jsoup.nodes.Node;
 import javax.swing.*;
 import javax.swing.event.HyperlinkEvent;
 import javax.swing.event.HyperlinkListener;
-import java.net.URI;
-import java.net.URLDecoder;
-import java.util.Arrays;
 import java.awt.Desktop;
 import javax.swing.text.AbstractDocument;
 import javax.swing.text.SimpleAttributeSet;
@@ -36,6 +33,9 @@ import javax.swing.text.html.HTMLDocument;
 import java.awt.*;
 import java.awt.event.MouseAdapter;
 import java.awt.event.MouseEvent;
+import java.net.URI;
+import java.net.URLDecoder;
+import java.util.Arrays;
 import java.util.*;
 import java.util.List;
 import java.util.concurrent.ConcurrentHashMap;
@@ -49,8 +49,6 @@ import static org.checkerframework.checker.nullness.util.NullnessUtil.castNonNul
  * and maintain scroll/caret positions during updates.
  */
 public final class IncrementalBlockRenderer {
-    // Compilation flag to enable/disable badge-based click detection
-    private static final boolean ENABLE_BADGE_CLICK_DETECTION = true;
     private static final Logger logger = LogManager.getLogger(IncrementalBlockRenderer.class);
 
     // Performance optimization: cached compiled pattern
@@ -94,12 +92,8 @@ public final class IncrementalBlockRenderer {
     // Per-instance HTML customizer; defaults to NO_OP to avoid null checks
     private volatile HtmlCustomizer htmlCustomizer = HtmlCustomizer.DEFAULT;
 
-    // Badge click handler for interactive badges
     @Nullable
-    private volatile BadgeClickHandler badgeClickHandler = null;
-
-    // Track active mouse listeners for cleanup
-    private final Set<BadgeMouseListener> activeListeners = ConcurrentHashMap.newKeySet();
+    private final java.util.function.Consumer<URI> brokkLinkHandler;
 
     // Component factories
     private static final Map<String, ComponentDataFactory> FACTORIES =
@@ -120,11 +114,11 @@ public final class IncrementalBlockRenderer {
      * @param dark true for dark theme, false for light theme
      */
     public IncrementalBlockRenderer(boolean dark) {
-        this(dark, true, true);
+        this(dark, true, true, null);
     }
 
     public IncrementalBlockRenderer(boolean dark, boolean enableEditBlocks) {
-        this(dark, enableEditBlocks, true);
+        this(dark, enableEditBlocks, true, null);
     }
 
     /**
@@ -134,8 +128,9 @@ public final class IncrementalBlockRenderer {
      * @param enableEditBlocks true to enable edit block parsing and rendering, false to disable
      * @param escapeHtml true to escape HTML within markdown, false to allow raw HTML
      */
-    public IncrementalBlockRenderer(boolean dark, boolean enableEditBlocks, boolean escapeHtml) {
+    public IncrementalBlockRenderer(boolean dark, boolean enableEditBlocks, boolean escapeHtml, @Nullable java.util.function.Consumer<URI> brokkLinkHandler) {
         this.isDarkTheme = dark;
+        this.brokkLinkHandler = brokkLinkHandler;
 
         // Create root panel with vertical BoxLayout
         root = new JPanel();
@@ -187,65 +182,16 @@ public final class IncrementalBlockRenderer {
     }
 
     /**
-     * Register or clear a BadgeClickHandler for handling badge interactions.
-     */
-    public void setBadgeClickHandler(BadgeClickHandler handler) {
-        logger.debug("Setting badgeClickHandler: {}", handler != null ? "non-null" : "null");
-        this.badgeClickHandler = handler;
-    }
-
-    /**
      * Cleanup method to remove all mouse listeners and prevent memory leaks.
      * Should be called when the renderer is no longer needed.
      */
     public void cleanup() {
-        logger.debug("Cleaning up IncrementalBlockRenderer, removing {} listeners", activeListeners.size());
-        // Remove all active listeners
-        for (BadgeMouseListener listener : activeListeners) {
-            listener.cleanup();
-        }
-        activeListeners.clear();
-
-        // Clear handler reference
-        badgeClickHandler = null;
-
         // Clear marker index
         synchronized (markerIndex) {
             markerIndex.clear();
         }
     }
 
-    /**
-     * Removes listeners from components that are no longer in the UI tree.
-     */
-    private void cleanupOrphanedListeners() {
-        var orphanedListeners = new java.util.ArrayList<BadgeMouseListener>();
-
-        for (BadgeMouseListener listener : activeListeners) {
-            if (!isComponentInTree(listener.editor, root)) {
-                orphanedListeners.add(listener);
-            }
-        }
-
-        for (BadgeMouseListener listener : orphanedListeners) {
-            listener.cleanup();
-            activeListeners.remove(listener);
-        }
-    }
-
-    /**
-     * Checks if a component is still part of the component tree.
-     */
-    private boolean isComponentInTree(Component target, Container root) {
-        if (target == root) return true;
-
-        Container parent = target.getParent();
-        while (parent != null) {
-            if (parent == root) return true;
-            parent = parent.getParent();
-        }
-        return false;
-    }
 
     /**
      * Re-runs the current HtmlCustomizer against the last rendered Markdown and
@@ -365,17 +311,12 @@ public final class IncrementalBlockRenderer {
      */
     private void updateUI(List<ComponentData> components) {
         Reconciler.reconcile(root, components, registry, isDarkTheme);
-        // Clean up listeners from components that may have been removed
-        cleanupOrphanedListeners();
 
         // After components are (re)built update marker index
         rebuildMarkerIndex();
 
-        // Add badge click handlers to newly created components
-        var handler = badgeClickHandler; // capture volatile reference once
-        if (handler != null) {
-            addBadgeClickHandlers();
-        }
+        // Add hyperlink listeners to newly created components
+        addHyperlinkListenersToComponent(root);
 
         // Write HTML debug output after first render
         writeInitialHtmlDebugOutput();
@@ -676,8 +617,7 @@ public final class IncrementalBlockRenderer {
      * BadgeClickHandler.  External links fall back to Desktop.browse().
      */
     private class BrokkHyperlinkListener implements HyperlinkListener {
-        private final JEditorPane editor;
-        BrokkHyperlinkListener(JEditorPane editor) { this.editor = editor; }
+        BrokkHyperlinkListener() { }
 
         @Override
         public void hyperlinkUpdate(HyperlinkEvent evt) {
@@ -687,32 +627,8 @@ public final class IncrementalBlockRenderer {
             try {
                 URI uri = URI.create(evt.getDescription());
                 if ("brokk".equals(uri.getScheme())) {
-                    var handler = badgeClickHandler;
-                    if (handler != null) {
-                        String host = uri.getHost();           // "file" or "symbol"
-                        String query = uri.getQuery();         // e.g. "path=src/…"
-                        String val   = query == null
-                                     ? ""
-                                     : URLDecoder.decode(query.substring(query.indexOf('=') + 1),
-                                                          java.nio.charset.StandardCharsets.UTF_8);
-
-                        /* Create a synthetic click event to satisfy NullAway’s
-                           non-null requirement; coordinates (0,0) are fine
-                           because the handler never inspects them. */
-                        var syntheticClick = new MouseEvent(editor,
-                                                            MouseEvent.MOUSE_CLICKED,
-                                                            System.currentTimeMillis(),
-                                                            0,
-                                                            0,
-                                                            0,
-                                                            1,
-                                                            false);
-
-                        if ("file".equals(host)) {
-                            handler.onBadgeClick("file", val, syntheticClick, editor);
-                        } else if ("symbol".equals(host)) {
-                            handler.onBadgeClick("symbol", val, syntheticClick, editor);
-                        }
+                    if (brokkLinkHandler != null) {
+                        brokkLinkHandler.accept(uri);
                     }
                 } else if (Desktop.isDesktopSupported()) {
                     Desktop.getDesktop().browse(uri);
@@ -805,251 +721,24 @@ public final class IncrementalBlockRenderer {
     }
 
     /**
-     * Adds badge click handlers to all JEditorPane components in the root panel.
+     * Recursively adds hyperlink listeners to JEditorPane components.
      */
-    private void addBadgeClickHandlers() {
-        logger.debug("Adding badge click handlers to root panel");
-        addBadgeClickHandlersToComponent(root);
-    }
-
-    /**
-     * Recursively adds badge click handlers to JEditorPane components.
-     */
-    private void addBadgeClickHandlersToComponent(Component comp) {
+    private void addHyperlinkListenersToComponent(Component comp) {
         if (comp instanceof JEditorPane editor) {
-            // Check if we already added a handler (to avoid duplicates)
-            boolean hasHandler = false;
-            for (var listener : editor.getMouseListeners()) {
-                if (listener instanceof BadgeMouseListener) {
-                    hasHandler = true;
-                    break;
-                }
-            }
-
-            if (!hasHandler) {
-                BadgeMouseListener listener = new BadgeMouseListener(editor);
-                editor.addMouseListener(listener);
-                activeListeners.add(listener);
-            }
-
             // --- HyperlinkListener (brokk:// links) -----------------------
             boolean hasBrokkHL = Arrays.stream(editor.getHyperlinkListeners())
                                        .anyMatch(l -> l instanceof BrokkHyperlinkListener);
             if (!hasBrokkHL) {
-                editor.addHyperlinkListener(new BrokkHyperlinkListener(editor));
+                editor.addHyperlinkListener(new BrokkHyperlinkListener());
             }
         }
 
         if (comp instanceof Container container) {
             for (Component child : container.getComponents()) {
-                addBadgeClickHandlersToComponent(child);
+                addHyperlinkListenersToComponent(child);
             }
         }
     }
 
-    /**
-     * Mouse listener that detects clicks on badge elements.
-     */
-    private class BadgeMouseListener extends MouseAdapter {
-        final JEditorPane editor; // package-private for cleanup access
 
-        BadgeMouseListener(JEditorPane editor) {
-            this.editor = editor;
-            // Also register as motion listener for hover effects on badges
-            editor.addMouseMotionListener(this);
-        }
-
-        /**
-         * Cleanup method to remove this listener from the editor.
-         */
-        void cleanup() {
-            editor.removeMouseListener(this);
-            editor.removeMouseMotionListener(this);
-        }
-
-        @Override
-        public void mouseMoved(MouseEvent e) {
-            // Update cursor when hovering over clickable filenames
-            if (ENABLE_BADGE_CLICK_DETECTION) {
-                try {
-                    // Check if mouse is over any file badge or symbol badge element using DOM traversal
-                    boolean isOverFileBadge = getFileBadgeFileNameAtMousePoint(e).isPresent();
-                    boolean isOverSymbolBadge = getSymbolBadgeDataAtMousePoint(e).isPresent();
-
-                    // Debug: Log mouse position and detection result
-                    logger.trace("Mouse at {}, over file badge: {}, over symbol badge: {}", e.getPoint(), isOverFileBadge, isOverSymbolBadge);
-
-                    // Update cursor based on badge detection
-                    var cursor = (isOverFileBadge || isOverSymbolBadge) ?
-                                 Cursor.getPredefinedCursor(java.awt.Cursor.HAND_CURSOR) :
-                                 Cursor.getDefaultCursor();
-
-                    // Only update if cursor actually changed to avoid unnecessary repaints
-                    if (editor.getCursor().getType() != cursor.getType()) {
-                        editor.setCursor(cursor);
-                    }
-
-                } catch (Exception ex) {
-                    logger.warn("Error during hover detection: {}", ex.getMessage());
-                }
-            }
-        }
-
-        @Override
-        public void mouseExited(MouseEvent e) {
-            // Reset cursor when leaving the editor
-            editor.setCursor(java.awt.Cursor.getDefaultCursor());
-        }
-
-        @Override
-        public void mouseClicked(MouseEvent e) {
-            // Only handle right clicks for context menu
-            if (!SwingUtilities.isRightMouseButton(e)) {
-                return;
-            }
-
-            logger.trace("Right-click detected at point: {}", e.getPoint());
-
-            var handler = badgeClickHandler; // capture volatile reference
-            if (handler == null) {
-                return;
-            }
-
-            // Check if click is over any file badge element using DOM traversal
-            getFileBadgeFileNameAtMousePoint(e).ifPresent(fileName -> {
-                logger.debug("Click over file badge with name: {}", fileName);
-                handler.onBadgeClick("file", fileName, e, editor);
-            });
-
-            // Check if click is over any symbol badge element using DOM traversal
-            getSymbolBadgeDataAtMousePoint(e).ifPresent(symbolData -> {
-                logger.debug("Click over symbol badge with data: {}", symbolData);
-                handler.onBadgeClick("symbol", symbolData, e, editor);
-            });
-        }
-
-        /**
-         * Gets the filename of the file badge at the given mouse point using clickable-file-badge class detection.
-         * This approach only looks for the clickable-file-badge CSS class to determine if mouse is over a file badge.
-         */
-        private Optional<String> getFileBadgeFileNameAtMousePoint(MouseEvent e) {
-            try {
-                // Get the HTML document from the editor
-                var doc = editor.getDocument();
-                if (!(doc instanceof HTMLDocument htmlDoc)) {
-                    return Optional.empty();
-                }
-
-                // Convert mouse point to document position
-                int pos = editor.viewToModel2D(e.getPoint());
-                if (pos < 0 || pos >= doc.getLength()) {
-                    return Optional.empty();
-                }
-
-                // Get the element at this position and traverse up the hierarchy
-                var element = htmlDoc.getCharacterElement(pos);
-                return hasClass(element, BadgeConstants.CLASS_CLICKABLE_FILE_BADGE);
-
-            } catch (Exception ex) {
-                logger.trace("Error getting file badge at mouse point: {}", ex.getMessage());
-                return Optional.empty();
-            }
-        }
-
-        /**
-         * Gets the symbol data of the symbol badge at the given mouse point using badge-symbol class detection.
-         */
-        private Optional<String> getSymbolBadgeDataAtMousePoint(MouseEvent e) {
-            try {
-                // Get the HTML document from the editor
-                var doc = editor.getDocument();
-                if (!(doc instanceof HTMLDocument htmlDoc)) {
-                    return Optional.empty();
-                }
-
-                // Convert mouse point to document position
-                int pos = editor.viewToModel2D(e.getPoint());
-                if (pos < 0 || pos >= doc.getLength()) {
-                    return Optional.empty();
-                }
-
-                // Get the element at this position and traverse up the hierarchy
-                var element = htmlDoc.getCharacterElement(pos);
-                return getSymbolIdFromElement(element);
-
-            } catch (Exception ex) {
-                logger.trace("Error getting symbol badge at mouse point: {}", ex.getMessage());
-                return Optional.empty();
-            }
-        }
-
-    }
-
-    /**
-     * Debug method to examine HTMLDocument element structure for badge detection.
-     *
-     * @param element The element to examine
-     * @return true if element is valid for badge detection, false otherwise
-     */
-    private Optional<String> hasClass(javax.swing.text.Element element, String classId) {
-        if (element instanceof AbstractDocument.AbstractElement el) {
-            var u = el.getAttribute(HTML.Tag.CODE);
-            if (u instanceof SimpleAttributeSet t) {
-                var clazz = t.getAttribute(HTML.Attribute.CLASS);
-                var title = t.getAttribute(HTML.Attribute.TITLE);
-                if (Objects.requireNonNull(clazz) instanceof String s && s.contains(classId)) {
-                    // For backward compatibility, check if title contains encoded format and parse it
-                    String titleStr = title.toString();
-                    if (titleStr.startsWith("file:") && titleStr.contains(":id:")) {
-                        // Parse the encoded format "file:filename:id:123" to extract just "filename"
-                        int fileStart = 5; // After "file:"
-                        int idStart = titleStr.indexOf(":id:");
-                        if (idStart > fileStart) {
-                            return Optional.of(titleStr.substring(fileStart, idStart)); // Return just the filename part
-                        }
-                    }
-                    // Otherwise, return the title as-is (should be just the filename now)
-                    return Optional.of(titleStr);
-                }
-            }
-            // Valid element types for badges
-            return Optional.empty();
-        }
-        return Optional.empty(); // Not a valid badge element
-    }
-
-    /**
-     * Gets symbol ID from HTML element if it contains a symbol badge.
-     *
-     * @param element The element to examine
-     * @return Optional containing symbol ID if element is a symbol badge, empty otherwise
-     */
-    private Optional<String> getSymbolIdFromElement(javax.swing.text.Element element) {
-        if (element instanceof AbstractDocument.AbstractElement el) {
-            var u = el.getAttribute(HTML.Tag.CODE);
-            if (u instanceof SimpleAttributeSet t) {
-                var clazz = t.getAttribute(HTML.Attribute.CLASS);
-                var title = t.getAttribute(HTML.Attribute.TITLE);
-
-                if (clazz instanceof String s && s.contains("badge-symbol") && s.contains("clickable-badge") && title != null) {
-                    // Extract symbol name from title attribute
-                    // Title format: "class io.github.jbellis.brokk.gui.mop.stream.SymbolBadgeCustomizer (src/main/java/...)"
-                    String titleStr = title.toString();
-
-                    // Extract the fully qualified symbol name - it's after the symbol type and before the opening parenthesis
-                    if (titleStr.contains(" ") && titleStr.contains(" (")) {
-                        int spaceIndex = titleStr.indexOf(' ');
-                        int parenIndex = titleStr.indexOf(" (");
-                        if (spaceIndex > 0 && parenIndex > spaceIndex) {
-                            String fullName = titleStr.substring(spaceIndex + 1, parenIndex);
-                            // Return the full qualified name instead of just the simple name
-                            return Optional.of(fullName);
-                        }
-                    }
-                }
-            }
-            return Optional.empty();
-        }
-        return Optional.empty(); // Not a valid badge element
-    }
 }

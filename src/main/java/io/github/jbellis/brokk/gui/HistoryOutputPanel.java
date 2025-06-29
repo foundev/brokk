@@ -7,7 +7,6 @@ import io.github.jbellis.brokk.context.Context;
 import io.github.jbellis.brokk.context.ContextFragment;
 import io.github.jbellis.brokk.gui.dialogs.SessionsDialog;
 import io.github.jbellis.brokk.gui.mop.MarkdownOutputPanel;
-import io.github.jbellis.brokk.gui.mop.stream.BadgeClickHandler;
 import io.github.jbellis.brokk.gui.mop.stream.CompositeHtmlCustomizer;
 import io.github.jbellis.brokk.gui.mop.stream.SymbolBadgeCustomizer;
 import org.apache.logging.log4j.LogManager;
@@ -58,7 +57,6 @@ public class HistoryOutputPanel extends JPanel {
     private final List<OutputWindow> activeStreamingWindows = new ArrayList<>();
 
     @Nullable private String lastSpinnerMessage = null; // Explicitly initialize
-    private BadgeClickHandler standardBadgeClickHandler;
 
     /**
      * Constructs a new HistoryOutputPane.
@@ -73,13 +71,10 @@ public class HistoryOutputPanel extends JPanel {
         this.contextManager = contextManager;
         this.instructionsPanel = instructionsPanel;
 
-        // Create the standard badge click handler once and reuse it
-        this.standardBadgeClickHandler = BadgeClickHandler.combined(contextManager, chrome, () -> {});
-
         // commandResultLabel initialization removed
 
         // Build combined Output + Instructions panel (Center)
-        this.llmStreamArea = new MarkdownOutputPanel();
+        this.llmStreamArea = new MarkdownOutputPanel(this::handleBrokkLink);
         this.llmScrollPane = buildLLMStreamScrollPane();
         this.copyButton = new JButton("Copy");
         var centerPanel = buildCombinedOutputInstructionsPanel(this.llmScrollPane, this.copyButton);
@@ -585,9 +580,6 @@ public class HistoryOutputPanel extends JPanel {
         var symbolBadgeCustomizer = SymbolBadgeCustomizer.create(contextManager);
         llmStreamArea.setHtmlCustomizer(new CompositeHtmlCustomizer(symbolBadgeCustomizer));
 
-        // Set badge click handler for all current and future renderers
-        llmStreamArea.setBadgeClickHandler(standardBadgeClickHandler);
-
         // Wrap it in a scroll pane so it can scroll if content is large
         var jsp = new JScrollPane(llmStreamArea);
         jsp.setBorder(BorderFactory.createEmptyBorder(5, 5, 5, 5));
@@ -801,6 +793,13 @@ public class HistoryOutputPanel extends JPanel {
     /**
      * Inner class representing a detached window for viewing output text
      */
+    private void handleBrokkLink(java.net.URI uri) {
+        chrome.handleBrokkLink(uri);
+    }
+
+    /**
+     * Inner class representing a detached window for viewing output text
+     */
     private static class OutputWindow extends JFrame {
         private final IProject project;
         private final MarkdownOutputPanel outputPanel;
@@ -831,14 +830,11 @@ public class HistoryOutputPanel extends JPanel {
             setDefaultCloseOperation(JFrame.DISPOSE_ON_CLOSE);
 
             // Create markdown panel with the text
-            outputPanel = new MarkdownOutputPanel();
+            outputPanel = new MarkdownOutputPanel(parentPanel::handleBrokkLink);
 
             // Configure symbol badge customizer
             var symbolBadgeCustomizer = SymbolBadgeCustomizer.create(parentPanel.contextManager);
             outputPanel.setHtmlCustomizer(new CompositeHtmlCustomizer(symbolBadgeCustomizer));
-
-            // Use the standard badge click handler from parent panel
-            outputPanel.setBadgeClickHandler(parentPanel.standardBadgeClickHandler);
 
             outputPanel.updateTheme(isDark);
             outputPanel.setText(output);
