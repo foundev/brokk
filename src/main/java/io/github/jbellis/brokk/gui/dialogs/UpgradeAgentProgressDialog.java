@@ -21,10 +21,8 @@ import javax.swing.*;
 import java.awt.*;
 import java.io.StringReader;
 import java.io.StringWriter;
-import java.util.ArrayList;
-import java.util.HashMap;
+import java.util.*;
 import java.util.List;
-import java.util.Map;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
@@ -44,6 +42,7 @@ public class UpgradeAgentProgressDialog extends JDialog {
     private final AtomicInteger processedFileCount = new AtomicInteger(0);
     private final @Nullable Integer relatedK;
     private final @Nullable String perFileCommandTemplate;
+    private final boolean includeWorkspace;
     private final ExecutorService executorService; // Moved here for wider access
 
 
@@ -55,12 +54,14 @@ public class UpgradeAgentProgressDialog extends JDialog {
                                       List<ProjectFile> filesToProcess,
                                       Chrome chrome,
                                       @Nullable Integer relatedK,
-                                      @Nullable String perFileCommandTemplate)
+                                      @Nullable String perFileCommandTemplate,
+                                      boolean includeWorkspace)
     {
         super(owner, "Upgrade Agent Progress", true);
         this.totalFiles = filesToProcess.size();
         this.relatedK = relatedK;
         this.perFileCommandTemplate = perFileCommandTemplate;
+        this.includeWorkspace = includeWorkspace;
 
         setLayout(new BorderLayout(10, 10));
         setPreferredSize(new Dimension(600, 400));
@@ -120,6 +121,7 @@ public class UpgradeAgentProgressDialog extends JDialog {
                     if (isCancelled()) {
                         break;
                     }
+                    var ctx = contextManager.topContext();
                     executorService.submit(() -> {
                         var dialogConsoleIO = new DialogConsoleIO(UpgradeAgentProgressDialog.this, file.toString());
                         String errorMessage = null;
@@ -136,6 +138,10 @@ public class UpgradeAgentProgressDialog extends JDialog {
 
                             List<ChatMessage> readOnlyMessages = new ArrayList<>();
                             try {
+                                if (UpgradeAgentProgressDialog.this.includeWorkspace) {
+                                    readOnlyMessages.addAll(CodePrompts.instance.getWorkspaceContentsMessages(ctx));
+                                    dialogConsoleIO.systemOutput("Including workspace contents in context.");
+                                }
                                 if (UpgradeAgentProgressDialog.this.relatedK != null) {
                                     var acFragment = contextManager.liveContext().buildAutoContext(UpgradeAgentProgressDialog.this.relatedK);
                                     if (!acFragment.text().isBlank()) {

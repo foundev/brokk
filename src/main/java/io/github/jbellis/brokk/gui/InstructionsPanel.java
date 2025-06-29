@@ -1120,8 +1120,8 @@ public class InstructionsPanel extends JPanel implements IContextManager.Context
         contextManager.getAnalyzerWrapper().pause();
         try {
             var result = new CodeAgent(contextManager, model).runTask(input, false);
+            // code agent has displayed status in llmoutput
             if (result.stopDetails().reason() == TaskResult.StopReason.INTERRUPTED) {
-                chrome.systemOutput("Code Agent cancelled!");
                 // Save the partial result (if we didn't interrupt before we got any replies)
                 if (result.output().messages().stream().anyMatch(m -> m instanceof AiMessage)) {
                     chrome.setSkipNextUpdateOutputPanelOnContextChange(true);
@@ -1129,10 +1129,6 @@ public class InstructionsPanel extends JPanel implements IContextManager.Context
                 }
                 populateInstructionsArea(input);
             } else {
-                if (result.stopDetails().reason() == TaskResult.StopReason.SUCCESS) {
-                    chrome.systemOutput("Code Agent complete!");
-                }
-                // Code agent has logged error to console already
                 chrome.setSkipNextUpdateOutputPanelOnContextChange(true);
                 contextManager.addToHistory(result, false);
             }
