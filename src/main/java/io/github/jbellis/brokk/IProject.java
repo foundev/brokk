@@ -248,8 +248,8 @@ public interface IProject extends AutoCloseable {
             };
         }
 
-        public static CodeAgentTestScope fromString(String value, CodeAgentTestScope defaultScope) {
-            if (value.isBlank()) return defaultScope;
+        public static CodeAgentTestScope fromString(@Nullable String value, CodeAgentTestScope defaultScope) {
+            if (value == null || value.isBlank()) return defaultScope;
             try {
                 return CodeAgentTestScope.valueOf(value.toUpperCase(Locale.ROOT));
             } catch (IllegalArgumentException e) {
