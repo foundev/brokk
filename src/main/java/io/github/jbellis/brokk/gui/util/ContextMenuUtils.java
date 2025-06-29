@@ -3,7 +3,6 @@ package io.github.jbellis.brokk.gui.util;
 import io.github.jbellis.brokk.AnalyzerWrapper;
 import io.github.jbellis.brokk.analyzer.CodeUnit;
 import io.github.jbellis.brokk.context.ContextFragment;
-import io.github.jbellis.brokk.ContextManager;
 import io.github.jbellis.brokk.gui.Chrome;
 import io.github.jbellis.brokk.gui.TableUtils;
 import io.github.jbellis.brokk.gui.TableUtils.FileReferenceList.FileReferenceData;
@@ -178,8 +177,7 @@ public final class ContextMenuUtils {
             }
         }
     }
-    
-   
+
     // Private constructor to prevent instantiation
     private ContextMenuUtils() {
     }
@@ -298,14 +296,12 @@ public final class ContextMenuUtils {
      * @param y The y position for the menu relative to the owner
      * @param codeUnit The symbol for which to show the menu
      * @param chrome The Chrome instance for UI integration
-     * @param onRefresh Runnable to call when refresh is needed
      */
     public static void showSymbolMenu(Component owner,
                                       int x,
                                       int y,
                                       CodeUnit codeUnit,
-                                      Chrome chrome,
-                                      Runnable onRefresh) {
+                                      Chrome chrome) {
         var cm = chrome.getContextManager();
         JPopupMenu menu = new JPopupMenu();
 

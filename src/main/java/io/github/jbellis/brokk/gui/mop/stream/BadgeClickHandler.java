@@ -91,7 +91,7 @@ public interface BadgeClickHandler {
                 if (analyzer != null) {
                     var codeUnit = analyzer.getDefinition(symbolId);
                     if (codeUnit.isPresent()) {
-                        ContextMenuUtils.showSymbolMenu(component, event.getX(), event.getY(), codeUnit.get(), chrome, onRefresh);
+                        ContextMenuUtils.showSymbolMenu(component, event.getX(), event.getY(), codeUnit.get(), chrome);
                     } else {
                         logger.debug("No definition found for symbol: {}", symbolId);
                     }

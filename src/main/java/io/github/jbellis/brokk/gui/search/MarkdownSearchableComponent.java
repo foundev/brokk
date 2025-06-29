@@ -1,5 +1,6 @@
 package io.github.jbellis.brokk.gui.search;
 
+import io.github.jbellis.brokk.IContextManager;
 import io.github.jbellis.brokk.difftool.ui.JMHighlightPainter;
 import io.github.jbellis.brokk.gui.mop.MarkdownOutputPanel;
 import io.github.jbellis.brokk.gui.mop.stream.*;
@@ -40,7 +41,7 @@ public class MarkdownSearchableComponent extends BaseSearchableComponent {
     private final List<MarkdownOutputPanel> panels;
     private final MarkdownSearchDebugger debugger;
     private final Map<MarkdownOutputPanel, HtmlCustomizer> originalCustomizers = new ConcurrentHashMap<>();
-    private final io.github.jbellis.brokk.IContextManager contextManager;
+    private final IContextManager contextManager;
 
     private final List<SearchMatch> allMatches = new ArrayList<>();
     private int currentMatchIndex = -1;
@@ -48,7 +49,7 @@ public class MarkdownSearchableComponent extends BaseSearchableComponent {
     private SearchMatch previousMatch = null;
     private final List<RTextAreaSearchableComponent> codeSearchComponents = new ArrayList<>();
 
-    public MarkdownSearchableComponent(List<MarkdownOutputPanel> panels, io.github.jbellis.brokk.IContextManager contextManager) {
+    public MarkdownSearchableComponent(List<MarkdownOutputPanel> panels, IContextManager contextManager) {
         this.panels = panels;
         this.contextManager = contextManager;
         this.debugger = new MarkdownSearchDebugger(DEBUG_SEARCH_COLLECTION);
@@ -62,7 +63,7 @@ public class MarkdownSearchableComponent extends BaseSearchableComponent {
     /**
      * Creates an adapter for a single MarkdownOutputPanel.
      */
-    public static MarkdownSearchableComponent wrap(MarkdownOutputPanel panel, io.github.jbellis.brokk.IContextManager contextManager) {
+    public static MarkdownSearchableComponent wrap(MarkdownOutputPanel panel, IContextManager contextManager) {
         return new MarkdownSearchableComponent(List.of(panel), contextManager);
     }
 

@@ -1,13 +1,14 @@
 package io.github.jbellis.brokk.testutil;
 
 import io.github.jbellis.brokk.AnalyzerWrapper;
-import io.github.jbellis.brokk.analyzer.CodeUnit;
-import io.github.jbellis.brokk.analyzer.CodeUnitType;
-import io.github.jbellis.brokk.analyzer.IAnalyzer;
-import io.github.jbellis.brokk.analyzer.ProjectFile;
+import io.github.jbellis.brokk.ContextManager;
+import io.github.jbellis.brokk.analyzer.*;
 
 import java.nio.file.Path;
 import java.util.Optional;
+import java.util.concurrent.Callable;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.Future;
 
 /**
  * Mock AnalyzerWrapper that simulates a ready state for testing.
@@ -22,16 +23,16 @@ public class MockAnalyzerWrapper extends AnalyzerWrapper {
     }
     
     private static TestProject createTestProject() {
-        return new TestProject(Path.of("/tmp/test"), 
-                             io.github.jbellis.brokk.analyzer.Language.JAVA);
+        return new TestProject(Path.of("/tmp/test"),
+                               Language.JAVA);
     }
     
-    private static io.github.jbellis.brokk.ContextManager.TaskRunner createTaskRunner() {
-        return new io.github.jbellis.brokk.ContextManager.TaskRunner() {
+    private static ContextManager.TaskRunner createTaskRunner() {
+        return new ContextManager.TaskRunner() {
             @Override
-            public <T> java.util.concurrent.Future<T> submit(String taskDescription, java.util.concurrent.Callable<T> task) {
+            public <T> Future<T> submit(String taskDescription, Callable<T> task) {
                 // Return a completed future for testing
-                return java.util.concurrent.CompletableFuture.completedFuture(null);
+                return CompletableFuture.completedFuture(null);
             }
         };
     }

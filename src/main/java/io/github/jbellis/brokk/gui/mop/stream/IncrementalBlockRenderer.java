@@ -93,7 +93,7 @@ public final class IncrementalBlockRenderer {
     private volatile BadgeClickHandler badgeClickHandler = null;
 
     // Track active mouse listeners for cleanup
-    private final java.util.Set<BadgeMouseListener> activeListeners = java.util.concurrent.ConcurrentHashMap.newKeySet();
+    private final Set<BadgeMouseListener> activeListeners = ConcurrentHashMap.newKeySet();
 
     // Component factories
     private static final Map<String, ComponentDataFactory> FACTORIES =
@@ -224,7 +224,6 @@ public final class IncrementalBlockRenderer {
         for (BadgeMouseListener listener : orphanedListeners) {
             listener.cleanup();
             activeListeners.remove(listener);
-            //logger.debug("Removed orphaned listener for component no longer in tree");
         }
     }
 

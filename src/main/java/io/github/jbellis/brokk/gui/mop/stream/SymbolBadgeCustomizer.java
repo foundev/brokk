@@ -6,6 +6,7 @@ import io.github.jbellis.brokk.analyzer.CodeUnit;
 import io.github.jbellis.brokk.analyzer.IAnalyzer;
 import io.github.jbellis.brokk.gui.GuiTheme;
 import io.github.jbellis.brokk.gui.mop.ThemeColors;
+import io.github.jbellis.brokk.util.PatternConstants;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 import org.jsoup.nodes.Element;
@@ -15,7 +16,6 @@ import java.nio.file.Path;
 import java.util.Locale;
 import java.util.Objects;
 import java.util.concurrent.atomic.AtomicInteger;
-import java.util.regex.Pattern;
 
 /**
  * Decorates <a> tags that carry a data-symbol-id attribute (added by BrokkMarkdownExtension)
@@ -45,12 +45,7 @@ public final class SymbolBadgeCustomizer implements HtmlCustomizer {
     private static final boolean ENABLE_FILE_BADGES = Boolean.parseBoolean(
         System.getProperty("brokk.badges.files", DEFAULT_BADGE_SETTING));
 
-    private static final Pattern SYMBOL_PATTERN =
-            Pattern.compile("[A-Z][A-Za-z0-9_]*(?:\\.[A-Z][A-Za-z0-9_]*)*(?:\\.[a-z][A-Za-z0-9_]+\\(\\))?");
-
-    // More flexible pattern that matches common file extensions
-    private static final Pattern FILENAME_PATTERN =
-            Pattern.compile(".*\\.(java|kt|scala|py|js|ts|jsx|tsx|cpp|c|h|hpp|cc|cxx|go|rs|rb|php|cs|swift|dart|vue|xml|json|yaml|yml|properties|md|txt|html|css|scss|sql|sh|gradle|xml)$");
+    // Use centralized patterns from PatternConstants to avoid duplication
 
     private static final String BADGE_TYPE_SYMBOL = "symbol";
     private static final String BADGE_TYPE_FILE = "file";
@@ -109,12 +104,12 @@ public final class SymbolBadgeCustomizer implements HtmlCustomizer {
 
         if (symbolId.isBlank()) {
             String candidate = anchor.text();
-            if (SYMBOL_PATTERN.matcher(candidate).matches()) {
+            if (PatternConstants.isSymbolLike(candidate)) {
                 symbolId = candidate;
                 badgeType = BADGE_TYPE_SYMBOL;
                 // write back so other customizers can rely on it later
                 anchor.attr(BadgeConstants.ATTR_DATA_SYMBOL_ID, symbolId);
-            } else if (FILENAME_PATTERN.matcher(candidate).matches()) {
+            } else if (PatternConstants.isRecognizedFile(candidate)) {
                 symbolId = candidate;
                 badgeType = BADGE_TYPE_FILE;
                 anchor.attr(BadgeConstants.ATTR_DATA_FILE_ID, symbolId);
@@ -175,9 +170,9 @@ public final class SymbolBadgeCustomizer implements HtmlCustomizer {
         String codeText = code.text();
         String badgeType = null;
 
-        if (SYMBOL_PATTERN.matcher(codeText).matches()) {
+        if (PatternConstants.isSymbolLike(codeText)) {
             badgeType = BADGE_TYPE_SYMBOL;
-        } else if (FILENAME_PATTERN.matcher(codeText).matches()) {
+        } else if (PatternConstants.isRecognizedFile(codeText)) {
             badgeType = BADGE_TYPE_FILE;
         } else {
             return;
@@ -271,10 +266,8 @@ public final class SymbolBadgeCustomizer implements HtmlCustomizer {
         // Set user-friendly title showing just the filename (relative path)
         String userFriendlyTitle = Path.of(filename).getFileName().toString();
 
-        // Get theme-appropriate link color for inline styling (required for Swing)
-        boolean isDarkTheme = isDarkTheme();
-        String linkColor = ThemeColors.getColorHex(isDarkTheme, "link_color_hex");
-        String inlineStyle = BadgeConstants.STYLE_CLICKABLE + " color: " + linkColor + ";";
+        // Use lighter blue color for file badges to match CSS styling
+        String inlineStyle = BadgeConstants.STYLE_CLICKABLE + " color: #7ba7d4;";
 
         // PRESERVE existing content (including search highlights) instead of clearing
         // Only add styling and attributes to make it a clickable badge
@@ -302,8 +295,8 @@ public final class SymbolBadgeCustomizer implements HtmlCustomizer {
         String symbolType = getSymbolTypeDisplay(codeUnit);
         String userFriendlyTitle = symbolType + " " + codeUnit.fqName() + " (" + codeUnit.source().toString() + ")";
 
-        // Get theme-appropriate red color for symbol badges
-        String inlineStyle = BadgeConstants.STYLE_CLICKABLE + " color: #dc3545;";
+        // Green color for symbol badges
+        String inlineStyle = BadgeConstants.STYLE_CLICKABLE + " color: #28a745;";
 
         // PRESERVE existing content (including search highlights) instead of clearing
         // Only add styling and attributes to make it a clickable symbol badge
@@ -330,12 +323,4 @@ public final class SymbolBadgeCustomizer implements HtmlCustomizer {
         };
     }
 
-    /**
-     * Determines if the current theme is dark mode.
-     * @return true if dark theme is active, false otherwise
-     */
-    private boolean isDarkTheme() {
-        String currentTheme = MainProject.getTheme();
-        return GuiTheme.THEME_DARK.equalsIgnoreCase(currentTheme);
-    }
 }

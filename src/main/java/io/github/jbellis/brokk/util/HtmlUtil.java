@@ -23,7 +23,7 @@ public final class HtmlUtil {
     private static final Logger logger = LogManager.getLogger(HtmlUtil.class);
 
     public static final boolean ENABLE_HTML_DEBUG_OUTPUT = Boolean.parseBoolean(
-        System.getProperty("brokk.html.debug", "true"));
+        System.getProperty("brokk.html.debug", "false"));
 
     private HtmlUtil() {}
 
