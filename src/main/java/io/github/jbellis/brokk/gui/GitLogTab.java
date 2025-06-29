@@ -2,11 +2,12 @@ package io.github.jbellis.brokk.gui;
 
 import com.google.common.base.Ascii;
 import io.github.jbellis.brokk.ContextManager;
+import io.github.jbellis.brokk.GitHubAuth;
 import io.github.jbellis.brokk.IConsoleIO;
 import io.github.jbellis.brokk.git.CommitInfo;
 import io.github.jbellis.brokk.git.GitRepo;
-import io.github.jbellis.brokk.git.ICommitInfo;
 import io.github.jbellis.brokk.git.GitRepo.MergeMode;
+import io.github.jbellis.brokk.git.ICommitInfo;
 import io.github.jbellis.brokk.gui.components.LoadingButton;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
@@ -63,7 +64,7 @@ public class GitLogTab extends JPanel {
 
         var project = contextManager.getProject();
         // Determine if the "Create PR" button should be shown, mirroring logic in GitPanel for the PR tab.
-        var showCreatePrButton = project.isGitHubRepo();
+        var showCreatePrButton = project.isGitHubRepo() && GitHubAuth.tokenPresent(project);
         var panelOptions = new GitCommitBrowserPanel.Options(true, true, showCreatePrButton);
 
         this.gitCommitBrowserPanel = new GitCommitBrowserPanel(chrome, contextManager, this::reloadCurrentBranchOrContext, panelOptions);
@@ -339,10 +340,12 @@ public class GitLogTab extends JPanel {
         });
         JMenuItem remoteCheckoutItem = new JMenuItem("Checkout");
         JMenuItem remoteNewBranchItem = new JMenuItem("New Branch From This");
+        JMenuItem remoteMergeItem = new JMenuItem(); // text set dynamically
         JMenuItem remoteDiffItem = new JMenuItem("Capture Diff vs Branch");
 
         remoteBranchContextMenu.add(remoteCheckoutItem);
         remoteBranchContextMenu.add(remoteNewBranchItem);
+        remoteBranchContextMenu.add(remoteMergeItem);
         remoteBranchContextMenu.add(remoteDiffItem);
 
         remoteBranchTable.addMouseListener(new MouseAdapter() {
@@ -362,6 +365,20 @@ public class GitLogTab extends JPanel {
                     if (row >= 0 && !remoteBranchTable.isRowSelected(row)) {
                         remoteBranchTable.setRowSelectionInterval(row, row);
                     }
+                    String currentBranch = null;
+                    try {
+                        currentBranch = getRepo().getCurrentBranch();
+                    } catch (Exception ex) {
+                        logger.error("Could not get current branch for remote context menu", ex);
+                        // currentBranch remains null
+                    }
+                    if (row >= 0 && currentBranch != null) {
+                        remoteMergeItem.setText("Merge into " + currentBranch);
+                        remoteMergeItem.setEnabled(true);
+                    } else {
+                        remoteMergeItem.setText("Merge into...");
+                        remoteMergeItem.setEnabled(false);
+                    }
                     SwingUtilities.invokeLater(() -> {
                         remoteBranchContextMenu.show(remoteBranchTable, e.getX(), e.getY());
                     });
@@ -371,6 +388,7 @@ public class GitLogTab extends JPanel {
 
         remoteCheckoutItem.addActionListener(e -> performRemoteBranchAction(this::checkoutBranch));
         remoteNewBranchItem.addActionListener(e -> performRemoteBranchAction(this::createNewBranchFrom));
+        remoteMergeItem.addActionListener(e -> performRemoteBranchAction(this::showMergeDialog));
         remoteDiffItem.addActionListener(e -> performRemoteBranchAction(this::captureDiffVsRemoteBranch));
     }
 
