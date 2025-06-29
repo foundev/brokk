@@ -54,12 +54,8 @@ public class ProjectFilesPanel extends JPanel {
         setupProjectTree();
 
         add(searchField, BorderLayout.NORTH);
-        if (projectTree != null) {
-            JScrollPane treeScrollPane = new JScrollPane(projectTree);
-            add(treeScrollPane, BorderLayout.CENTER);
-        } else {
-            add(new JLabel("No project files to display."), BorderLayout.CENTER);
-        }
+        JScrollPane treeScrollPane = new JScrollPane(projectTree);
+        add(treeScrollPane, BorderLayout.CENTER);
     }
 
     private void setupProjectTree() {

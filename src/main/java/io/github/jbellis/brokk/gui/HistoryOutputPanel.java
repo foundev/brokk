@@ -268,7 +268,7 @@ public class HistoryOutputPanel extends JPanel {
         // Set up tooltip renderer for description column (index 1)
         historyTable.getColumnModel().getColumn(1).setCellRenderer(new DefaultTableCellRenderer() {
             @Override
-            public Component getTableCellRendererComponent(JTable table, Object value,
+            public Component getTableCellRendererComponent(JTable table, @Nullable Object value,
                                                           boolean isSelected, boolean hasFocus, int row, int column) {
                 JLabel label = (JLabel)super.getTableCellRendererComponent(
                         table, value, isSelected, hasFocus, row, column);
@@ -285,7 +285,7 @@ public class HistoryOutputPanel extends JPanel {
         // Set up icon renderer for first column
         historyTable.getColumnModel().getColumn(0).setCellRenderer(new DefaultTableCellRenderer() {
             @Override
-            public Component getTableCellRendererComponent(JTable table, Object value,
+            public Component getTableCellRendererComponent(JTable table, @Nullable Object value,
                                                           boolean isSelected, boolean hasFocus, int row, int column) {
                 JLabel label = (JLabel)super.getTableCellRendererComponent(
                         table, value, isSelected, hasFocus, row, column);
