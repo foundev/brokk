@@ -1010,7 +1010,7 @@ public class InstructionsPanel extends JPanel implements IContextManager.Context
         deepScanButton.setLoading(true, "Scanning…");
 
         DeepScanDialog.triggerDeepScan(chrome, goal)
-            .whenComplete((v, throwable) -> {
+            .whenComplete((Void v, @Nullable Throwable throwable) -> {
                 // This callback runs when the analysis phase (ContextAgent, ValidationAgent) is complete.
                 SwingUtilities.invokeLater(() -> {
                     deepScanButton.setLoading(false, null); // Restores button state
