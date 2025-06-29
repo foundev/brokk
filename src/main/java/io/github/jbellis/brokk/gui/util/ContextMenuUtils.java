@@ -305,7 +305,6 @@ public final class ContextMenuUtils {
         var cm = chrome.getContextManager();
         JPopupMenu menu = new JPopupMenu();
 
-        var symbolName = codeUnit.identifier();
         var symbolType = getSymbolTypeDisplay(codeUnit);
 
         JMenuItem gotoDefinitionItem = new JMenuItem("Go to Definition");
@@ -313,29 +312,6 @@ public final class ContextMenuUtils {
             chrome.openFragmentPreview(new ContextFragment.ProjectPathFragment(codeUnit.source(), cm));
         });
         menu.add(gotoDefinitionItem);
-
-        JMenuItem showReferencesItem = new JMenuItem("Show References");
-        showReferencesItem.addActionListener(e -> {
-            if (!cm.getAnalyzerWrapper().isReady()) {
-                cm.getIo().systemNotify(AnalyzerWrapper.ANALYZER_BUSY_MESSAGE,
-                                      AnalyzerWrapper.ANALYZER_BUSY_TITLE,
-                                      JOptionPane.INFORMATION_MESSAGE);
-                return;
-            }
-            try {
-                var analyzer = cm.getAnalyzerWrapper().get();
-                var references = analyzer.getUses(codeUnit.fqName());
-                if (references.isEmpty()) {
-                    chrome.systemNotify("No references found for " + symbolName, "Symbol References", JOptionPane.INFORMATION_MESSAGE);
-                } else {
-                    chrome.systemNotify("Found " + references.size() + " reference(s) for " + symbolName, "Symbol References", JOptionPane.INFORMATION_MESSAGE);
-                }
-            } catch (Exception ex) {
-                chrome.toolError("Error finding references: " + ex.getMessage());
-            }
-        });
-        menu.add(showReferencesItem);
-        menu.addSeparator();
 
         JMenuItem addToContextItem = new JMenuItem("Add " + symbolType + " to Context");
         addToContextItem.addActionListener(e -> {
