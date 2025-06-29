@@ -92,7 +92,7 @@ public class SearchTools {
         if (maxPrefixLength > 0) {
             String commonPrefix = String.join(".", Arrays.copyOfRange(firstParts, 0, maxPrefixLength)) + ".";
             List<String> compressedSymbols = symbols.stream()
-                    .map(s -> s != null && s.startsWith(commonPrefix) ? s.substring(commonPrefix.length()) : s)
+                    .map(s -> s.startsWith(commonPrefix) ? s.substring(commonPrefix.length()) : s)
                     .collect(Collectors.toList());
             return new Tuple2<>(commonPrefix, compressedSymbols);
         }

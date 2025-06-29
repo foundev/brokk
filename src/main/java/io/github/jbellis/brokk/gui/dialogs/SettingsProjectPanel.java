@@ -169,7 +169,7 @@ public class SettingsProjectPanel extends JPanel implements ThemeAware {
             buildProgressBar.setVisible(true);
             inferBuildDetailsButton.setEnabled(false);
 
-            project.getBuildDetailsFuture().whenCompleteAsync((detailsResult, ex) -> {
+            project.getBuildDetailsFuture().whenCompleteAsync((@Nullable BuildAgent.BuildDetails detailsResult, @Nullable Throwable ex) -> {
                 SwingUtilities.invokeLater(() -> {
                     projectSubTabbedPane.setEnabledAt(BUILD_TAB_INDEX, true);
                     buildProgressBar.setVisible(false);

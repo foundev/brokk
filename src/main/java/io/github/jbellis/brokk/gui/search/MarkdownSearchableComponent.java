@@ -272,7 +272,7 @@ public class MarkdownSearchableComponent extends BaseSearchableComponent {
                 case MarkdownSearchMatch markdownMatch -> {
                     updateMarkdownMarkerStyle(markdownMatch.markerId(), false);
                 }
-                case CodeSearchMatch codeMatch when codeMatch.codeSearchable() != null -> {
+                case CodeSearchMatch codeMatch -> {
                     if (previousMatch.actualUiComponent() instanceof RSyntaxTextArea ta) {
                         // Change the previous current match back to regular highlight
                         var highlighter = ta.getHighlighter();
@@ -299,9 +299,6 @@ public class MarkdownSearchableComponent extends BaseSearchableComponent {
                         ta.setSelectionEnd(ta.getCaretPosition());
                     }
                 }
-                case CodeSearchMatch ignored -> {
-                    // Code match with null codeSearchable - no action needed
-                }
             }
         }
 
@@ -315,7 +312,7 @@ public class MarkdownSearchableComponent extends BaseSearchableComponent {
             case MarkdownSearchMatch markdownMatch -> {
                 updateMarkdownMarkerStyle(markdownMatch.markerId(), true);
             }
-            case CodeSearchMatch codeMatch when codeMatch.codeSearchable() != null -> {
+            case CodeSearchMatch codeMatch -> {
                 if (currentMatch.actualUiComponent() instanceof RSyntaxTextArea ta) {
                 // For code matches, we need to highlight the current match differently
                 // First, re-apply all highlights with SEARCH painter
@@ -350,9 +347,6 @@ public class MarkdownSearchableComponent extends BaseSearchableComponent {
                         ta.select(codeMatch.startOffset(), codeMatch.endOffset());
                     }
                 }
-            }
-            case CodeSearchMatch ignored -> {
-                // Code match with null codeSearchable - no action needed
             }
         }
         previousMatch = currentMatch;

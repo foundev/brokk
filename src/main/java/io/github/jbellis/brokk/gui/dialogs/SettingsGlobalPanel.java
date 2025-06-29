@@ -614,7 +614,7 @@ public class SettingsGlobalPanel extends JPanel implements ThemeAware {
         if (!supportsReasoning) {
             reasoningComboBox.setRenderer(new DefaultListCellRenderer() {
                 @Override
-                public Component getListCellRendererComponent(JList<?> list, Object value, int index, boolean isSelected, boolean cellHasFocus) {
+                public Component getListCellRendererComponent(JList<?> list, @Nullable Object value, int index, boolean isSelected, boolean cellHasFocus) {
                     JLabel label = (JLabel) super.getListCellRendererComponent(list, value, index, isSelected, cellHasFocus);
                     if (index == -1 && !reasoningComboBox.isEnabled()) {
                         label.setText("Off");
@@ -876,7 +876,7 @@ public class SettingsGlobalPanel extends JPanel implements ThemeAware {
     private static class ReasoningCellRenderer extends DefaultTableCellRenderer {
         private final Service models;
         public ReasoningCellRenderer(Service service) { this.models = service; }
-        @Override public Component getTableCellRendererComponent(JTable table, Object value, boolean isSelected, boolean hasFocus, int row, int column) {
+        @Override public Component getTableCellRendererComponent(JTable table, @Nullable Object value, boolean isSelected, boolean hasFocus, int row, int column) {
             JLabel label = (JLabel) super.getTableCellRendererComponent(table, value, isSelected, hasFocus, row, column);
             String modelName = (String) table.getModel().getValueAt(row, 1);
             if (modelName != null && !models.supportsReasoningEffort(modelName)) {
@@ -911,7 +911,7 @@ public class SettingsGlobalPanel extends JPanel implements ThemeAware {
                 comboBox.setSelectedItem(Service.ReasoningLevel.DEFAULT);
                 comboBox.setToolTipText("Reasoning effort not supported by " + modelName);
                 comboBox.setRenderer(new DefaultListCellRenderer() {
-                    @Override public Component getListCellRendererComponent(JList<?> list, Object val, int i, boolean sel, boolean foc) {
+                    @Override public Component getListCellRendererComponent(JList<?> list, @Nullable Object val, int i, boolean sel, boolean foc) {
                         JLabel label = (JLabel) super.getListCellRendererComponent(list, val, i, sel, foc);
                         if (i == -1) { label.setText("Off"); label.setForeground(UIManager.getColor("ComboBox.disabledForeground")); }
                         else if (val instanceof Service.ReasoningLevel lvl) label.setText(lvl.toString()); else label.setText(val == null ? "" : val.toString());

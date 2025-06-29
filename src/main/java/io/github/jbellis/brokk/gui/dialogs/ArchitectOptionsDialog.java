@@ -46,12 +46,8 @@ public class ArchitectOptionsDialog {
             var isCpg = contextManager.getAnalyzerWrapper().isCpg();
             boolean codeIntelConfigured = isCodeIntelConfigured(project);
 
-            // Load from project settings, fallback to static cache if project is null or settings not present
-            var currentOptions = ArchitectAgent.ArchitectOptions.DEFAULTS;
-            boolean currentRunInWorktree = false;
-
-            currentOptions = project.getArchitectOptions();
-            currentRunInWorktree = project.getArchitectRunInWorktree();
+            var currentOptions = project.getArchitectOptions();
+            boolean currentRunInWorktree = project.getArchitectRunInWorktree();
 
             JDialog dialog = new JDialog(chrome.getFrame(), "Architect Tools", true); // Modal dialog
             dialog.setDefaultCloseOperation(JDialog.DISPOSE_ON_CLOSE); // Dispose on close

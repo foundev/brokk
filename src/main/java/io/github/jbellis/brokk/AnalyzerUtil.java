@@ -295,7 +295,7 @@ public class AnalyzerUtil {
             if (!className.isBlank()) {
                 // Attempt to get the source code for the class
                 var classSource = analyzer.getClassSource(className);
-                if (!classSource.isEmpty()) {
+                if (classSource != null && !classSource.isEmpty()) {
                     // If source is found, format it with a header and add to the map
                     String filename = analyzer.getFileFor(className).map(ProjectFile::toString).orElse("unknown file");
                     String formattedSource = "Source code of %s (from %s):\n\n%s".formatted(className, filename, classSource);

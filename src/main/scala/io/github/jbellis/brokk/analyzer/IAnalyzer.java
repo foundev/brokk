@@ -1,6 +1,7 @@
 package io.github.jbellis.brokk.analyzer;
 
 import org.jetbrains.annotations.NotNull;
+import org.jetbrains.annotations.Nullable;
 import scala.Tuple2;
 
 import java.util.*;
@@ -64,7 +65,7 @@ public interface IAnalyzer {
      * Gets the source code for the entire given class.
      * If the class is partial or has multiple definitions, this typically returns the primary definition.
      */
-    default String getClassSource(String fqcn) {
+    default @Nullable String getClassSource(String fqcn) {
         throw new UnsupportedOperationException();
     }
 

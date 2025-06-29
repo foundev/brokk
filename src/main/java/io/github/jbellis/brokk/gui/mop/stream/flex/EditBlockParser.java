@@ -19,6 +19,7 @@ import org.jetbrains.annotations.Nullable;
 import java.util.Collections;
 import java.util.Objects;
 import java.util.Set;
+import java.util.regex.Matcher;
 
 import static io.github.jbellis.brokk.gui.mop.stream.flex.EditBlockUtils.*;
 
@@ -308,7 +309,7 @@ public class EditBlockParser extends AbstractBlockParser {
                             filename = findFileNameNearby(
                                     allLines,
                                     lineIdx,
-                                    Set.of(),
+                                    projectFiles != null ? projectFiles : Set.of(),
                                     previousFilename);
 
                             // If we found a filename in the line directly before current line,
