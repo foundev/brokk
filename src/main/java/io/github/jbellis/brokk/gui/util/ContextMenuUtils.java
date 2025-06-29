@@ -129,7 +129,7 @@ public final class ContextMenuUtils {
             // Fallback if not the expected renderer type
             visibleFiles = fileRefs;
             // Log the issue but continue (avoid breaking the UI)
-            System.err.println("Unexpected renderer type: " + renderer.getClass().getName());
+            logger.error("Unexpected renderer type: {}", renderer.getClass().getName());
         }
         
         // Check what kind of mouse event we're handling

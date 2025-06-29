@@ -1,6 +1,8 @@
 package io.github.jbellis.brokk.difftool.ui;
 
 import io.github.jbellis.brokk.difftool.utils.Colors;
+import org.apache.logging.log4j.LogManager;
+import org.apache.logging.log4j.Logger;
 import org.jetbrains.annotations.Nullable;
 
 import javax.swing.text.BadLocationException;
@@ -15,6 +17,7 @@ import java.awt.*;
  * Search highlighters remain static as they are currently theme-independent.
  */
 public class JMHighlightPainter extends DefaultHighlighter.DefaultHighlightPainter {
+    private static final Logger logger = LogManager.getLogger(JMHighlightPainter.class);
 
     // Static painters for Search (currently theme-independent)
     public static final JMHighlightPainter SEARCH;
@@ -102,7 +105,7 @@ public class JMHighlightPainter extends DefaultHighlighter.DefaultHighlightPaint
             }
         } catch (BadLocationException ex) {
             // Should not happen with valid offsets
-            System.err.println("Error painting highlight: " + ex);
+            logger.error("Error painting highlight: {}", ex.getMessage());
         }
     }
 
@@ -140,7 +143,7 @@ public class JMHighlightPainter extends DefaultHighlighter.DefaultHighlightPaint
                 g.fillRect(0, y, bounds.x + bounds.width, height);
 
             } catch (BadLocationException ex) {
-                System.err.println("Error painting newline highlight: " + ex);
+                logger.error("Error painting newline highlight: {}", ex.getMessage());
             }
         }
     }
@@ -167,7 +170,7 @@ public class JMHighlightPainter extends DefaultHighlighter.DefaultHighlightPaint
                 int yLine = r1.y; // Draw line at the top of the starting line's view
                 g.drawLine(0, yLine, bounds.x + bounds.width, yLine);
             } catch (BadLocationException ex) {
-                 System.err.println("Error painting line highlight: " + ex);
+                logger.error("Error painting line highlight: {}", ex.getMessage());
             }
         }
     }

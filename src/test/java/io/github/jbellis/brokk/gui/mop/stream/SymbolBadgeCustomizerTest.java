@@ -31,7 +31,9 @@ public class SymbolBadgeCustomizerTest {
     private Element apply(String html) {
         Document doc = Jsoup.parse(html);
         Element body  = doc.body();
-        SymbolBadgeCustomizer.create(new MockContextManager()).customize(body);
+        var customizer = SymbolBadgeCustomizer.create(new MockContextManager());
+        customizer.markStreamingComplete();
+        customizer.customize(body);
         return body;
     }
 
@@ -55,7 +57,7 @@ public class SymbolBadgeCustomizerTest {
     @Test
     public void testInlineCodeSymbolGetsBadge() {
         var body = apply("<p>Call <code>Foo.bar()</code> now</p>");
-        assertEquals(1, body.select("code." + BadgeConstants.CLASS_CLICKABLE_BADGE + "." + BadgeConstants.CLASS_BADGE_SYMBOL).size(),
+        assertEquals(1, body.select("a." + BadgeConstants.CLASS_CLICKABLE_BADGE + "." + BadgeConstants.CLASS_BADGE_SYMBOL).size(),
                      "Inline code symbol should become a clickable symbol badge");
     }
     
