@@ -13,6 +13,8 @@ import org.jsoup.nodes.Element;
 import org.jsoup.select.Elements;
 
 import java.nio.file.Path;
+import java.net.URLEncoder;
+import java.nio.charset.StandardCharsets;
 import java.util.Locale;
 import java.util.Objects;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -260,58 +262,82 @@ public final class SymbolBadgeCustomizer implements HtmlCustomizer {
 
     private void replaceWithClickableFilenameBadge(Element element, String filename) {
         int badgeId = badgeIdCounter.incrementAndGet();
-        // Store encoded badge info in data attribute for internal processing
+
+        // Always operate on an <a> element
+        Element anchor = ensureAnchor(element);
+
         String encodedBadgeInfo = String.format(BadgeConstants.TITLE_FORMAT, filename, badgeId);
-
-        // Set user-friendly title showing just the filename (relative path)
         String userFriendlyTitle = Path.of(filename).getFileName().toString();
-
-        // Use lighter blue color for file badges to match CSS styling
         String inlineStyle = BadgeConstants.STYLE_CLICKABLE + " color: #7ba7d4;";
 
-        // PRESERVE existing content (including search highlights) instead of clearing
-        // Only add styling and attributes to make it a clickable badge
-        element.addClass(BadgeConstants.CLASS_BADGE)
-               .addClass(BadgeConstants.CLASS_BADGE_SYMBOL)
-               .addClass(BadgeConstants.CLASS_BADGE_FILE)
-               .addClass(BadgeConstants.CLASS_CLICKABLE_BADGE)
-               .addClass(BadgeConstants.CLASS_CLICKABLE_FILE_BADGE) // Also set via CSS for HTML debug output
-               .attr(BadgeConstants.ATTR_DATA_BADGE_INFO, encodedBadgeInfo) // Encoded data for processing
-               .attr(BadgeConstants.ATTR_TITLE, userFriendlyTitle) // User-friendly file path for display
-               .attr(BadgeConstants.ATTR_STYLE, inlineStyle); // Inline style takes precedence in Swing
+        String href = "brokk://file?path="
+                      + URLEncoder.encode(filename, StandardCharsets.UTF_8);
 
-        // If element has no content, set the filename text
-        if (element.text().trim().isEmpty()) {
-            element.text(filename);
+        anchor.attr("href", href)
+              .addClass(BadgeConstants.CLASS_BADGE)
+              .addClass(BadgeConstants.CLASS_BADGE_SYMBOL)
+              .addClass(BadgeConstants.CLASS_BADGE_FILE)
+              .addClass(BadgeConstants.CLASS_CLICKABLE_BADGE)
+              .addClass(BadgeConstants.CLASS_CLICKABLE_FILE_BADGE)
+              .attr(BadgeConstants.ATTR_DATA_BADGE_INFO, encodedBadgeInfo)
+              .attr(BadgeConstants.ATTR_TITLE, userFriendlyTitle)
+              .attr(BadgeConstants.ATTR_STYLE, inlineStyle);
+
+        if (anchor.text().trim().isEmpty()) {
+            anchor.text(filename);
         }
     }
 
     private void replaceWithClickableSymbolBadge(Element element, String symbolName, CodeUnit codeUnit) {
         int badgeId = badgeIdCounter.incrementAndGet();
-        // Store encoded symbol ID for click handler processing
+
+        Element anchor = ensureAnchor(element);
+
         String encodedSymbolId = symbolName + ":" + badgeId;
-
-        // Create user-friendly title with symbol info
-        String symbolType = getSymbolTypeDisplay(codeUnit);
-        String userFriendlyTitle = symbolType + " " + codeUnit.fqName() + " (" + codeUnit.source().toString() + ")";
-
-        // Green color for symbol badges
+        String symbolType       = getSymbolTypeDisplay(codeUnit);
+        String userFriendlyTitle = symbolType + " " + codeUnit.fqName()
+                                   + " (" + codeUnit.source() + ')';
         String inlineStyle = BadgeConstants.STYLE_CLICKABLE + " color: #28a745;";
 
-        // PRESERVE existing content (including search highlights) instead of clearing
-        // Only add styling and attributes to make it a clickable symbol badge
-        element.addClass(BadgeConstants.CLASS_BADGE)
-               .addClass(BadgeConstants.CLASS_BADGE_SYMBOL)
-               .addClass(getBadgeClass(codeUnit))
-               .addClass(BadgeConstants.CLASS_CLICKABLE_BADGE)
-               .attr(BadgeConstants.ATTR_DATA_SYMBOL_ID, encodedSymbolId) // Symbol ID for processing
-               .attr(BadgeConstants.ATTR_TITLE, userFriendlyTitle) // User-friendly symbol info for display
-               .attr(BadgeConstants.ATTR_STYLE, inlineStyle); // Red color styling
+        String href = "brokk://symbol?fq="
+                      + URLEncoder.encode(codeUnit.fqName(), StandardCharsets.UTF_8);
 
-        // If element has no content, set the symbol name text
-        if (element.text().trim().isEmpty()) {
-            element.text(symbolName);
+        anchor.attr("href", href)
+              .addClass(BadgeConstants.CLASS_BADGE)
+              .addClass(BadgeConstants.CLASS_BADGE_SYMBOL)
+              .addClass(getBadgeClass(codeUnit))
+              .addClass(BadgeConstants.CLASS_CLICKABLE_BADGE)
+              .attr(BadgeConstants.ATTR_DATA_SYMBOL_ID, encodedSymbolId)
+              .attr(BadgeConstants.ATTR_TITLE, userFriendlyTitle)
+              .attr(BadgeConstants.ATTR_STYLE, inlineStyle);
+
+        if (anchor.text().trim().isEmpty()) {
+            anchor.text(symbolName);
         }
+    }
+
+    /**
+     * Ensures we are working with an <a> element.  
+     * If the supplied element is already an anchor it is returned unchanged,
+     * otherwise the element is replaced in-place with a new anchor that
+     * preserves any existing children (including search-highlight spans).
+     */
+    private Element ensureAnchor(Element original) {
+        if (TAG_ANCHOR.equals(original.tagName())) {
+            return original;
+        }
+
+        Element a = new Element(TAG_ANCHOR);
+        // Preserve existing child nodes (text, highlights, etc.)
+        a.insertChildren(0, original.childNodesCopy());
+
+        // If element had plain text but no children, retain it
+        if (a.childNodeSize() == 0 && !original.text().isEmpty()) {
+            a.appendChild(new org.jsoup.nodes.TextNode(original.text()));
+        }
+
+        original.replaceWith(a);
+        return a;
     }
 
     private String getSymbolTypeDisplay(CodeUnit codeUnit) {

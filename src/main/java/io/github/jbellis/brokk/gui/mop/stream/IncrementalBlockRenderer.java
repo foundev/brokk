@@ -23,6 +23,12 @@ import org.jsoup.nodes.Element;
 import org.jsoup.nodes.Node;
 
 import javax.swing.*;
+import javax.swing.event.HyperlinkEvent;
+import javax.swing.event.HyperlinkListener;
+import java.net.URI;
+import java.net.URLDecoder;
+import java.util.Arrays;
+import java.awt.Desktop;
 import javax.swing.text.AbstractDocument;
 import javax.swing.text.SimpleAttributeSet;
 import javax.swing.text.html.HTML;
@@ -665,8 +671,60 @@ public final class IncrementalBlockRenderer {
         }
     }
 
-    // ---------------------------------------------------------------------
-    //  Public lookup API
+    /**
+     * HyperlinkListener that dispatches `brokk://…` anchors to the existing
+     * BadgeClickHandler.  External links fall back to Desktop.browse().
+     */
+    private class BrokkHyperlinkListener implements HyperlinkListener {
+        private final JEditorPane editor;
+        BrokkHyperlinkListener(JEditorPane editor) { this.editor = editor; }
+
+        @Override
+        public void hyperlinkUpdate(HyperlinkEvent evt) {
+            if (evt.getEventType() != HyperlinkEvent.EventType.ACTIVATED) {
+                return;
+            }
+            try {
+                URI uri = URI.create(evt.getDescription());
+                if ("brokk".equals(uri.getScheme())) {
+                    var handler = badgeClickHandler;
+                    if (handler != null) {
+                        String host = uri.getHost();           // "file" or "symbol"
+                        String query = uri.getQuery();         // e.g. "path=src/…"
+                        String val   = query == null
+                                     ? ""
+                                     : URLDecoder.decode(query.substring(query.indexOf('=') + 1),
+                                                          java.nio.charset.StandardCharsets.UTF_8);
+
+                        /* Create a synthetic click event to satisfy NullAway’s
+                           non-null requirement; coordinates (0,0) are fine
+                           because the handler never inspects them. */
+                        var syntheticClick = new MouseEvent(editor,
+                                                            MouseEvent.MOUSE_CLICKED,
+                                                            System.currentTimeMillis(),
+                                                            0,
+                                                            0,
+                                                            0,
+                                                            1,
+                                                            false);
+
+                        if ("file".equals(host)) {
+                            handler.onBadgeClick("file", val, syntheticClick, editor);
+                        } else if ("symbol".equals(host)) {
+                            handler.onBadgeClick("symbol", val, syntheticClick, editor);
+                        }
+                    }
+                } else if (Desktop.isDesktopSupported()) {
+                    Desktop.getDesktop().browse(uri);
+                }
+            } catch (Exception ex) {
+                logger.warn("Error processing hyperlink {}", evt.getDescription(), ex);
+            }
+        }
+    }
+
+// ---------------------------------------------------------------------
+//  Public lookup API
     // ---------------------------------------------------------------------
 
     /**
@@ -772,6 +830,13 @@ public final class IncrementalBlockRenderer {
                 BadgeMouseListener listener = new BadgeMouseListener(editor);
                 editor.addMouseListener(listener);
                 activeListeners.add(listener);
+            }
+
+            // --- HyperlinkListener (brokk:// links) -----------------------
+            boolean hasBrokkHL = Arrays.stream(editor.getHyperlinkListeners())
+                                       .anyMatch(l -> l instanceof BrokkHyperlinkListener);
+            if (!hasBrokkHL) {
+                editor.addHyperlinkListener(new BrokkHyperlinkListener(editor));
             }
         }
 
