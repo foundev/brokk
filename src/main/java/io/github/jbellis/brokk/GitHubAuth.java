@@ -164,7 +164,7 @@ public class GitHubAuth
     public static boolean tokenPresent(IProject project)
     {
         var token = MainProject.getGitHubToken();
-        return token != null && !token.isBlank();
+        return !token.isBlank();
     }
 
     public String getOwner()
