@@ -38,10 +38,10 @@ import java.util.regex.Pattern;
 public final class SymbolBadgeCustomizer implements HtmlCustomizer {
 
     // Configuration flags to enable/disable specific badge types (configurable via system properties)
-    // Default to devmode setting for development convenience
+    // Default to true for symbol badges, devmode setting for file badges
     private static final String DEFAULT_BADGE_SETTING = Boolean.toString(Boolean.getBoolean("brokk.devmode"));
     private static final boolean ENABLE_SYMBOL_BADGES = Boolean.parseBoolean(
-        System.getProperty("brokk.badges.symbols", DEFAULT_BADGE_SETTING));
+        System.getProperty("brokk.badges.symbols", "true"));
     private static final boolean ENABLE_FILE_BADGES = Boolean.parseBoolean(
         System.getProperty("brokk.badges.files", DEFAULT_BADGE_SETTING));
 
@@ -76,8 +76,10 @@ public final class SymbolBadgeCustomizer implements HtmlCustomizer {
 
     @Override
     public void customize(Element root) {
+        System.out.println("DEBUG: SymbolBadgeCustomizer.customize() called, analyzerReady=" + analyzerReady + ", ENABLE_SYMBOL_BADGES=" + ENABLE_SYMBOL_BADGES);
 
         if (!analyzerReady) {
+            System.out.println("DEBUG: Analyzer not ready, skipping symbol badge customization");
             return;
         }
 
@@ -137,12 +139,28 @@ public final class SymbolBadgeCustomizer implements HtmlCustomizer {
 
         Element badge = null;
         if (BADGE_TYPE_SYMBOL.equals(badgeType) && ENABLE_SYMBOL_BADGES) {
-            // Validate symbol exists in project
+            // First try exact definition lookup
             var definition = analyzer.getDefinition(symbolId);
+            
             if (definition.isEmpty()) {
-                return;
+                // If exact lookup fails, try searching for matches
+                var searchResults = analyzer.searchDefinitions(symbolId);
+                
+                if (!searchResults.isEmpty()) {
+                    // Find the best match - prefer exact simple name matches
+                    final String finalSymbolId = symbolId;
+                    var bestMatch = searchResults.stream()
+                        .filter(cu -> cu.shortName().equals(finalSymbolId) || cu.identifier().equals(finalSymbolId))
+                        .findFirst()
+                        .orElse(searchResults.get(0)); // Fallback to first result
+                    
+                    badge = createBadgeForSymbol(bestMatch);
+                } else {
+                    return;
+                }
+            } else {
+                badge = createBadgeForSymbol(definition.get());
             }
-            badge = createBadgeForSymbol(definition.get());
         } else if (BADGE_TYPE_FILE.equals(badgeType) && ENABLE_FILE_BADGES) {
             // Replace the anchor content with clickable filename badge
             replaceWithClickableFilenameBadge(anchor, symbolId);
@@ -164,8 +182,10 @@ public final class SymbolBadgeCustomizer implements HtmlCustomizer {
 
         if (SYMBOL_PATTERN.matcher(codeText).matches()) {
             badgeType = BADGE_TYPE_SYMBOL;
+            System.out.println("DEBUG: Detected symbol pattern: " + codeText);
         } else if (FILENAME_PATTERN.matcher(codeText).matches()) {
             badgeType = BADGE_TYPE_FILE;
+            System.out.println("DEBUG: Detected file pattern: " + codeText);
         } else {
             return;
         }
@@ -180,12 +200,32 @@ public final class SymbolBadgeCustomizer implements HtmlCustomizer {
         }
 
         if (BADGE_TYPE_SYMBOL.equals(badgeType) && ENABLE_SYMBOL_BADGES) {
-            // Validate symbol exists in project
+            // First try exact definition lookup
             var definition = analyzer.getDefinition(codeText);
+            
             if (definition.isEmpty()) {
-                return;
+                // If exact lookup fails, try searching for matches
+                var searchResults = analyzer.searchDefinitions(codeText);
+                System.out.println("DEBUG: No exact definition for '" + codeText + "', found " + searchResults.size() + " search matches");
+                
+                if (!searchResults.isEmpty()) {
+                    // Find the best match - prefer exact simple name matches
+                    final String finalCodeText = codeText;
+                    var bestMatch = searchResults.stream()
+                        .filter(cu -> cu.shortName().equals(finalCodeText) || cu.identifier().equals(finalCodeText))
+                        .findFirst()
+                        .orElse(searchResults.get(0)); // Fallback to first result
+                    
+                    System.out.println("DEBUG: Using search result for symbol badge: " + codeText + " -> " + bestMatch.fqName());
+                    badge = createBadgeForSymbol(bestMatch);
+                } else {
+                    System.out.println("DEBUG: No matches found for symbol: " + codeText);
+                    return;
+                }
+            } else {
+                System.out.println("DEBUG: Found exact definition for symbol: " + codeText + " -> " + definition.get());
+                badge = createBadgeForSymbol(definition.get());
             }
-            badge = createBadgeForSymbol(definition.get());
         } else if (BADGE_TYPE_FILE.equals(badgeType) && ENABLE_FILE_BADGES) {
             // Replace the code element content with clickable filename badge
             replaceWithClickableFilenameBadge(code, codeText);
@@ -230,16 +270,29 @@ public final class SymbolBadgeCustomizer implements HtmlCustomizer {
      * Returns a no-op customizer if the analyzer is not ready.
      */
     public static HtmlCustomizer create(IContextManager contextManager) {
+        System.out.println("DEBUG: SymbolBadgeCustomizer.create() called");
+        
         if (contextManager == null) {
+            System.out.println("DEBUG: ContextManager is null, returning DEFAULT customizer");
             return HtmlCustomizer.DEFAULT;
         }
 
         var analyzerWrapper = contextManager.getAnalyzerWrapper();
-        if (analyzerWrapper == null || !analyzerWrapper.isReady()) {
+        if (analyzerWrapper == null) {
+            System.out.println("DEBUG: AnalyzerWrapper is null, returning DEFAULT customizer");
+            return HtmlCustomizer.DEFAULT;
+        }
+        
+        boolean isReady = analyzerWrapper.isReady();
+        System.out.println("DEBUG: AnalyzerWrapper.isReady() = " + isReady);
+        
+        if (!isReady) {
+            System.out.println("DEBUG: Analyzer not ready, returning DEFAULT customizer");
             return HtmlCustomizer.DEFAULT;
         }
 
         var analyzer = analyzerWrapper.getNonBlocking();
+        System.out.println("DEBUG: Creating actual SymbolBadgeCustomizer with analyzer: " + analyzer);
         return new SymbolBadgeCustomizer(Objects.requireNonNull(analyzer), true);
     }
 

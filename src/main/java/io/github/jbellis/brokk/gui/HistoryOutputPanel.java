@@ -74,7 +74,7 @@ public class HistoryOutputPanel extends JPanel {
         this.instructionsPanel = instructionsPanel;
 
         // Create the standard badge click handler once and reuse it
-        this.standardBadgeClickHandler = BadgeClickHandler.forFileClicks(contextManager, chrome);
+        this.standardBadgeClickHandler = BadgeClickHandler.combined(contextManager, chrome, () -> {});
 
         // commandResultLabel initialization removed
 

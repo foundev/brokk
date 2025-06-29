@@ -23,6 +23,18 @@ public interface BadgeClickHandler {
         return new FileClickHandler(contextManager, chrome, onRefresh);
     }
 
+    static BadgeClickHandler forSymbolClicks(IContextManager contextManager, Chrome chrome) {
+        return forSymbolClicks(contextManager, chrome, () -> {});
+    }
+
+    static BadgeClickHandler forSymbolClicks(IContextManager contextManager, Chrome chrome, Runnable onRefresh) {
+        return new SymbolClickHandler(contextManager, chrome, onRefresh);
+    }
+
+    static BadgeClickHandler combined(IContextManager contextManager, Chrome chrome, Runnable onRefresh) {
+        return new CombinedClickHandler(contextManager, chrome, onRefresh);
+    }
+
     record FileClickHandler(IContextManager contextManager, Chrome chrome, Runnable onRefresh) implements BadgeClickHandler {
         private static final Logger logger = LogManager.getLogger(FileClickHandler.class);
 
@@ -60,6 +72,52 @@ public interface BadgeClickHandler {
         private void showFileContextMenu(JComponent component, MouseEvent event,
                                        TableUtils.FileReferenceList.FileReferenceData fileRefData) {
             ContextMenuUtils.showFileRefMenu(component, event.getX(), event.getY(), fileRefData, chrome, onRefresh);
+        }
+    }
+
+    record SymbolClickHandler(IContextManager contextManager, Chrome chrome, Runnable onRefresh) implements BadgeClickHandler {
+        private static final Logger logger = LogManager.getLogger(SymbolClickHandler.class);
+
+        @Override
+        public void onBadgeClick(String badgeType, String badgeData, MouseEvent event, JComponent component) {
+            if ("symbol".equals(badgeType)) {
+                handleSymbolClick(badgeData, event, component);
+            }
+        }
+
+        private void handleSymbolClick(String symbolId, MouseEvent event, JComponent component) {
+            try {
+                var analyzer = contextManager.getAnalyzerWrapper().getNonBlocking();
+                if (analyzer != null) {
+                    var codeUnit = analyzer.getDefinition(symbolId);
+                    if (codeUnit.isPresent()) {
+                        ContextMenuUtils.showSymbolMenu(component, event.getX(), event.getY(), codeUnit.get(), chrome, onRefresh);
+                    } else {
+                        logger.debug("No definition found for symbol: {}", symbolId);
+                    }
+                } else {
+                    logger.debug("Analyzer not ready for symbol: {}", symbolId);
+                }
+            } catch (Exception e) {
+                logger.debug("Failed to resolve symbol for badge: {}", symbolId, e);
+            }
+        }
+    }
+
+    record CombinedClickHandler(IContextManager contextManager, Chrome chrome, Runnable onRefresh) implements BadgeClickHandler {
+        @Override
+        public void onBadgeClick(String badgeType, String badgeData, MouseEvent event, JComponent component) {
+            switch (badgeType) {
+                case "file" -> {
+                    var fileHandler = new FileClickHandler(contextManager, chrome, onRefresh);
+                    fileHandler.onBadgeClick(badgeType, badgeData, event, component);
+                }
+                case "symbol" -> {
+                    var symbolHandler = new SymbolClickHandler(contextManager, chrome, onRefresh);
+                    symbolHandler.onBadgeClick(badgeType, badgeData, event, component);
+                }
+                default -> {}
+            }
         }
     }
 }

@@ -914,8 +914,8 @@ public class Chrome implements AutoCloseable, IConsoleIO, IContextManager.Contex
                 var markdownPanels = new ArrayList<MarkdownOutputPanel>();
                 var escapeHtml = outputFragment.isEscapeHtml();
 
-                // Configure badge click handler for file badges using factory
-                BadgeClickHandler badgeClickHandler = BadgeClickHandler.forFileClicks(contextManager, this);
+                // Configure badge click handler for both file and symbol badges using factory
+                BadgeClickHandler badgeClickHandler = BadgeClickHandler.combined(contextManager, this, () -> {});
 
                 for (TaskEntry entry : outputFragment.entries()) {
                     var markdownPanel = new MarkdownOutputPanel(escapeHtml);
