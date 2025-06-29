@@ -108,13 +108,16 @@ public final class CssStyleGenerator {
         rules.add("." + SearchConstants.SEARCH_CURRENT_CLASS + " { background-color: " + currentSearchColorHex + "; color: black; }");
 
         // Badge styling
-        rules.add(".badge-class { background-color: #6610f2; color: white; }");
-        rules.add(".badge-function { background-color: #fd7e14; color: white; }");
-        rules.add(".badge-field { background-color: #20c997; color: white; }");
-        rules.add(".badge-module { background-color: #6f42c1; color: white; }");
+        rules.add(".badge-class { background-color: #6610f2; color: #dc3545; }");
+        rules.add(".badge-function { background-color: #fd7e14; color: #dc3545; }");
+        rules.add(".badge-field { background-color: #20c997; color: #dc3545; }");
+        rules.add(".badge-module { background-color: #6f42c1; color: #dc3545; }");
 
         // File badge styling - use same color as code elements
         rules.add("." + BadgeConstants.CLASS_CLICKABLE_FILE_BADGE + " { color: " + linkColor + "; }");
+        
+        // Symbol badge styling - red color with cursor pointer
+        rules.add("." + BadgeConstants.CLASS_CLICKABLE_BADGE + ".badge-symbol { color: #dc3545; cursor: pointer; }");
 
         // Debug-specific rules (only for HTML output)
         if (includeDebugRules) {

@@ -808,14 +808,15 @@ public final class IncrementalBlockRenderer {
             // Update cursor when hovering over clickable filenames
             if (ENABLE_BADGE_CLICK_DETECTION) {
                 try {
-                    // Check if mouse is over any file badge element using DOM traversal
+                    // Check if mouse is over any file badge or symbol badge element using DOM traversal
                     boolean isOverFileBadge = getFileBadgeFileNameAtMousePoint(e).isPresent();
+                    boolean isOverSymbolBadge = getSymbolBadgeDataAtMousePoint(e).isPresent();
 
                     // Debug: Log mouse position and detection result
-                    logger.trace("Mouse at {}, over file badge: {}", e.getPoint(), isOverFileBadge);
+                    logger.trace("Mouse at {}, over file badge: {}, over symbol badge: {}", e.getPoint(), isOverFileBadge, isOverSymbolBadge);
 
                     // Update cursor based on badge detection
-                    var cursor = isOverFileBadge ?
+                    var cursor = (isOverFileBadge || isOverSymbolBadge) ?
                                  Cursor.getPredefinedCursor(java.awt.Cursor.HAND_CURSOR) :
                                  Cursor.getDefaultCursor();
 
@@ -845,15 +846,22 @@ public final class IncrementalBlockRenderer {
 
             logger.trace("Right-click detected at point: {}", e.getPoint());
 
+            var handler = badgeClickHandler; // capture volatile reference
+            if (handler == null) {
+                return;
+            }
+
             // Check if click is over any file badge element using DOM traversal
             getFileBadgeFileNameAtMousePoint(e).ifPresent(fileName -> {
                 logger.debug("Click over file badge with name: {}", fileName);
-                var handler = badgeClickHandler; // capture volatile reference
-                if (handler != null) {
-                    handler.onBadgeClick("file", fileName, e, editor);
-                }
+                handler.onBadgeClick("file", fileName, e, editor);
             });
 
+            // Check if click is over any symbol badge element using DOM traversal
+            getSymbolBadgeDataAtMousePoint(e).ifPresent(symbolData -> {
+                logger.debug("Click over symbol badge with data: {}", symbolData);
+                handler.onBadgeClick("symbol", symbolData, e, editor);
+            });
         }
 
         /**
@@ -880,6 +888,33 @@ public final class IncrementalBlockRenderer {
 
             } catch (Exception ex) {
                 logger.trace("Error getting file badge at mouse point: {}", ex.getMessage());
+                return Optional.empty();
+            }
+        }
+
+        /**
+         * Gets the symbol data of the symbol badge at the given mouse point using badge-symbol class detection.
+         */
+        private Optional<String> getSymbolBadgeDataAtMousePoint(MouseEvent e) {
+            try {
+                // Get the HTML document from the editor
+                var doc = editor.getDocument();
+                if (!(doc instanceof HTMLDocument htmlDoc)) {
+                    return Optional.empty();
+                }
+
+                // Convert mouse point to document position
+                int pos = editor.viewToModel2D(e.getPoint());
+                if (pos < 0 || pos >= doc.getLength()) {
+                    return Optional.empty();
+                }
+
+                // Get the element at this position and traverse up the hierarchy
+                var element = htmlDoc.getCharacterElement(pos);
+                return getSymbolIdFromElement(element);
+
+            } catch (Exception ex) {
+                logger.trace("Error getting symbol badge at mouse point: {}", ex.getMessage());
                 return Optional.empty();
             }
         }
@@ -914,6 +949,41 @@ public final class IncrementalBlockRenderer {
                 }
             }
             // Valid element types for badges
+            return Optional.empty();
+        }
+        return Optional.empty(); // Not a valid badge element
+    }
+
+    /**
+     * Gets symbol ID from HTML element if it contains a symbol badge.
+     *
+     * @param element The element to examine
+     * @return Optional containing symbol ID if element is a symbol badge, empty otherwise
+     */
+    private Optional<String> getSymbolIdFromElement(javax.swing.text.Element element) {
+        if (element instanceof AbstractDocument.AbstractElement el) {
+            var u = el.getAttribute(HTML.Tag.CODE);
+            if (u instanceof SimpleAttributeSet t) {
+                var clazz = t.getAttribute(HTML.Attribute.CLASS);
+                var title = t.getAttribute(HTML.Attribute.TITLE);
+
+                if (clazz instanceof String s && s.contains("badge-symbol") && s.contains("clickable-badge") && title != null) {
+                    // Extract symbol name from title attribute
+                    // Title format: "class io.github.jbellis.brokk.gui.mop.stream.SymbolBadgeCustomizer (src/main/java/...)"
+                    String titleStr = title.toString();
+
+                    // Extract the fully qualified symbol name - it's after the symbol type and before the opening parenthesis
+                    if (titleStr.contains(" ") && titleStr.contains(" (")) {
+                        int spaceIndex = titleStr.indexOf(' ');
+                        int parenIndex = titleStr.indexOf(" (");
+                        if (spaceIndex > 0 && parenIndex > spaceIndex) {
+                            String fullName = titleStr.substring(spaceIndex + 1, parenIndex);
+                            // Return the full qualified name instead of just the simple name
+                            return Optional.of(fullName);
+                        }
+                    }
+                }
+            }
             return Optional.empty();
         }
         return Optional.empty(); // Not a valid badge element

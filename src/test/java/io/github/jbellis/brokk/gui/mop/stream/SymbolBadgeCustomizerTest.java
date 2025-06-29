@@ -38,8 +38,8 @@ public class SymbolBadgeCustomizerTest {
     @Test
     public void testAnchorWithDataSymbolIdGetsBadge() {
         var body = apply("<p><a href=\"#\" " + BadgeConstants.ATTR_DATA_SYMBOL_ID + "=\"Foo\">Foo</a></p>");
-        assertEquals(1, body.select("a[" + BadgeConstants.ATTR_DATA_SYMBOL_ID + "] > span." + BadgeConstants.CLASS_BADGE_SYMBOL + "").size(),
-                     "Anchor with data-symbol-id should receive a badge");
+        assertEquals(1, body.select("a." + BadgeConstants.CLASS_CLICKABLE_BADGE + "." + BadgeConstants.CLASS_BADGE_SYMBOL).size(),
+                     "Anchor with data-symbol-id should become a clickable symbol badge");
     }
 
     @Test
@@ -48,15 +48,15 @@ public class SymbolBadgeCustomizerTest {
         var anchor = body.selectFirst("a");
         assertNotNull(anchor.attr(BadgeConstants.ATTR_DATA_SYMBOL_ID), "SymbolId attribute should be added");
         assertFalse(anchor.attr(BadgeConstants.ATTR_DATA_SYMBOL_ID).isBlank());
-        assertEquals(1, anchor.select("span." + BadgeConstants.CLASS_BADGE_SYMBOL).size(),
-                     "Anchor with symbol text should get a badge");
+        assertTrue(anchor.hasClass(BadgeConstants.CLASS_CLICKABLE_BADGE), "Anchor should become clickable");
+        assertTrue(anchor.hasClass(BadgeConstants.CLASS_BADGE_SYMBOL), "Anchor should have symbol badge class");
     }
 
     @Test
     public void testInlineCodeSymbolGetsBadge() {
         var body = apply("<p>Call <code>Foo.bar()</code> now</p>");
-        assertEquals(1, body.select("code + span." + BadgeConstants.CLASS_BADGE_SYMBOL).size(),
-                     "Inline code symbol should be followed by a badge");
+        assertEquals(1, body.select("code." + BadgeConstants.CLASS_CLICKABLE_BADGE + "." + BadgeConstants.CLASS_BADGE_SYMBOL).size(),
+                     "Inline code symbol should become a clickable symbol badge");
     }
     
     @Test
