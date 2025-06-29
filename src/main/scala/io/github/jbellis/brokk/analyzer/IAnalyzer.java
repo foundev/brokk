@@ -144,7 +144,7 @@ public interface IAnalyzer {
      * Extracts the unqualified symbol name from a fully-qualified name and adds it to the output set.
      */
     private static void addShort(String full, Set<String> out) {
-        if (full == null || full.isEmpty()) return;
+        if (full.isEmpty()) return;
         
         // Optimized: scan from the end to find the last separator (faster than two indexOf calls)
         int idx = -1;
