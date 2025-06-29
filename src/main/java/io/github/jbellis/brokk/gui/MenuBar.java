@@ -140,8 +140,6 @@ public class MenuBar {
 
         var refreshItem = new JMenuItem("Refresh Code Intelligence");
         refreshItem.addActionListener(e -> {
-            // Fixme ensure the menu item is disabled if no project is open
-            assert chrome.getContextManager() != null;
             chrome.contextManager.requestRebuild();
             chrome.systemOutput("Code intelligence will refresh in the background");
         });
@@ -176,8 +174,6 @@ public class MenuBar {
             : KeyEvent.VK_N,
         Toolkit.getDefaultToolkit().getMenuShortcutKeyMaskEx()));
     viewFileItem.addActionListener(e -> {
-            assert chrome.getContextManager() != null;
-            assert chrome.getProject() != null;
             var cm = chrome.getContextManager();
             var project = cm.getProject();
 
@@ -269,12 +265,10 @@ public class MenuBar {
         if (System.getProperty("brokk.upgradeagenttab", "false").equals("true")) {
             var upgradeAgentItem = new JMenuItem("Upgrade Agent...");
             upgradeAgentItem.addActionListener(e -> {
-                if (chrome.getProject() != null && chrome.getContextManager() != null) {
-                    SwingUtilities.invokeLater(() -> {
-                        var dialog = new UpgradeAgentDialog(chrome.getFrame(), chrome);
-                        dialog.setVisible(true);
-                    });
-                }
+                SwingUtilities.invokeLater(() -> {
+                    var dialog = new UpgradeAgentDialog(chrome.getFrame(), chrome);
+                    dialog.setVisible(true);
+                });
             });
             upgradeAgentItem.setEnabled(true);
             toolsMenu.add(upgradeAgentItem);

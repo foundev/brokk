@@ -148,7 +148,7 @@ public abstract class TreeSitterAnalyzer implements IAnalyzer {
                         if (!analysisResult.topLevelCUs().isEmpty() || !analysisResult.signatures().isEmpty() || !analysisResult.sourceRanges().isEmpty()) {
                             topLevelDeclarations.put(pf, analysisResult.topLevelCUs()); // Already unmodifiable from result
 
-                            analysisResult.children().forEach((parentCU, newChildCUs) -> childrenByParent.compute(parentCU, (p, existingChildCUs) -> {
+                            analysisResult.children().forEach((parentCU, newChildCUs) -> childrenByParent.compute(parentCU, (CodeUnit p, @Nullable List<CodeUnit> existingChildCUs) -> {
                                 if (existingChildCUs == null) {
                                     return newChildCUs; // Already unmodifiable
                                 }
@@ -171,7 +171,7 @@ public abstract class TreeSitterAnalyzer implements IAnalyzer {
                                 return Collections.unmodifiableList(combined);
                             }));
 
-                            analysisResult.signatures().forEach((cu, newSignaturesList) -> signatures.compute(cu, (key, existingSignaturesList) -> {
+                            analysisResult.signatures().forEach((cu, newSignaturesList) -> signatures.compute(cu, (CodeUnit key, @Nullable List<String> existingSignaturesList) -> {
                                 if (existingSignaturesList == null) {
                                     return newSignaturesList; // Already unmodifiable from result
                                 }
@@ -182,7 +182,7 @@ public abstract class TreeSitterAnalyzer implements IAnalyzer {
                                 return Collections.unmodifiableList(combined);
                             }));
 
-                            analysisResult.sourceRanges().forEach((cu, newRangesList) -> sourceRanges.compute(cu, (key, existingRangesList) -> {
+                            analysisResult.sourceRanges().forEach((cu, newRangesList) -> sourceRanges.compute(cu, (CodeUnit key, @Nullable List<Range> existingRangesList) -> {
                                 if (existingRangesList == null) {
                                     return newRangesList; // Already unmodifiable
                                 }

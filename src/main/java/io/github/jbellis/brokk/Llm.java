@@ -635,7 +635,7 @@ public class Llm {
                 .responseFormat(responseFormat)
                 .build();
 
-        Function<Throwable, String> retryInstructionsProvider = e -> """
+        Function<Throwable, String> retryInstructionsProvider = (@Nullable Throwable e) -> """
                 %s
                 Please ensure you only return a JSON object matching the schema:
                   {
@@ -677,7 +677,7 @@ public class Llm {
                                                         ToolChoice toolChoice,
                                                         boolean echo) throws InterruptedException
     {
-        Function<Throwable, String> retryInstructionsProvider = e -> """
+        Function<Throwable, String> retryInstructionsProvider = (@Nullable Throwable e) -> """
                 %s
                 Respond with a single JSON object containing a `tool_calls` array. Each entry in the array represents one invocation of a tool.
                 No additional keys or text are allowed outside of that JSON object.
@@ -886,7 +886,7 @@ public class Llm {
         return new NullSafeResponse(aiMessageText, toolExecutionRequests, result.originalResponse());
     }
 
-    private static String getInstructions(List<ToolSpecification> tools, Function<Throwable, String> retryInstructionsProvider) {
+    private static String getInstructions(List<ToolSpecification> tools, Function<@Nullable Throwable, String> retryInstructionsProvider) {
         String toolsDescription = tools.stream()
                 .map(tool -> {
                     var parametersInfo = tool.parameters().properties().entrySet().stream()

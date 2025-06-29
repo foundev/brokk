@@ -205,9 +205,6 @@ public abstract class AbstractBufferDocument implements BufferDocumentIF, Docume
             throw new IllegalStateException("Cannot write document, it was not initialized: " + getName());
         }
         try (Writer out = getWriter()) {
-            if (out == null) {
-                throw new RuntimeException("Cannot get writer for document: " + getName());
-            }
             new DefaultEditorKit().write(out, document, 0, document.getLength());
             out.flush();
         } catch (Exception ex) {

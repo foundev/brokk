@@ -44,6 +44,7 @@ public class LineNumberBorder extends EmptyBorder {
 
         this.filePanel = filePanel;
         init();
+        updateColors();
     }
 
     /**
@@ -57,10 +58,6 @@ public class LineNumberBorder extends EmptyBorder {
         FontMetrics fm = filePanel.getEditor().getFontMetrics(font);
         fontWidth     = fm.stringWidth("0"); // Width of a single character
         fontHeight    = fm.getHeight();      // Height of the font
-
-        // Initialize the colours once; they will be refreshed on every paint call
-        updateColors();
-        // Ensure background and lineColor are initialized even if updateColors() doesn't set them due to some theme issue
     }
 
     /**

@@ -477,7 +477,7 @@ public class GitLogTab extends JPanel {
                         remoteBranchTableModel.addRow(rowData);
                     }
 
-                    if (finalTargetSelectionIndex >= 0) {
+                    if (finalTargetSelectionIndex >= 0 && finalSelectedBranchName != null) {
                         branchTable.setRowSelectionInterval(finalTargetSelectionIndex, finalTargetSelectionIndex);
                         // Ensure selected branch is visible by scrolling to it
                         branchTable.scrollRectToVisible(branchTable.getCellRect(finalTargetSelectionIndex, 0, true));

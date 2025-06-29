@@ -367,7 +367,7 @@ public class SearchAgent {
     }
 
     private TaskResult errorResult(TaskResult.StopDetails details) {
-        String explanation = details.explanation() != null ? details.explanation() :
+        String explanation = !details.explanation().isBlank() ? details.explanation() :
                              switch (details.reason()) {
                                  case INTERRUPTED -> "Search was interrupted.";
                                  case LLM_ERROR -> "An error occurred interacting with the language model.";

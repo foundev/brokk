@@ -38,8 +38,11 @@ public final class PhpAnalyzer extends TreeSitterAnalyzer {
             "",                                                                      // asyncKeywordNodeType (PHP has no async/await keywords for functions)
             Set.of("visibility_modifier", "static_modifier", "abstract_modifier", "final_modifier", NODE_TYPE_READONLY_MODIFIER) // modifierNodeTypes
     );
-
+    
+    @Nullable
     private final Map<ProjectFile, String> fileScopedPackageNames = new ConcurrentHashMap<>();
+    
+    @Nullable
     private final ThreadLocal<TSQuery> phpNamespaceQuery;
 
 

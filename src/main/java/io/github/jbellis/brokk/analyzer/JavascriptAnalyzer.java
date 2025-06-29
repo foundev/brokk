@@ -118,7 +118,7 @@ public class JavascriptAnalyzer extends TreeSitterAnalyzer {
         boolean isComponentName = !functionName.isEmpty() && Character.isUpperCase(functionName.charAt(0));
         boolean isRenderMethod = "render".equals(functionName);
 
-        if ((isRenderMethod || isExported && isComponentName) && returnTypeText.isEmpty()) {
+        if ((isRenderMethod || (isExported && isComponentName)) && returnTypeText.isEmpty()) {
             if (returnsJsxElement(funcNode)) { // src parameter removed
                 inferredReturnType = "JSX.Element";
             }

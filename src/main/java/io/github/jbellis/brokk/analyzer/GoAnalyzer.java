@@ -40,7 +40,8 @@ public final class GoAnalyzer extends TreeSitterAnalyzer {
             "", // asyncKeywordNodeType (Go uses 'go' keyword, not an async modifier on func signature)
             Set.of() // modifierNodeTypes (Go visibility is by capitalization)
     );
-
+    
+    @Nullable
     private final ThreadLocal<TSQuery> packageQuery;
 
     public GoAnalyzer(IProject project, Set<String> excludedFiles) {

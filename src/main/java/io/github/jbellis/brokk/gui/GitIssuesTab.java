@@ -95,6 +95,7 @@ public class GitIssuesTab extends JPanel implements SettingsChangeListener {
     private static final List<String> STATUS_FILTER_OPTIONS = List.of("Open", "Closed"); // "All" is null selection
     private final List<String> actualStatusFilterOptions = new ArrayList<>(STATUS_FILTER_OPTIONS);
 
+    @Nullable
     private volatile Future<?> currentSearchFuture;
     private final GfmRenderer gfmRenderer;
     private final OkHttpClient httpClient;
@@ -664,11 +665,12 @@ public class GitIssuesTab extends JPanel implements SettingsChangeListener {
     }
 
     private static boolean wasCancellation(Throwable t) {
-        while (t != null) {
-            if (t instanceof InterruptedException || t instanceof InterruptedIOException) {
+        Throwable cause = t;
+        while (cause != null) {
+            if (cause instanceof InterruptedException || cause instanceof InterruptedIOException) {
                 return true;
             }
-            t = t.getCause();
+            cause = cause.getCause();
         }
         return false;
     }

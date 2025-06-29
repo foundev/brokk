@@ -181,8 +181,8 @@ public class MultiFileSelectionDialog extends JDialog {
         return CompletableFuture.supplyAsync(() -> {
             try {
                 return projectFilesFuture.get().stream()
-                                         .map(ProjectFile::absPath)
-                                         .collect(Collectors.toList());
+                        .map(ProjectFile::absPath)
+                        .collect(Collectors.toList());
             } catch (InterruptedException | ExecutionException e) {
                 logger.error("Error converting project files to paths for autocompletion", e);
                 if (e instanceof InterruptedException) Thread.currentThread().interrupt();
@@ -277,7 +277,7 @@ public class MultiFileSelectionDialog extends JDialog {
                             selectionResult = null;
                             confirmed = false;
                         } else {
-                            List<CodeUnit> finalClasses = !finalResolvedClasses.isEmpty() ? List.copyOf(finalResolvedClasses) : null;
+                            List<CodeUnit> finalClasses = (finalResolvedClasses != null && !finalResolvedClasses.isEmpty()) ? List.copyOf(finalResolvedClasses) : null;
                             selectionResult = new Selection(null, finalClasses);
                             confirmed = !selectionResult.isEmpty();
                             if (!confirmed) selectionResult = null;
@@ -321,7 +321,7 @@ public class MultiFileSelectionDialog extends JDialog {
             return List.of();
         }
 
-        if (!activeAnalyzer.isCpg()) {
+        if (activeAnalyzer == null || !activeAnalyzer.isCpg()) {
             logger.warn("Cannot resolve classes: Analyzer is not available or not a CPG analyzer.");
             return List.of();
         }
@@ -417,7 +417,7 @@ public class MultiFileSelectionDialog extends JDialog {
             // For class input, which is always JTextArea, we need token extraction
             return getCurrentTokenTextForCompletion(comp);
         }
-        
+
         // Helper method for token extraction, similar to what was in FileSelectionPanel
         private String getCurrentTokenTextForCompletion(JTextComponent comp) {
             String text = comp.getText();

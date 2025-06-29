@@ -155,8 +155,7 @@ public class CallGraphDialog extends JDialog {
         }
 
         // Count total call sites
-        int totalCallSites = 0;
-        totalCallSites = callGraph.values().stream()
+        int totalCallSites = callGraph.values().stream()
                 .mapToInt(List::size)
                 .sum();
 
