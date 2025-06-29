@@ -10,20 +10,20 @@ import java.nio.file.Path;
 
 /**
  * Utility class for HTML processing and debugging.
- * 
+ *
  * <h3>Configuration</h3>
  * HTML debug output can be controlled via system property:
  * <ul>
  *   <li>{@code brokk.html.debug} - Enable/disable HTML debug file output (default: false)</li>
  * </ul>
- * 
+ *
  * Example: {@code -Dbrokk.html.debug=true} to enable debug HTML file generation
  */
 public final class HtmlUtil {
     private static final Logger logger = LogManager.getLogger(HtmlUtil.class);
 
     public static final boolean ENABLE_HTML_DEBUG_OUTPUT = Boolean.parseBoolean(
-        System.getProperty("brokk.html.debug", "true"));
+        System.getProperty("brokk.html.debug", "false"));
 
     private HtmlUtil() {}
 
@@ -40,12 +40,12 @@ public final class HtmlUtil {
         return "<!-- HTML Content (conversion to Markdown pending) -->\n" + htmlContent;
     }
 
-    
+
     /**
      * Writes HTML debug output from actual rendered Swing components.
      * This shows the exact HTML that Swing is rendering, which is more accurate
      * than reconstructing from the DOM.
-     * 
+     *
      * @param filename the filename for the debug output
      * @param title the title for the HTML page
      * @param extractedHtml the HTML content extracted from Swing components
