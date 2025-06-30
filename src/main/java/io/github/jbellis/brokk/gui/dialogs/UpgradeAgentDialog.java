@@ -43,6 +43,8 @@ public class UpgradeAgentDialog extends JDialog {
     private JComboBox<String> languageComboBox;
     private JComboBox<String> relatedClassesCombo;
     private JTextField perFileCommandTextField;
+    private JTextArea postProcessingInstructionsArea;
+    private JLabel postProcessingModelLabel;
 
     // Post-processing controls
     private JComboBox<String> runPostProcessCombo;
@@ -143,79 +145,6 @@ public class UpgradeAgentDialog extends JDialog {
                                              """);
         contentPanel.add(explanationLabel, gbc);
 
-        // Instructions TextArea
-        gbc.gridx = 0;
-        gbc.gridy++;
-        gbc.gridwidth = 3;
-        gbc.weightx = 1.0;
-        gbc.weighty = 1.0;
-        gbc.fill = GridBagConstraints.BOTH;
-        instructionsArea = new JTextArea(4, 50);
-        instructionsArea.setLineWrap(true);
-        instructionsArea.setWrapStyleWord(true);
-        JScrollPane instructionsScrollPane = new JScrollPane(instructionsArea);
-        contentPanel.add(instructionsScrollPane, gbc);
-
-        // Model Row
-        gbc.gridy++;
-        gbc.gridx = 0;
-        gbc.gridwidth = 1;
-        gbc.weightx = 0.0;
-        gbc.weighty = 0;
-        gbc.fill = GridBagConstraints.NONE;
-        gbc.anchor = GridBagConstraints.EAST;
-        contentPanel.add(new JLabel("Model"), gbc);
-
-        if (chrome.getProject().getDataRetentionPolicy() == MainProject.DataRetentionPolicy.IMPROVE_BROKK) {
-            gbc.gridx = 1;
-            gbc.weightx = 0.0;
-            gbc.fill = GridBagConstraints.NONE;
-            gbc.anchor = GridBagConstraints.WEST;
-        var deepSeekV3Icon = new JLabel(smallInfoIcon);
-        deepSeekV3Icon.setToolTipText("""
-                                      <html>
-                                      Strong options include:
-                                      <ul>
-                                      <li>DeepSeek v3: inexpensive, massively parallel
-                                      <li>Gemini Flash Lite: even cheaper than DSv3. Not as parallel but faster per-task
-                                      </ul>
-                                      </html>
-                                      """);
-        gbc.insets = new Insets(5, 2, 5, 5);
-        contentPanel.add(deepSeekV3Icon, gbc);
-        gbc.insets = new Insets(5, 5, 5, 5);
-        }
-
-        gbc.gridx = 2;
-        gbc.weightx = 0.0;
-        gbc.fill = GridBagConstraints.NONE;
-        gbc.anchor = GridBagConstraints.WEST;
-        List<Service.FavoriteModel> favoriteModels = MainProject.loadFavoriteModels();
-        // Sort models alphabetically by alias, ignoring case
-        favoriteModels.sort((m1, m2) -> m1.alias().compareToIgnoreCase(m2.alias()));
-        modelComboBox = new JComboBox<>(favoriteModels.toArray(new Service.FavoriteModel[0]));
-        modelComboBox.setRenderer(new DefaultListCellRenderer() {
-            @Override
-            public Component getListCellRendererComponent(JList<?> list, Object value, int index, boolean isSelected, boolean cellHasFocus) {
-                super.getListCellRendererComponent(list, value, index, isSelected, cellHasFocus);
-                if (value instanceof Service.FavoriteModel fav) {
-                    setText(fav.alias());
-                }
-                return this;
-            }
-        });
-        if (!favoriteModels.isEmpty()) {
-            modelComboBox.setSelectedIndex(0);
-        }
-        contentPanel.add(modelComboBox, gbc);
-
-        // Token Warning Label
-        gbc.gridy++;
-        gbc.gridx = 2;
-        tokenWarningLabel = new JLabel();
-        tokenWarningLabel.setForeground(Color.RED);
-        tokenWarningLabel.setVisible(false);
-        contentPanel.add(tokenWarningLabel, gbc);
 
         // Scope Row
         gbc.gridy++;
@@ -373,16 +302,91 @@ public class UpgradeAgentDialog extends JDialog {
         cmbc.weighty = 0;
         cmbc.weightx = 0.5;
 
-        // ---- context panel --------------------------------
-        JPanel ctxPanel = new JPanel(new GridBagLayout());
-        ctxPanel.setBorder(BorderFactory.createTitledBorder("Context"));
-        GridBagConstraints ctx = new GridBagConstraints();
-        ctx.insets = new Insets(5, 5, 5, 5);
-        ctx.fill = GridBagConstraints.HORIZONTAL;
+        // ---- parallel processing panel --------------------------------
+        JPanel parallelProcessingPanel = new JPanel(new GridBagLayout());
+        parallelProcessingPanel.setBorder(BorderFactory.createTitledBorder("Parallel processing"));
+        GridBagConstraints paraGBC = new GridBagConstraints();
+        paraGBC.insets = new Insets(5, 5, 5, 5);
+        paraGBC.fill = GridBagConstraints.HORIZONTAL;
 
-        ctx.gridx = 0; ctx.gridy = 0; ctx.anchor = GridBagConstraints.EAST;
-        ctxPanel.add(new JLabel("Per-file command"), ctx);
-        ctx.gridx = 1;
+        // Instructions TextArea
+        paraGBC.gridx = 0;
+        paraGBC.gridy = 0;
+        paraGBC.gridwidth = 3;
+        paraGBC.weightx = 1.0;
+        paraGBC.weighty = 1.0;
+        paraGBC.fill = GridBagConstraints.BOTH;
+        instructionsArea = new JTextArea(4, 50);
+        instructionsArea.setLineWrap(true);
+        instructionsArea.setWrapStyleWord(true);
+        JScrollPane instructionsScrollPane = new JScrollPane(instructionsArea);
+        parallelProcessingPanel.add(instructionsScrollPane, paraGBC);
+
+        // Model Row
+        paraGBC.gridy++;
+        paraGBC.gridx = 0;
+        paraGBC.gridwidth = 1;
+        paraGBC.weightx = 0.0;
+        paraGBC.weighty = 0;
+        paraGBC.fill = GridBagConstraints.NONE;
+        paraGBC.anchor = GridBagConstraints.EAST;
+        parallelProcessingPanel.add(new JLabel("Model"), paraGBC);
+
+        if (chrome.getProject().getDataRetentionPolicy() == MainProject.DataRetentionPolicy.IMPROVE_BROKK) {
+            paraGBC.gridx = 1;
+            paraGBC.weightx = 0.0;
+            paraGBC.fill = GridBagConstraints.NONE;
+            paraGBC.anchor = GridBagConstraints.WEST;
+            var deepSeekV3Icon = new JLabel(smallInfoIcon);
+            deepSeekV3Icon.setToolTipText("""
+                                          <html>
+                                          Strong options include:
+                                          <ul>
+                                          <li>DeepSeek v3: inexpensive, massively parallel
+                                          <li>Gemini Flash Lite: even cheaper than DSv3. Not as parallel but faster per-task
+                                          </ul>
+                                          </html>
+                                          """);
+            paraGBC.insets = new Insets(5, 2, 5, 5);
+            parallelProcessingPanel.add(deepSeekV3Icon, paraGBC);
+            paraGBC.insets = new Insets(5, 5, 5, 5);
+        }
+
+        paraGBC.gridx = 2;
+        paraGBC.weightx = 0.0;
+        paraGBC.fill = GridBagConstraints.NONE;
+        paraGBC.anchor = GridBagConstraints.WEST;
+        List<Service.FavoriteModel> favoriteModels = MainProject.loadFavoriteModels();
+        favoriteModels.sort((m1, m2) -> m1.alias().compareToIgnoreCase(m2.alias()));
+        modelComboBox = new JComboBox<>(favoriteModels.toArray(new Service.FavoriteModel[0]));
+        modelComboBox.setRenderer(new DefaultListCellRenderer() {
+            @Override
+            public Component getListCellRendererComponent(JList<?> list, Object value, int index, boolean isSelected, boolean cellHasFocus) {
+                super.getListCellRendererComponent(list, value, index, isSelected, cellHasFocus);
+                if (value instanceof Service.FavoriteModel fav) {
+                    setText(fav.alias());
+                }
+                return this;
+            }
+        });
+        if (!favoriteModels.isEmpty()) {
+            modelComboBox.setSelectedIndex(0);
+        }
+        parallelProcessingPanel.add(modelComboBox, paraGBC);
+
+        // Token Warning Label
+        paraGBC.gridy++;
+        paraGBC.gridx = 2;
+        paraGBC.anchor = GridBagConstraints.WEST;
+        tokenWarningLabel = new JLabel();
+        tokenWarningLabel.setForeground(Color.RED);
+        tokenWarningLabel.setVisible(false);
+        parallelProcessingPanel.add(tokenWarningLabel, paraGBC);
+
+
+        paraGBC.gridy++; paraGBC.gridx = 0; paraGBC.anchor = GridBagConstraints.EAST; paraGBC.weightx = 0;
+        parallelProcessingPanel.add(new JLabel("Per-file command"), paraGBC);
+        paraGBC.gridx = 1; paraGBC.anchor = GridBagConstraints.WEST;
         var perFileIconCtx = new JLabel(smallInfoIcon);
         perFileIconCtx.setToolTipText("""
                                    <html>
@@ -391,32 +395,32 @@ public class UpgradeAgentDialog extends JDialog {
                                    <br>The output will be sent to the LLM with each target file.
                                    </html>
                                    """);
-        ctxPanel.add(perFileIconCtx, ctx);
-        ctx.gridx = 2; ctx.weightx = 1.0;
+        parallelProcessingPanel.add(perFileIconCtx, paraGBC);
+        paraGBC.gridx = 2; paraGBC.weightx = 1.0;
         perFileCommandTextField = new JTextField();
-        ctxPanel.add(perFileCommandTextField, ctx);
+        parallelProcessingPanel.add(perFileCommandTextField, paraGBC);
 
-        ctx.gridy++; ctx.gridx = 0; ctx.weightx = 0;
-        ctxPanel.add(new JLabel("Related files"), ctx);
-        ctx.gridx = 1;
+        paraGBC.gridy++; paraGBC.gridx = 0; paraGBC.weightx = 0; paraGBC.anchor = GridBagConstraints.EAST;
+        parallelProcessingPanel.add(new JLabel("Related files"), paraGBC);
+        paraGBC.gridx = 1; paraGBC.anchor = GridBagConstraints.WEST;
         var relatedIcon = new JLabel(smallInfoIcon);
         relatedIcon.setToolTipText("Includes summaries of the most closely related files for each target file");
-        ctxPanel.add(relatedIcon, ctx);
-        ctx.gridx = 2;
+        parallelProcessingPanel.add(relatedIcon, paraGBC);
+        paraGBC.gridx = 2;
         relatedClassesCombo = new JComboBox<>(new String[]{"0", "5", "10", "20"});
         relatedClassesCombo.setEditable(true);
         relatedClassesCombo.setSelectedItem("0");
-        ctxPanel.add(relatedClassesCombo, ctx);
+        parallelProcessingPanel.add(relatedClassesCombo, paraGBC);
 
-        ctx.gridy++; ctx.gridx = 0;
-        ctxPanel.add(new JLabel("Workspace"), ctx);
-        ctx.gridx = 1;
+        paraGBC.gridy++; paraGBC.gridx = 0;
+        parallelProcessingPanel.add(new JLabel("Workspace"), paraGBC);
+        paraGBC.gridx = 1;
         var wsIcon = new JLabel(smallInfoIcon);
         wsIcon.setToolTipText("Include the current Workspace contents with each file");
-        ctxPanel.add(wsIcon, ctx);
-        ctx.gridx = 2;
+        parallelProcessingPanel.add(wsIcon, paraGBC);
+        paraGBC.gridx = 2;
         includeWorkspaceCheckbox = new JCheckBox();
-        ctxPanel.add(includeWorkspaceCheckbox, ctx);
+        parallelProcessingPanel.add(includeWorkspaceCheckbox, paraGBC);
 
         // ---- post-processing panel ------------------------
         JPanel ppPanel = new JPanel();
@@ -429,16 +433,34 @@ public class UpgradeAgentDialog extends JDialog {
 
         ppPanel.add(Box.createRigidArea(new Dimension(0, 5)));
 
+        postProcessingModelLabel = new JLabel(" ");
+        postProcessingModelLabel.setAlignmentX(Component.LEFT_ALIGNMENT);
+        ppPanel.add(postProcessingModelLabel);
+
+        ppPanel.add(Box.createRigidArea(new Dimension(0, 5)));
+
+        postProcessingInstructionsArea = new JTextArea(3, 30);
+        postProcessingInstructionsArea.setLineWrap(true);
+        postProcessingInstructionsArea.setWrapStyleWord(true);
+        JScrollPane postProcessingScrollPane = new JScrollPane(postProcessingInstructionsArea);
+        postProcessingScrollPane.setAlignmentX(Component.LEFT_ALIGNMENT);
+        ppPanel.add(postProcessingScrollPane);
+
+        ppPanel.add(Box.createRigidArea(new Dimension(0, 5)));
+
         includeParallelOutputCheckbox = new JCheckBox("Include parallel output");
         includeParallelOutputCheckbox.setAlignmentX(Component.LEFT_ALIGNMENT);
         includeParallelOutputCheckbox.setSelected(true);
-        includeParallelOutputCheckbox.setEnabled(false); // Start disabled
         ppPanel.add(includeParallelOutputCheckbox);
 
-        runPostProcessCombo.addActionListener(ev -> {
+        java.awt.event.ActionListener postProcessListener = ev -> {
             String selectedOption = (String) runPostProcessCombo.getSelectedItem();
             boolean ask = "Ask".equals(selectedOption);
             boolean architect = "Architect".equals(selectedOption);
+            boolean none = "None".equals(selectedOption);
+
+            postProcessingInstructionsArea.setEnabled(!none);
+            postProcessingScrollPane.setEnabled(!none);
 
             if (ask) {
                 includeParallelOutputCheckbox.setEnabled(false);
@@ -450,11 +472,23 @@ public class UpgradeAgentDialog extends JDialog {
                 includeParallelOutputCheckbox.setEnabled(false);
                 includeParallelOutputCheckbox.setSelected(false);
             }
-        });
+
+            if (architect) {
+                String modelName = chrome.getContextManager().getArchitectModel().toString();
+                postProcessingModelLabel.setText("Model: " + modelName);
+            } else if (ask) {
+                postProcessingModelLabel.setText("Default Ask model will be used");
+            } else {
+                postProcessingModelLabel.setText(" ");
+            }
+        };
+        runPostProcessCombo.addActionListener(postProcessListener);
+        postProcessListener.actionPerformed(new java.awt.event.ActionEvent(runPostProcessCombo, java.awt.event.ActionEvent.ACTION_PERFORMED, ""));
+
 
         // ---- add both panels ------------------------------
         cmbc.gridx = 0;
-        combined.add(ctxPanel, cmbc);
+        combined.add(parallelProcessingPanel, cmbc);
         cmbc.gridx = 1;
         combined.add(ppPanel, cmbc);
         contentPanel.add(combined, gbc);
@@ -752,6 +786,12 @@ public class UpgradeAgentDialog extends JDialog {
             default -> PostProcessingOption.NONE;
         };
         boolean includeParallelOutput = includeParallelOutputCheckbox.isSelected();
+        String postProcessingInstructions = postProcessingInstructionsArea.getText().trim();
+
+        if (runOption != PostProcessingOption.NONE && postProcessingInstructions.isEmpty()) {
+            JOptionPane.showMessageDialog(this, "Post-processing instructions cannot be empty when a post-processing action is selected.", "Input Error", JOptionPane.ERROR_MESSAGE);
+            return;
+        }
 
         setVisible(false); // Hide this dialog
 
@@ -766,7 +806,8 @@ public class UpgradeAgentDialog extends JDialog {
                 perFileCommandTemplate,
                 includeWorkspace,
                 runOption,
-                includeParallelOutput
+                includeParallelOutput,
+                postProcessingInstructions
         );
         progressDialog.setVisible(true);
     }

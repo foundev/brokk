@@ -50,6 +50,7 @@ public class UpgradeAgentProgressDialog extends JDialog {
     private final @Nullable Integer relatedK;
     private final @Nullable String perFileCommandTemplate;
     private final boolean includeWorkspace;
+    private final @Nullable String postProcessingInstructions;
     private final ExecutorService executorService; // Moved here for wider access
 
 
@@ -66,13 +67,15 @@ public class UpgradeAgentProgressDialog extends JDialog {
                                       @Nullable String perFileCommandTemplate,
                                       boolean includeWorkspace,
                                       PostProcessingOption runOption,
-                                      boolean includeParallelOutput)
+                                      boolean includeParallelOutput,
+                                      @Nullable String postProcessingInstructions)
     {
         super(owner, "Upgrade Agent Progress", true);
         this.totalFiles = filesToProcess.size();
         this.relatedK = relatedK;
         this.perFileCommandTemplate = perFileCommandTemplate;
         this.includeWorkspace = includeWorkspace;
+        this.postProcessingInstructions = postProcessingInstructions;
 
         setLayout(new BorderLayout(10, 10));
         setPreferredSize(new Dimension(600, 400));
@@ -363,6 +366,10 @@ public class UpgradeAgentProgressDialog extends JDialog {
 
                     if (outputForArchitect != null) {
                         var files = filesToProcess.stream().map(ProjectFile::toString).collect(Collectors.joining("\n"));
+                        var effectiveGoal = (UpgradeAgentProgressDialog.this.postProcessingInstructions == null || UpgradeAgentProgressDialog.this.postProcessingInstructions.isBlank())
+                                            ? "After the changes, the build is failing with the following output. Please fix the problems."
+                                            : UpgradeAgentProgressDialog.this.postProcessingInstructions;
+
                         var architectGoal = """
                                         I just finished a parallel upgrade task with the following instructions:
                                         ---
@@ -374,11 +381,14 @@ public class UpgradeAgentProgressDialog extends JDialog {
                                         %s
                                         ---
                                         
-                                        After the changes, the build is failing with the following output. Please fix the problems.
+                                        %s
+                                        
+                                        Here is the output from the verification command:
                                         ---
                                         %s
                                         ---
-                                        """.formatted(instructions, files, outputForArchitect);
+                                        """.formatted(instructions, files, effectiveGoal, outputForArchitect);
+
 
                         var architect = new ArchitectAgent(contextManager,
                                                            contextManager.getArchitectModel(),
@@ -398,19 +408,9 @@ public class UpgradeAgentProgressDialog extends JDialog {
                 });
                 } else if (runOption == PostProcessingOption.ASK) {
                     var instructionsPanel = chrome.getInstructionsPanel();
-                    StringBuilder askPrompt = new StringBuilder("""
-                            I just completed a parallel upgrade task with the following instructions:
-                            ---
-                            %s
-                            ---
-                            """.formatted(instructions));
-                    if (includeParallelOutput) {
-                        askPrompt.append("""
-                                        
-                                        The combined output of all parallel tasks is available in the conversation history.
-                                        """);
+                    if (UpgradeAgentProgressDialog.this.postProcessingInstructions != null && !UpgradeAgentProgressDialog.this.postProcessingInstructions.isBlank()) {
+                        SwingUtilities.invokeLater(() -> instructionsPanel.runAskCommand(UpgradeAgentProgressDialog.this.postProcessingInstructions));
                     }
-                    SwingUtilities.invokeLater(() -> instructionsPanel.runAskCommand(askPrompt.toString()));
                 }
             }
         };
