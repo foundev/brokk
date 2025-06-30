@@ -96,6 +96,22 @@ resolvers ++= Seq(
   "IntelliJ Releases" at "https://www.jetbrains.com/intellij-repository/releases"
 )
 
+// JavaFX - dependencies are determined dynamically based on OS
+val javafxVersion = "22"
+def osClassifier: String = {
+  val archSuffix = System.getProperty("os.arch") match {
+    case "aarch64" | "arm64" => "-aarch64"
+    case _ => "" // default: x86_64/amd64
+  }
+
+  System.getProperty("os.name").toLowerCase match {
+    case n if n.startsWith("mac") => s"mac$archSuffix"
+    case n if n.startsWith("win") => "win"
+    case n if n.startsWith("linux") => s"linux$archSuffix"
+    case other => sys.error(s"Unsupported OS: $other")
+  }
+}
+
 libraryDependencies ++= Seq(
   // NullAway - version must match local jar version
   "com.uber.nullaway" % "nullaway" % "0.12.7",
@@ -157,6 +173,13 @@ libraryDependencies ++= Seq(
 
   // Java Decompiler
   "com.jetbrains.intellij.java" % "java-decompiler-engine" % "243.25659.59",
+
+  // JavaFX
+  "org.openjfx" % "javafx-controls" % javafxVersion classifier osClassifier,
+  "org.openjfx" % "javafx-web"      % javafxVersion classifier osClassifier,
+  "org.openjfx" % "javafx-swing"    % javafxVersion classifier osClassifier,
+  "org.openjfx" % "javafx-base"     % javafxVersion classifier osClassifier,
+  "org.openjfx" % "javafx-graphics" % javafxVersion classifier osClassifier,
 )
 
 enablePlugins(BuildInfoPlugin)
@@ -184,7 +207,6 @@ javaOptions ++= Seq(
   "-Dbrokk.devmode=true",
   "-Dbrokk.upgradeagenttab=true"
 )
-
 testFrameworks += new TestFramework("com.github.sbt.junit.JupiterFramework")
 Test / javacOptions := (Compile / javacOptions).value.filterNot(_.contains("-Xplugin:ErrorProne"))
 Test / fork := true
