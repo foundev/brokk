@@ -24,6 +24,8 @@ import java.io.File;
 import java.nio.file.Path;
 import java.util.*;
 import java.util.List;
+
+import io.github.jbellis.brokk.gui.dialogs.UpgradeAgentProgressDialog.PostProcessingOption;
 import java.util.concurrent.CompletableFuture;
 
 public class UpgradeAgentDialog extends JDialog {
@@ -40,7 +42,10 @@ public class UpgradeAgentDialog extends JDialog {
     private JComboBox<String> languageComboBox;
     private JComboBox<String> relatedClassesCombo;
     private JTextField perFileCommandTextField;
-    private JCheckBox invokeArchitectCheckbox;
+
+    // Post-processing controls
+    private JComboBox<String> runPostProcessCombo;
+    private JCheckBox includeParallelOutputCheckbox;
     private static final String ALL_LANGUAGES_OPTION = "All Languages";
     private static final int TOKEN_SAFETY_MARGIN = 32768;
     
@@ -440,7 +445,7 @@ public class UpgradeAgentDialog extends JDialog {
         gbc.weightx = 0;
         gbc.fill = GridBagConstraints.NONE;
         gbc.anchor = GridBagConstraints.EAST;
-        JLabel architectLabel = new JLabel("Run Architect");
+        JLabel architectLabel = new JLabel("Run");
         contentPanel.add(architectLabel, gbc);
 
         gbc.gridx = 1;
@@ -448,18 +453,41 @@ public class UpgradeAgentDialog extends JDialog {
         gbc.fill = GridBagConstraints.NONE;
         gbc.anchor = GridBagConstraints.WEST;
         JLabel architectIcon = new JLabel(smallInfoIcon);
-        architectIcon.setToolTipText("Brokk will run a build after processing and invoke an Architect agent to fix failures");
+        architectIcon.setToolTipText("Post-processing to apply after parallel upgrade");
         gbc.insets = new Insets(5, 2, 5, 5);
         contentPanel.add(architectIcon, gbc);
         gbc.insets = new Insets(5, 5, 5, 5);
 
         gbc.gridx = 2;
         gbc.weightx = 0.0;
+        gbc.fill = GridBagConstraints.HORIZONTAL;
+        gbc.anchor = GridBagConstraints.WEST;
+        runPostProcessCombo = new JComboBox<>(new String[]{"None", "Architect", "Ask"});
+        contentPanel.add(runPostProcessCombo, gbc);
+
+        // Include parallel output row
+        gbc.gridy++;
+        gbc.gridx = 0;
+        gbc.weightx = 0.0;
+        gbc.fill = GridBagConstraints.NONE;
+        gbc.anchor = GridBagConstraints.EAST;
+        JLabel inclOutputLabel = new JLabel("Include parallel output");
+        contentPanel.add(inclOutputLabel, gbc);
+
+        gbc.gridx = 2;
+        gbc.weightx = 0.0;
         gbc.fill = GridBagConstraints.NONE;
         gbc.anchor = GridBagConstraints.WEST;
-        invokeArchitectCheckbox = new JCheckBox();
-        invokeArchitectCheckbox.setSelected(true); // enabled by default
-        contentPanel.add(invokeArchitectCheckbox, gbc);
+        includeParallelOutputCheckbox = new JCheckBox();
+        includeParallelOutputCheckbox.setSelected(true);
+        includeParallelOutputCheckbox.setEnabled(false); // only enabled for Ask
+        contentPanel.add(includeParallelOutputCheckbox, gbc);
+
+        runPostProcessCombo.addActionListener(ev -> {
+            boolean isAsk = "Ask".equals(runPostProcessCombo.getSelectedItem());
+            includeParallelOutputCheckbox.setEnabled(isAsk);
+            if (isAsk) includeParallelOutputCheckbox.setSelected(true);
+        });
 
         // Scope Panel at the bottom
         gbc.gridy++;
@@ -747,7 +775,13 @@ public class UpgradeAgentDialog extends JDialog {
         }
 
         boolean includeWorkspace = includeWorkspaceCheckbox.isSelected();
-        boolean invokeArchitect = invokeArchitectCheckbox.isSelected();
+
+        PostProcessingOption runOption = switch ((String) runPostProcessCombo.getSelectedItem()) {
+            case "Architect" -> PostProcessingOption.ARCHITECT;
+            case "Ask" -> PostProcessingOption.ASK;
+            default -> PostProcessingOption.NONE;
+        };
+        boolean includeParallelOutput = includeParallelOutputCheckbox.isSelected();
 
         setVisible(false); // Hide this dialog
 
@@ -761,7 +795,8 @@ public class UpgradeAgentDialog extends JDialog {
                 relatedK,
                 perFileCommandTemplate,
                 includeWorkspace,
-                invokeArchitect
+                runOption,
+                includeParallelOutput
         );
         progressDialog.setVisible(true);
     }

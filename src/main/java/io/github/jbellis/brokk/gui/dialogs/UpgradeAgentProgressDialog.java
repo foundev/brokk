@@ -35,6 +35,8 @@ import static java.util.Objects.requireNonNull;
 
 public class UpgradeAgentProgressDialog extends JDialog {
 
+    public enum PostProcessingOption { NONE, ARCHITECT, ASK }
+
     private static final Logger logger = LogManager.getLogger(UpgradeAgentProgressDialog.class);
     private final JProgressBar progressBar;
     private final JTextArea outputTextArea;
@@ -63,7 +65,8 @@ public class UpgradeAgentProgressDialog extends JDialog {
                                       @Nullable Integer relatedK,
                                       @Nullable String perFileCommandTemplate,
                                       boolean includeWorkspace,
-                                      boolean invokeArchitect)
+                                      PostProcessingOption runOption,
+                                      boolean includeParallelOutput)
     {
         super(owner, "Upgrade Agent Progress", true);
         this.totalFiles = filesToProcess.size();
@@ -327,12 +330,17 @@ public class UpgradeAgentProgressDialog extends JDialog {
                 progressBar.setString("Completed. " + totalFiles + " of " + totalFiles + " files processed.");
 
                 outputTextArea.append("\nParallel processing complete.\n");
-                if (!invokeArchitect) {
+                if (runOption == PostProcessingOption.NONE) {
                     return;
                 }
 
-                outputTextArea.append("Architect has been invoked. You can close this window.\n");
-                contextManager.submitUserTask("Architect post-upgrade build fix", () -> {
+                if (runOption == PostProcessingOption.ARCHITECT) {
+                    outputTextArea.append("Architect has been invoked. You can close this window.\n");
+                } else if (runOption == PostProcessingOption.ASK) {
+                    outputTextArea.append("Ask command has been invoked. You can close this window.\n");
+                }
+                if (runOption == PostProcessingOption.ARCHITECT) {
+                    contextManager.submitUserTask("Architect post-upgrade build fix", () -> {
                     var verificationCommand = BuildAgent.determineVerificationCommand(contextManager);
                     if (verificationCommand == null || verificationCommand.isBlank()) {
                         logger.debug("No verification command found, skipping architect invocation.");
@@ -376,7 +384,7 @@ public class UpgradeAgentProgressDialog extends JDialog {
                                                            contextManager.getArchitectModel(),
                                                            contextManager.getToolRegistry(),
                                                            architectGoal,
-                                                           ArchitectAgent.ArchitectOptions.DEFAULTS);
+                                                           new ArchitectAgent.ArchitectOptions(false, false, false, true, true, false, false, false, false));
                         TaskResult architectResult;
                         try {
                             architectResult = architect.execute();
@@ -388,6 +396,22 @@ public class UpgradeAgentProgressDialog extends JDialog {
                         }
                     }
                 });
+                } else if (runOption == PostProcessingOption.ASK) {
+                    var instructionsPanel = chrome.getInstructionsPanel();
+                    StringBuilder askPrompt = new StringBuilder("""
+                            I just completed a parallel upgrade task with the following instructions:
+                            ---
+                            %s
+                            ---
+                            """.formatted(instructions));
+                    if (includeParallelOutput) {
+                        askPrompt.append("""
+                                        
+                                        The combined output of all parallel tasks is available in the conversation history.
+                                        """);
+                    }
+                    SwingUtilities.invokeLater(() -> instructionsPanel.runAskCommand(askPrompt.toString()));
+                }
             }
         };
 
