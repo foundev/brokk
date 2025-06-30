@@ -39,6 +39,7 @@ public class UpgradeAgentDialog extends JDialog {
     private JComboBox<String> languageComboBox;
     private JComboBox<String> relatedClassesCombo;
     private JTextField perFileCommandTextField;
+    private JCheckBox invokeArchitectCheckbox;
     private static final String ALL_LANGUAGES_OPTION = "All Languages";
     private static final int TOKEN_SAFETY_MARGIN = 32768;
     private FileSelectionPanel fileSelectionPanel;
@@ -105,6 +106,8 @@ public class UpgradeAgentDialog extends JDialog {
         gbc.weightx = 1.0;
         gbc.fill = GridBagConstraints.HORIZONTAL;
         List<Service.FavoriteModel> favoriteModels = MainProject.loadFavoriteModels();
+        // Sort models alphabetically by alias, ignoring case
+        favoriteModels.sort((m1, m2) -> m1.alias().compareToIgnoreCase(m2.alias()));
         modelComboBox = new JComboBox<>(favoriteModels.toArray(new Service.FavoriteModel[0]));
         modelComboBox.setRenderer(new DefaultListCellRenderer() {
             @Override
@@ -128,6 +131,14 @@ public class UpgradeAgentDialog extends JDialog {
         tokenWarningLabel.setForeground(Color.RED);
         tokenWarningLabel.setVisible(false);
         contentPanel.add(tokenWarningLabel, gbc);
+
+        // DeepSeekV3 Speed Explanation Label (visible only if DataRetentionPolicy is IMPROVE_BROKK)
+        if (chrome.getProject().getDataRetentionPolicy() == MainProject.DataRetentionPolicy.IMPROVE_BROKK) {
+            gbc.gridy++;
+            gbc.gridx = 1;
+            JLabel deepSeekV3Label = new JLabel("DeepSeek V3 is significantly faster than other options for parallel processing");
+            contentPanel.add(deepSeekV3Label, gbc);
+        }
 
         // Scope Row
         gbc.gridy++;
@@ -339,6 +350,30 @@ public class UpgradeAgentDialog extends JDialog {
         gbc.fill = GridBagConstraints.HORIZONTAL;
         includeWorkspaceCheckbox = new JCheckBox("Include the current Workspace contents with each file");
         contentPanel.add(includeWorkspaceCheckbox, gbc);
+
+        // Invoke Architect on failure row
+        gbc.gridy++;
+        gbc.gridx = 0;
+        gbc.gridwidth = 1;
+        gbc.weightx = 0;
+        gbc.fill = GridBagConstraints.NONE;
+        gbc.anchor = GridBagConstraints.NORTHWEST;
+        contentPanel.add(new JLabel("Invoke Architect on failure:"), gbc);
+
+        gbc.gridx = 1;
+        gbc.weightx = 1.0;
+        gbc.fill = GridBagConstraints.HORIZONTAL;
+        invokeArchitectCheckbox = new JCheckBox("Automatically try to fix any resulting build errors");
+        invokeArchitectCheckbox.setSelected(true); // enabled by default
+        contentPanel.add(invokeArchitectCheckbox, gbc);
+
+        // Explanation for architect
+        gbc.gridy++;
+        gbc.gridx = 1;
+        gbc.weightx = 1.0;
+        gbc.fill = GridBagConstraints.HORIZONTAL;
+        JLabel architectExplanation = new JLabel("If enabled, Brokk will run a build after processing and invoke an Architect agent on failure.");
+        contentPanel.add(architectExplanation, gbc);
 
         // Scope Panel at the bottom
         gbc.gridy++;
@@ -627,6 +662,7 @@ public class UpgradeAgentDialog extends JDialog {
         }
 
         boolean includeWorkspace = includeWorkspaceCheckbox.isSelected();
+        boolean invokeArchitect = invokeArchitectCheckbox.isSelected();
 
         setVisible(false); // Hide this dialog
 
@@ -639,7 +675,8 @@ public class UpgradeAgentDialog extends JDialog {
                 chrome,
                 relatedK,
                 perFileCommandTemplate,
-                includeWorkspace
+                includeWorkspace,
+                invokeArchitect
         );
         progressDialog.setVisible(true);
     }
