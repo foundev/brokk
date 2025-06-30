@@ -135,7 +135,12 @@ public class UpgradeAgentDialog extends JDialog {
         gbc.gridx = 0;
         gbc.gridy = 0;
         gbc.gridwidth = 3;
-        JLabel explanationLabel = new JLabel("Upgrade Agent applies your instructions independently to multiple files in parallel:");
+        JLabel explanationLabel = new JLabel("""
+                                             <html>
+                                             Upgrade Agent applies your instructions independently to multiple files in parallel, with optional
+                                             post-processing by a single agent.
+                                             </html>
+                                             """);
         contentPanel.add(explanationLabel, gbc);
 
         // Instructions TextArea
@@ -317,7 +322,7 @@ public class UpgradeAgentDialog extends JDialog {
         });
 
         JScrollPane tableScrollPane = new JScrollPane(selectedFilesTable);
-        tableScrollPane.setPreferredSize(new Dimension(450, 120)); // Smaller height for the table
+        tableScrollPane.setPreferredSize(new Dimension(500, 120)); // Smaller height for the table
         selectFilesCardPanel.add(tableScrollPane, BorderLayout.CENTER);
 
         JPanel removeButtonPanel = new JPanel(new FlowLayout(FlowLayout.RIGHT));
@@ -427,13 +432,24 @@ public class UpgradeAgentDialog extends JDialog {
         includeParallelOutputCheckbox = new JCheckBox("Include parallel output");
         includeParallelOutputCheckbox.setAlignmentX(Component.LEFT_ALIGNMENT);
         includeParallelOutputCheckbox.setSelected(true);
-        includeParallelOutputCheckbox.setEnabled(false);
+        includeParallelOutputCheckbox.setEnabled(false); // Start disabled
         ppPanel.add(includeParallelOutputCheckbox);
 
         runPostProcessCombo.addActionListener(ev -> {
-            boolean ask = "Ask".equals(runPostProcessCombo.getSelectedItem());
-            includeParallelOutputCheckbox.setEnabled(ask);
-            if (ask) includeParallelOutputCheckbox.setSelected(true);
+            String selectedOption = (String) runPostProcessCombo.getSelectedItem();
+            boolean ask = "Ask".equals(selectedOption);
+            boolean architect = "Architect".equals(selectedOption);
+
+            if (ask) {
+                includeParallelOutputCheckbox.setEnabled(false);
+                includeParallelOutputCheckbox.setSelected(true);
+            } else if (architect) {
+                includeParallelOutputCheckbox.setEnabled(true);
+                includeParallelOutputCheckbox.setSelected(true); // Default to checked for Architect
+            } else { // None
+                includeParallelOutputCheckbox.setEnabled(false);
+                includeParallelOutputCheckbox.setSelected(false);
+            }
         });
 
         // ---- add both panels ------------------------------
