@@ -18,6 +18,8 @@ import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 
 import java.io.IOException;
+import io.github.jbellis.brokk.util.SerialByKeyExecutor;
+
 import java.io.UncheckedIOException;
 import java.nio.file.FileSystems;
 import java.nio.file.Files;
@@ -26,8 +28,12 @@ import java.nio.file.StandardOpenOption;
 import java.util.*;
 import java.util.ArrayList;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.ExecutionException;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.TimeUnit;
 import java.util.stream.Collectors;
 import java.util.Set;
 import java.util.LinkedHashSet;
@@ -35,6 +41,9 @@ import java.util.HashSet;
 
 public final class MainProject extends AbstractProject {
     private static final Logger logger = LogManager.getLogger(MainProject.class); // Separate logger from AbstractProject
+
+    private final ExecutorService sessionExecutor;
+    private final SerialByKeyExecutor sessionExecutorByKey;
 
     private final Path propertiesFile;
     private final Properties projectProps;
@@ -87,7 +96,6 @@ public final class MainProject extends AbstractProject {
     private static final Path GLOBAL_PROPERTIES_PATH = BROKK_CONFIG_DIR.resolve("brokk.properties");
 
     private final Path sessionsDir;
-    private final Path legacySessionsIndexPath;
 
     public enum LlmProxySetting {BROKK, LOCALHOST, STAGING}
 
@@ -107,6 +115,8 @@ public final class MainProject extends AbstractProject {
             - what parts are the trickiest and how could they be simplified
             """.stripIndent();
 
+    private final Map<UUID, SessionInfo> sessionsCache;
+
     public record ProjectPersistentInfo(long lastOpened, List<String> openWorktrees) {
         public ProjectPersistentInfo {
         }
@@ -119,12 +129,18 @@ public final class MainProject extends AbstractProject {
     public MainProject(Path root) {
         super(root); // Initializes this.root and this.repo
 
+        this.sessionExecutor = Executors.newFixedThreadPool(3, r -> {
+            var t = Executors.defaultThreadFactory().newThread(r);
+            t.setDaemon(false);
+            t.setName("session-io-" + t.threadId());
+            return t;
+        });
+        this.sessionExecutorByKey = new SerialByKeyExecutor(sessionExecutor);
+
         this.propertiesFile = this.masterRootPathForConfig.resolve(".brokk").resolve("project.properties");
         this.styleGuidePath = this.masterRootPathForConfig.resolve(".brokk").resolve("style.md");
         this.reviewGuidePath = this.masterRootPathForConfig.resolve(".brokk").resolve("review.md");
         this.sessionsDir = this.masterRootPathForConfig.resolve(".brokk").resolve("sessions");
-        this.legacySessionsIndexPath = this.sessionsDir.resolve("sessions.jsonl");
-
         this.projectProps = new Properties();
 
         try {
@@ -143,6 +159,7 @@ public final class MainProject extends AbstractProject {
         }
         // Initialize cache and trigger migration/defaulting if necessary
         this.issuesProviderCache = getIssuesProvider();
+        this.sessionsCache = loadSessions();
     }
 
     @Override
@@ -677,99 +694,86 @@ public final class MainProject extends AbstractProject {
 
     @Override
     public void saveHistory(ContextHistory ch, UUID sessionId) {
-        Path sessionHistoryPath = getSessionHistoryPath(sessionId);
         SessionInfo infoToSave = null;
-
-        // 1. Try to get current session info to preserve name/created time before altering the zip.
-        Optional<SessionInfo> currentInfoOpt = readSessionInfoFromZip(sessionHistoryPath);
-        if (currentInfoOpt.isPresent()) {
-            SessionInfo currentInfo = currentInfoOpt.get();
+        SessionInfo currentInfo = sessionsCache.get(sessionId);
+        if (currentInfo != null) {
             infoToSave = new SessionInfo(currentInfo.id(), currentInfo.name(), currentInfo.created(), System.currentTimeMillis());
+            sessionsCache.put(sessionId, infoToSave); // Update cache before async task
         } else {
-            // Manifest might be missing (new session just after creation and before manifest write, or legacy). Try listSessions.
-            // This listSessions() call might be problematic if newSession() hasn't completed its manifest write yet in some racy test setup.
-            // However, for a stable session or legacy session, this is the correct fallback.
-            SessionInfo sessionFromList = listSessions().stream()
-                    .filter(s -> s.id().equals(sessionId))
-                    .findFirst()
-                    .orElse(null);
-            if (sessionFromList != null) {
-                infoToSave = new SessionInfo(sessionFromList.id(), sessionFromList.name(), sessionFromList.created(), System.currentTimeMillis());
-                logger.info("Preparing to write/update manifest for session {} based on listSessions data (manifest was missing or is being updated).", sessionId);
-            } else {
-                // Session is not in current manifests and not in legacy list.
-                // This could be a brand new session ID for which newSession() hasn't run or completed.
-                logger.warn("Session ID {} has no existing manifest and is not found in current session list. History content will be saved. Manifest cannot be created/updated without session name/creation time.", sessionId);
-            }
+            logger.warn("Session ID {} not found in cache. History content will be saved, but manifest cannot be updated.", sessionId);
         }
 
-        try {
-            // 2. Write history contents. This might clear the zip if HistoryIo.writeZip is destructive,
-            // or simply add/update history files if it's not.
-            HistoryIo.writeZip(ch, sessionHistoryPath);
-
-            // 3. If we successfully determined SessionInfo (either from existing manifest or list),
-            //    write/rewrite the manifest. This ensures it's present and timestamp is updated.
-            if (infoToSave != null) {
-                writeSessionInfoToZip(sessionHistoryPath, infoToSave);
-            } else {
-                // If we reach here, infoToSave is null. This means original manifest was absent,
-                // AND session was not found in listSessions.
-                // Check if manifest is *still* missing after HistoryIo.writeZip
-                if (Files.exists(sessionHistoryPath) && readSessionInfoFromZip(sessionHistoryPath).isEmpty()){
-                    logger.warn("History content saved for session {}, but manifest.json is still missing as session details (name, created time) were unavailable.", sessionId);
+        final SessionInfo finalInfoToSave = infoToSave;
+        sessionExecutorByKey.submit(sessionId.toString(), () -> {
+            try {
+                Path sessionHistoryPath = getSessionHistoryPath(sessionId);
+                HistoryIo.writeZip(ch, sessionHistoryPath);
+                if (finalInfoToSave != null) {
+                    writeSessionInfoToZip(sessionHistoryPath, finalInfoToSave);
                 }
+            } catch (IOException e) {
+                logger.error("Error saving context history or updating manifest for session {}: {}", sessionId, e.getMessage());
             }
-        } catch (IOException e) {
-            logger.error("Error saving context history or updating/creating manifest for session {}: {}", sessionId, e.getMessage());
-        }
+        });
     }
 
     @Override
     public @Nullable ContextHistory loadHistory(UUID sessionId, IContextManager contextManager) {
-        try {
-            var sessionHistoryPath = getSessionHistoryPath(sessionId);
-            ContextHistory ch = HistoryIo.readZip(sessionHistoryPath, contextManager);
-            if (ch == null) {
-                return null;
-            }
-            // Resetting nextId based on loaded fragments.
-            // Only consider numeric IDs for dynamic fragments.
-            // Hashes will not parse to int and will be skipped by this logic.
-            int maxNumericId = 0;
-            for (Context ctx : ch.getHistory()) {
-                for (ContextFragment fragment : ctx.allFragments().toList()) {
-                    try {
-                        maxNumericId = Math.max(maxNumericId, Integer.parseInt(fragment.id()));
-                    } catch (NumberFormatException e) {
-                        // Ignore non-numeric IDs (hashes)
-                    }
+        var future = sessionExecutorByKey.submit(sessionId.toString(), () -> {
+            try {
+                var sessionHistoryPath = getSessionHistoryPath(sessionId);
+                ContextHistory ch = HistoryIo.readZip(sessionHistoryPath, contextManager);
+                if (ch == null) {
+                    return null;
                 }
-                for (TaskEntry taskEntry : ctx.getTaskHistory()) {
-                    if (taskEntry.log() != null) {
+                // Resetting nextId based on loaded fragments.
+                // Only consider numeric IDs for dynamic fragments.
+                // Hashes will not parse to int and will be skipped by this logic.
+                int maxNumericId = 0;
+                for (Context ctx : ch.getHistory()) {
+                    for (ContextFragment fragment : ctx.allFragments().toList()) {
                         try {
-                            // TaskFragment IDs are hashes, so this typically won't contribute to maxNumericId.
-                            // If some TaskFragments had numeric IDs historically, this would catch them.
-                            maxNumericId = Math.max(maxNumericId, Integer.parseInt(taskEntry.log().id()));
+                            maxNumericId = Math.max(maxNumericId, Integer.parseInt(fragment.id()));
                         } catch (NumberFormatException e) {
-                            // Ignore non-numeric IDs
+                            // Ignore non-numeric IDs (hashes)
+                        }
+                    }
+                    for (TaskEntry taskEntry : ctx.getTaskHistory()) {
+                        if (taskEntry.log() != null) {
+                            try {
+                                // TaskFragment IDs are hashes, so this typically won't contribute to maxNumericId.
+                                // If some TaskFragments had numeric IDs historically, this would catch them.
+                                maxNumericId = Math.max(maxNumericId, Integer.parseInt(taskEntry.log().id()));
+                            } catch (NumberFormatException e) {
+                                // Ignore non-numeric IDs
+                            }
                         }
                     }
                 }
+                // ContextFragment.nextId is an AtomicInteger, its value is the *next* ID to be assigned.
+                // If maxNumericId found is, say, 10, nextId should be set to 10 so that getAndIncrement() yields 11.
+                // If setNextId ensures nextId will be value+1, then passing maxNumericId is correct.
+                // Current ContextFragment.setNextId: if (value >= nextId.get()) { nextId.set(value); }
+                // Then nextId.getAndIncrement() will use `value` and then increment it.
+                // So we should set it to maxNumericId found.
+                if (maxNumericId > 0) { // Only set if we found any numeric IDs
+                     ContextFragment.setMinimumId(maxNumericId + 1);
+                     logger.debug("Restored dynamic fragment ID counter based on max numeric ID: {}", maxNumericId);
+                }
+                return ch;
+            } catch (IOException e) {
+                logger.error("Error loading context history for session {}: {}", sessionId, e.getMessage());
+                return null;
             }
-            // ContextFragment.nextId is an AtomicInteger, its value is the *next* ID to be assigned.
-            // If maxNumericId found is, say, 10, nextId should be set to 10 so that getAndIncrement() yields 11.
-            // If setNextId ensures nextId will be value+1, then passing maxNumericId is correct.
-            // Current ContextFragment.setNextId: if (value >= nextId.get()) { nextId.set(value); }
-            // Then nextId.getAndIncrement() will use `value` and then increment it.
-            // So we should set it to maxNumericId found.
-            if (maxNumericId > 0) { // Only set if we found any numeric IDs
-                 ContextFragment.setMinimumId(maxNumericId + 1);
-                 logger.debug("Restored dynamic fragment ID counter based on max numeric ID: {}", maxNumericId);
+        });
+
+        try {
+            return future.get();
+        } catch (InterruptedException | ExecutionException e) {
+            logger.warn("Error waiting for session history to load for session {}: {}", sessionId, e);
+            if (e instanceof InterruptedException) {
+                Thread.currentThread().interrupt();
             }
-            return ch;
-        } catch (IOException e) {
-            logger.error("Error loading context history for session {}: {}", sessionId, e.getMessage());
             return null;
         }
     }
@@ -1316,68 +1320,25 @@ public final class MainProject extends AbstractProject {
     }
 
 
-    @Override
-    public List<SessionInfo> listSessions() {
-        var sessions = new ArrayList<SessionInfo>();
-        var sessionIdsFromManifests = new HashSet<UUID>();
+    private Map<UUID, SessionInfo> loadSessions() {
+        var sessions = new ConcurrentHashMap<UUID, SessionInfo>();
         try {
             Files.createDirectories(sessionsDir);
             try (var stream = Files.list(sessionsDir)) {
                 stream.filter(path -> path.toString().endsWith(".zip"))
                         .forEach(zipPath -> readSessionInfoFromZip(zipPath).ifPresent(sessionInfo -> {
-                            sessions.add(sessionInfo);
-                            sessionIdsFromManifests.add(sessionInfo.id());
+                            sessions.put(sessionInfo.id(), sessionInfo);
                         }));
             }
         } catch (IOException e) {
             logger.error("Error listing session zip files in {}: {}", sessionsDir, e.getMessage());
         }
-        var legacySessionIds = new HashSet<UUID>();
-        if (Files.exists(legacySessionsIndexPath)) {
-            logger.debug("Attempting to read legacy sessions from {}", legacySessionsIndexPath);
-            try {
-                var lines = Files.readAllLines(legacySessionsIndexPath);
-                for (String line : lines) {
-                    if (!line.trim().isEmpty()) {
-                        try {
-                            var legacySessionInfo = objectMapper.readValue(line, SessionInfo.class);
-                            legacySessionIds.add(legacySessionInfo.id());
-                            if (!sessionIdsFromManifests.contains(legacySessionInfo.id())) {
-                                Path correspondingZip = getSessionHistoryPath(legacySessionInfo.id());
-                                if (Files.exists(correspondingZip)) {
-                                    sessions.add(legacySessionInfo);
-                                    
-                                    // Migrate on the spot - write manifest to zip
-                                    try {
-                                        writeSessionInfoToZip(correspondingZip, legacySessionInfo);
-                                        sessionIdsFromManifests.add(legacySessionInfo.id());
-                                        logger.info("Migrated session {} into its zip manifest", legacySessionInfo.id());
-                                    } catch (IOException e) {
-                                        logger.warn("Unable to migrate legacy session {}: {}", legacySessionInfo.id(), e.getMessage());
-                                    }
-                                } else {
-                                    logger.warn("Orphaned session {} in legacy sessions.jsonl (no zip found), skipping.", legacySessionInfo.id());
-                                }
-                            }
-                        } catch (JsonProcessingException e) {
-                            logger.error("Failed to parse legacy SessionInfo from line: {}", line, e);
-                        }
-                    }
-                }
-                
-                // Delete legacy file if all sessions were successfully migrated
-                if (sessionIdsFromManifests.containsAll(legacySessionIds)) {
-                    try {
-                        Files.delete(legacySessionsIndexPath);
-                        logger.info("Successfully migrated all legacy sessions and deleted {}", legacySessionsIndexPath.getFileName());
-                    } catch (IOException e) {
-                        logger.warn("Could not delete legacy sessions.jsonl: {}", e.getMessage());
-                    }
-                }
-            } catch (IOException e) {
-                logger.error("Error reading legacy sessions index {}: {}", legacySessionsIndexPath, e.getMessage());
-            }
-        }
+        return sessions;
+    }
+
+    @Override
+    public List<SessionInfo> listSessions() {
+        var sessions = new ArrayList<>(sessionsCache.values());
         sessions.sort(Comparator.comparingLong(SessionInfo::modified).reversed());
         return sessions;
     }
@@ -1387,73 +1348,115 @@ public final class MainProject extends AbstractProject {
         var sessionId = UUID.randomUUID();
         var currentTime = System.currentTimeMillis();
         var newSessionInfo = new SessionInfo(sessionId, name, currentTime, currentTime);
-        Path sessionHistoryPath = getSessionHistoryPath(sessionId);
-        try {
-            Files.createDirectories(sessionHistoryPath.getParent());
-            // 1. Create the zip with empty history first. This ensures the zip file exists.
-            var emptyHistory = new ContextHistory(Context.EMPTY);
-            HistoryIo.writeZip(emptyHistory, sessionHistoryPath);
+        sessionsCache.put(sessionId, newSessionInfo);
 
-            // 2. Now add/update manifest.json to the existing zip.
-            writeSessionInfoToZip(sessionHistoryPath, newSessionInfo); // Should use create="false" as zip exists.
-            logger.info("Created new session {} ({}) with manifest and empty history.", name, sessionId);
-        } catch (IOException e) {
-            logger.error("Error creating new session files for {} ({}): {}", name, sessionId, e.getMessage());
-            throw new UncheckedIOException("Failed to create new session " + name, e);
-        }
+        sessionExecutorByKey.submit(sessionId.toString(), () -> {
+            Path sessionHistoryPath = getSessionHistoryPath(sessionId);
+            try {
+                Files.createDirectories(sessionHistoryPath.getParent());
+                // 1. Create the zip with empty history first. This ensures the zip file exists.
+                var emptyHistory = new ContextHistory(Context.EMPTY);
+                HistoryIo.writeZip(emptyHistory, sessionHistoryPath);
+
+                // 2. Now add/update manifest.json to the existing zip.
+                writeSessionInfoToZip(sessionHistoryPath, newSessionInfo); // Should use create="false" as zip exists.
+                logger.info("Created new session {} ({}) with manifest and empty history.", name, sessionId);
+            } catch (IOException e) {
+                logger.error("Error creating new session files for {} ({}): {}", name, sessionId, e.getMessage());
+                throw new UncheckedIOException("Failed to create new session " + name, e);
+            }
+        });
         return newSessionInfo;
     }
 
     @Override
     public void renameSession(UUID sessionId, String newName) {
-        Path sessionHistoryPath = getSessionHistoryPath(sessionId);
-        Optional<SessionInfo> oldInfoOpt = readSessionInfoFromZip(sessionHistoryPath); // Read before any modification
-        if (oldInfoOpt.isPresent()) {
-            SessionInfo oldInfo = oldInfoOpt.get();
-            var updatedInfo = new SessionInfo(oldInfo.id(), newName, oldInfo.created(), System.currentTimeMillis()); // new modified time
-            try {
-                // No history content change, just update manifest
-                writeSessionInfoToZip(sessionHistoryPath, updatedInfo);
-                logger.info("Renamed session {} to '{}'", sessionId, newName);
-            } catch (IOException e) {
-                logger.error("Error writing updated manifest for renamed session {}: {}", sessionId, e.getMessage());
-            }
+        SessionInfo oldInfo = sessionsCache.get(sessionId);
+        if (oldInfo != null) {
+            var updatedInfo = new SessionInfo(oldInfo.id(), newName, oldInfo.created(), System.currentTimeMillis());
+            sessionsCache.put(sessionId, updatedInfo);
+            sessionExecutorByKey.submit(sessionId.toString(), () -> {
+                try {
+                    Path sessionHistoryPath = getSessionHistoryPath(sessionId);
+                    writeSessionInfoToZip(sessionHistoryPath, updatedInfo);
+                    logger.info("Renamed session {} to '{}'", sessionId, newName);
+                } catch (IOException e) {
+                    logger.error("Error writing updated manifest for renamed session {}: {}", sessionId, e.getMessage());
+                }
+            });
         } else {
-            logger.warn("Session ID {} not found (manifest missing in zip {}), cannot rename.", sessionId, sessionHistoryPath.getFileName());
+            logger.warn("Session ID {} not found in cache, cannot rename.", sessionId);
         }
     }
 
     @Override
     public void deleteSession(UUID sessionId) {
-        Path historyZipPath = getSessionHistoryPath(sessionId);
-        try {
-            boolean deleted = Files.deleteIfExists(historyZipPath);
-            if (deleted) {
-                logger.info("Deleted session zip: {}", historyZipPath.getFileName());
-            } else {
-                logger.warn("Session zip {} not found for deletion, or already deleted.", historyZipPath.getFileName());
+        sessionsCache.remove(sessionId);
+        sessionExecutorByKey.submit(sessionId.toString(), () -> {
+            Path historyZipPath = getSessionHistoryPath(sessionId);
+            try {
+                boolean deleted = Files.deleteIfExists(historyZipPath);
+                if (deleted) {
+                    logger.info("Deleted session zip: {}", historyZipPath.getFileName());
+                } else {
+                    logger.warn("Session zip {} not found for deletion, or already deleted.", historyZipPath.getFileName());
+                }
+            } catch (IOException e) {
+                logger.error("Error deleting history zip for session {}: {}", sessionId, e.getMessage());
             }
-        } catch (IOException e) {
-            logger.error("Error deleting history zip for session {}: {}", sessionId, e.getMessage());
-        }
+        });
     }
 
     @Override
     public SessionInfo copySession(UUID originalSessionId, String newSessionName) throws IOException {
-        Path originalHistoryPath = getSessionHistoryPath(originalSessionId);
-        if (!Files.exists(originalHistoryPath)) {
-            throw new IOException("Original session %s not found, cannot copy".formatted(originalHistoryPath.getFileName()));
-        }
-        UUID newSessionId = UUID.randomUUID();
-        Path newHistoryPath = getSessionHistoryPath(newSessionId);
-        long currentTime = System.currentTimeMillis();
+        var newSessionId = UUID.randomUUID();
+        var currentTime = System.currentTimeMillis();
         var newSessionInfo = new SessionInfo(newSessionId, newSessionName, currentTime, currentTime);
-        Files.createDirectories(newHistoryPath.getParent());
-        Files.copy(originalHistoryPath, newHistoryPath);
-        logger.info("Copied session zip {} to {}", originalHistoryPath.getFileName(), newHistoryPath.getFileName());
-        writeSessionInfoToZip(newHistoryPath, newSessionInfo);
-        logger.info("Updated manifest.json in new session zip {} for session ID {}", newHistoryPath.getFileName(), newSessionId);
+        sessionsCache.put(newSessionId, newSessionInfo);
+
+        sessionExecutorByKey.submit(newSessionId.toString(), () -> {
+            try {
+                Path originalHistoryPath = getSessionHistoryPath(originalSessionId);
+                if (!Files.exists(originalHistoryPath)) {
+                    throw new IOException("Original session %s not found, cannot copy".formatted(originalHistoryPath.getFileName()));
+                }
+                Path newHistoryPath = getSessionHistoryPath(newSessionId);
+
+                Files.createDirectories(newHistoryPath.getParent());
+                // This needs to be serialized against the original session ID as well.
+                // We submit to new session's key, but we need to wait for original session's queue to clear.
+                sessionExecutorByKey.submit(originalSessionId.toString(), () -> {
+                    Files.copy(originalHistoryPath, newHistoryPath);
+                    logger.info("Copied session zip {} to {}", originalHistoryPath.getFileName(), newHistoryPath.getFileName());
+                    return null;
+                }).get(); // wait for copy to complete
+
+                writeSessionInfoToZip(newHistoryPath, newSessionInfo);
+                logger.info("Updated manifest.json in new session zip {} for session ID {}", newHistoryPath.getFileName(), newSessionId);
+            } catch (Exception e) {
+                logger.error("Failed to copy session from {} to new session {}: {}", originalSessionId, newSessionName, e.getMessage(), e);
+                if (e instanceof InterruptedException) {
+                    Thread.currentThread().interrupt();
+                }
+                throw new RuntimeException("Failed to copy session " + originalSessionId, e);
+            }
+        });
         return newSessionInfo;
+    }
+
+    @Override
+    public void close() {
+        super.close();
+        sessionExecutor.shutdown();
+        try {
+            if (!sessionExecutor.awaitTermination(30, TimeUnit.SECONDS)) {
+                logger.warn("Session IO tasks did not finish in 30 seconds, forcing shutdown.");
+                sessionExecutor.shutdownNow();
+            }
+        } catch (InterruptedException e) {
+            sessionExecutor.shutdownNow();
+            Thread.currentThread().interrupt();
+        }
     }
 
     public Path getWorktreeStoragePath() {
