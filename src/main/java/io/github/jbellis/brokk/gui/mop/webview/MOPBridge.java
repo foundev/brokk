@@ -46,6 +46,16 @@ public final class MOPBridge {
         scheduleSend();
     }
 
+    public void showSpinner(String message) {
+        eventQueue.add(new BrokkEvent.Spinner(message));
+        scheduleSend();
+    }
+
+    public void clear() {
+        eventQueue.add(new BrokkEvent.Clear());
+        scheduleSend();
+    }
+
     private void scheduleSend() {
         if (pending.compareAndSet(false, true)) {
             xmit.schedule(this::processQueue, 20, TimeUnit.MILLISECONDS);

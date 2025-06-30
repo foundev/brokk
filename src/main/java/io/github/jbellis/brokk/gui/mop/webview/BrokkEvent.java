@@ -34,4 +34,28 @@ public sealed interface BrokkEvent {
             return null;
         }
     }
+
+    record Spinner(String message) implements BrokkEvent {
+        @Override
+        public String getType() {
+            return "spinner";
+        }
+
+        @Override
+        public @Nullable Integer getEpoch() {
+            return null;
+        }
+    }
+
+    record Clear() implements BrokkEvent {
+        @Override
+        public String getType() {
+            return "clear";
+        }
+
+        @Override
+        public @Nullable Integer getEpoch() {
+            return null;
+        }
+    }
 }

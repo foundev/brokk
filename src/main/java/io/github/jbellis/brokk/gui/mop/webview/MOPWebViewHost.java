@@ -59,6 +59,20 @@ public final class MOPWebViewHost extends JPanel {
         }
     }
 
+    public void clear() {
+        var bridge = bridgeRef.get();
+        if (bridge != null) {
+            bridge.clear();
+        }
+    }
+
+    public void showSpinner(String message) {
+        var bridge = bridgeRef.get();
+        if (bridge != null) {
+            bridge.showSpinner(message);
+        }
+    }
+
     public CompletableFuture<Void> flushAsync() {
         var bridge = bridgeRef.get();
         if (bridge != null) {
