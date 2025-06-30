@@ -160,8 +160,16 @@ public class UpgradeAgentDialog extends JDialog {
             gbc.weightx = 0.0;
             gbc.fill = GridBagConstraints.NONE;
             gbc.anchor = GridBagConstraints.WEST;
-            var deepSeekV3Icon = new JLabel(smallInfoIcon);
-        deepSeekV3Icon.setToolTipText("DeepSeek V3 is significantly faster than other options for parallel processing");
+        var deepSeekV3Icon = new JLabel(smallInfoIcon);
+        deepSeekV3Icon.setToolTipText("""
+                                      <html>
+                                      Strong options include:
+                                      <ul>
+                                      <li>DeepSeek v3: inexpensive, massively parallel
+                                      <li>Gemini Flash Lite: even cheaper than DSv3. Not as parallel but faster per-task
+                                      </ul>
+                                      </html>
+                                      """);
         gbc.insets = new Insets(5, 2, 5, 5);
         contentPanel.add(deepSeekV3Icon, gbc);
         gbc.insets = new Insets(5, 5, 5, 5);
@@ -350,7 +358,12 @@ public class UpgradeAgentDialog extends JDialog {
         gbc.fill = GridBagConstraints.NONE;
         gbc.anchor = GridBagConstraints.WEST;
         JLabel perFileIcon = new JLabel(smallInfoIcon);
-        perFileIcon.setToolTipText("Command to run for each file. Use {{filepath}} for the file path. Blank for no command. The output will be sent to the LLM with each target file");
+        perFileIcon.setToolTipText("""
+                                   <html>
+                                   Command to run for each file.<br>Use {{filepath}} for the file path. Blank for no command.
+                                   <br>The output will be sent to the LLM with each target file
+                                   </html>
+                                   """);
         gbc.insets = new Insets(5, 2, 5, 5);
         contentPanel.add(perFileIcon, gbc);
         gbc.insets = new Insets(5, 5, 5, 5);
@@ -654,7 +667,6 @@ public class UpgradeAgentDialog extends JDialog {
 
         if (entireProjectScopeRadioButton.isSelected()) {
             var filesToProcess = chrome.getProject().getRepo().getTrackedFiles().stream()
-                    .filter(Objects::nonNull)
                     .filter(ProjectFile::isText);
 
             String selectedLanguageString = (String) languageComboBox.getSelectedItem();

@@ -258,11 +258,12 @@ public class UpgradeAgentProgressDialog extends JDialog {
 
                 var uiMessageText = results.stream()
                                            .filter(r -> !r.llmOutput().isBlank())
-                                           .map(r -> "# " + r.file() + "\n" + r.llmOutput() + "\n\n")
+                                           .map(r -> "## " + r.file() + "\n" + r.llmOutput() + "\n\n")
                                            .collect(Collectors.joining());
 
                 List<ChatMessage> uiMessages = !uiMessageText.isEmpty()
-                                               ? List.of(new UserMessage(uiMessageText))
+                                               ? List.of(new UserMessage(instructions),
+                                                         new AiMessage(uiMessageText))
                                                : List.of();
 
                 List<String> failures = results.stream()
