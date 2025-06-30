@@ -65,7 +65,7 @@ public final class PatternConstants {
      * @return true if the filename has a supported extension, false otherwise
      */
     public static boolean isRecognizedFile(String filename) {
-        if (filename == null || filename.isEmpty()) {
+        if (filename.isEmpty()) {
             return false;
         }
         
@@ -80,7 +80,7 @@ public final class PatternConstants {
      * @return true if the text matches the symbol pattern, false otherwise
      */
     public static boolean isSymbolLike(String text) {
-        return text != null && !text.isEmpty() && SYMBOL_PATTERN.matcher(text).matches();
+        return !text.isEmpty() && SYMBOL_PATTERN.matcher(text).matches();
     }
     
     /**
@@ -90,6 +90,6 @@ public final class PatternConstants {
      * @return true if the file path appears to be a test file, false otherwise
      */
     public static boolean isTestFile(String filePath) {
-        return filePath != null && !filePath.isEmpty() && TEST_FILE_PATTERN.matcher(filePath).matches();
+        return !filePath.isEmpty() && TEST_FILE_PATTERN.matcher(filePath).matches();
     }
 }

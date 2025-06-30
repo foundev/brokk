@@ -55,9 +55,7 @@ public class MarkdownSearchableComponent extends BaseSearchableComponent {
         this.debugger = new MarkdownSearchDebugger(DEBUG_SEARCH_COLLECTION);
 
         // Apply SymbolBadgeCustomizer immediately to all panels if contextManager is available
-        if (contextManager != null) {
-            applySymbolBadgeCustomizer();
-        }
+        applySymbolBadgeCustomizer();
     }
 
     /**

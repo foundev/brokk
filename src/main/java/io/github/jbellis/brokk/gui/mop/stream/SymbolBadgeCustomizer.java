@@ -239,15 +239,7 @@ public final class SymbolBadgeCustomizer implements HtmlCustomizer {
      * Returns a no-op customizer if the analyzer is not ready.
      */
     public static HtmlCustomizer create(IContextManager contextManager) {
-
-        if (contextManager == null) {
-            return HtmlCustomizer.DEFAULT;
-        }
-
         var analyzerWrapper = contextManager.getAnalyzerWrapper();
-        if (analyzerWrapper == null) {
-            return HtmlCustomizer.DEFAULT;
-        }
 
         boolean isReady = analyzerWrapper.isReady();
 
