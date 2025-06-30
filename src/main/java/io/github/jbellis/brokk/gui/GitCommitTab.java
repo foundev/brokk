@@ -270,7 +270,6 @@ public class GitCommitTab extends JPanel {
      */
     private GitRepo getRepo() {
         var repo = contextManager.getProject().getRepo();
-        assert repo != null;
         return (GitRepo) repo;
     }
 
@@ -508,9 +507,7 @@ public class GitCommitTab extends JPanel {
                     String headContent = "";
                     try {
                         var repo = contextManager.getProject().getRepo();
-                        if (repo != null) {
-                            headContent = repo.getFileContent("HEAD", file);
-                        }
+                        headContent = repo.getFileContent("HEAD", file);
                     } catch (Exception ex) {
                         // new file or retrieval error – treat as empty
                         headContent = "";

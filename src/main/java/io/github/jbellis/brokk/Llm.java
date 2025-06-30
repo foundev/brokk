@@ -45,7 +45,6 @@ import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
-import java.util.Objects;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
@@ -188,7 +187,9 @@ public class Llm {
                         }
                         // I think this isn't supposed to happen, but seeing it when litellm throws back a 400.
                         // Fake an exception so the caller can treat it like other errors
-                        errorRef.set(new HttpException(400, "BadRequestError (no further information, the response was null; check litellm logs)"));
+                        var ex = new HttpException(400, "BadRequestError (no further information, the response was null; check litellm logs)");
+                        logger.debug(ex);
+                        errorRef.set(ex);
                     } else {
                         completedChatResponse.set(response);
                         String tokens = response.tokenUsage() == null ? "null token usage!?" : formatTokensUsage(response);
@@ -201,7 +202,8 @@ public class Llm {
             @Override
             public void onError(Throwable th) {
                 ifNotCancelled.accept(() -> {
-                    io.systemOutput(th.getMessage() + " (retry-able)"); // Immediate feedback for user
+                    logger.debug(th);
+                    io.systemOutput("LLM Error: " + th.getMessage() + " (retry-able)"); // Immediate feedback for user
                     errorRef.set(th);
                     latch.countDown();
                 });
@@ -633,7 +635,7 @@ public class Llm {
                 .responseFormat(responseFormat)
                 .build();
 
-        Function<Throwable, String> retryInstructionsProvider = e -> """
+        Function<Throwable, String> retryInstructionsProvider = (@Nullable Throwable e) -> """
                 %s
                 Please ensure you only return a JSON object matching the schema:
                   {
@@ -675,7 +677,7 @@ public class Llm {
                                                         ToolChoice toolChoice,
                                                         boolean echo) throws InterruptedException
     {
-        Function<Throwable, String> retryInstructionsProvider = e -> """
+        Function<Throwable, String> retryInstructionsProvider = (@Nullable Throwable e) -> """
                 %s
                 Respond with a single JSON object containing a `tool_calls` array. Each entry in the array represents one invocation of a tool.
                 No additional keys or text are allowed outside of that JSON object.
@@ -884,7 +886,7 @@ public class Llm {
         return new NullSafeResponse(aiMessageText, toolExecutionRequests, result.originalResponse());
     }
 
-    private static String getInstructions(List<ToolSpecification> tools, Function<Throwable, String> retryInstructionsProvider) {
+    private static String getInstructions(List<ToolSpecification> tools, Function<@Nullable Throwable, String> retryInstructionsProvider) {
         String toolsDescription = tools.stream()
                 .map(tool -> {
                     var parametersInfo = tool.parameters().properties().entrySet().stream()
@@ -994,10 +996,6 @@ public class Llm {
      * Writes history information to task-specific files.
      */
     private synchronized void logRequest(StreamingChatLanguageModel model, ChatRequest request, @Nullable StreamingResult result) {
-        if (taskHistoryDir == null) {
-            // History directory creation failed in constructor, do nothing.
-            return;
-        }
         try {
             var timestamp = LocalDateTime.now(java.time.ZoneId.systemDefault()); // timestamp finished, not started
 
