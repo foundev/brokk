@@ -9,6 +9,7 @@ import io.github.jbellis.brokk.gui.Chrome;
 import io.github.jbellis.brokk.gui.FileSelectionPanel;
 
 import javax.swing.*;
+import javax.swing.Box;
 import java.awt.*;
 import java.awt.event.InputEvent;
 import java.awt.event.KeyEvent;
@@ -349,145 +350,98 @@ public class UpgradeAgentDialog extends JDialog {
         scopeCardsPanel.add(listFilesCardPanel, "LIST");
 
 
-        // Per-file command Row
+
+        // ----------------------------------------------------
+        // Context + Post-processing option panels
+        // ----------------------------------------------------
         gbc.gridy++;
         gbc.gridx = 0;
-        gbc.weightx = 0.0;
-        gbc.fill = GridBagConstraints.NONE;
-        gbc.anchor = GridBagConstraints.EAST;
-        JLabel perFileLabel = new JLabel("Per-file command");
-        contentPanel.add(perFileLabel, gbc);
+        gbc.gridwidth = 3;
+        gbc.weightx = 1.0;
+        gbc.fill = GridBagConstraints.BOTH;
 
-        gbc.gridx = 1;
-        gbc.weightx = 0.0;
-        gbc.fill = GridBagConstraints.NONE;
-        gbc.anchor = GridBagConstraints.WEST;
-        JLabel perFileIcon = new JLabel(smallInfoIcon);
-        perFileIcon.setToolTipText("""
+        JPanel combined = new JPanel(new GridBagLayout());
+        GridBagConstraints cmbc = new GridBagConstraints();
+        cmbc.insets = new Insets(0, 0, 0, 0);
+        cmbc.fill = GridBagConstraints.HORIZONTAL;
+        cmbc.anchor = GridBagConstraints.NORTH;
+        cmbc.weighty = 0;
+        cmbc.weightx = 0.5;
+
+        // ---- context panel --------------------------------
+        JPanel ctxPanel = new JPanel(new GridBagLayout());
+        ctxPanel.setBorder(BorderFactory.createTitledBorder("Context"));
+        GridBagConstraints ctx = new GridBagConstraints();
+        ctx.insets = new Insets(5, 5, 5, 5);
+        ctx.fill = GridBagConstraints.HORIZONTAL;
+
+        ctx.gridx = 0; ctx.gridy = 0; ctx.anchor = GridBagConstraints.EAST;
+        ctxPanel.add(new JLabel("Per-file command"), ctx);
+        ctx.gridx = 1;
+        var perFileIconCtx = new JLabel(smallInfoIcon);
+        perFileIconCtx.setToolTipText("""
                                    <html>
-                                   Command to run for each file.<br>Use {{filepath}} for the file path. Blank for no command.
-                                   <br>The output will be sent to the LLM with each target file
+                                   Command to run for each file.<br>
+                                   Use {{filepath}} for the file path. Blank for no command.
+                                   <br>The output will be sent to the LLM with each target file.
                                    </html>
                                    """);
-        gbc.insets = new Insets(5, 2, 5, 5);
-        contentPanel.add(perFileIcon, gbc);
-        gbc.insets = new Insets(5, 5, 5, 5);
-
-        gbc.gridx = 2;
-        gbc.weightx = 1.0;
-        gbc.fill = GridBagConstraints.HORIZONTAL;
-        gbc.anchor = GridBagConstraints.WEST;
+        ctxPanel.add(perFileIconCtx, ctx);
+        ctx.gridx = 2; ctx.weightx = 1.0;
         perFileCommandTextField = new JTextField();
-        contentPanel.add(perFileCommandTextField, gbc);
+        ctxPanel.add(perFileCommandTextField, ctx);
 
-        // Related Files Row
-        gbc.gridy++;
-        gbc.gridwidth = 1;
-        gbc.weighty = 0;
-        gbc.fill = GridBagConstraints.NONE;
-        gbc.gridx = 0;
-        gbc.weightx = 0.0;
-        gbc.anchor = GridBagConstraints.EAST;
-        JLabel relatedFilesLabel = new JLabel("Include related files");
-        contentPanel.add(relatedFilesLabel, gbc);
-
-        gbc.gridx = 1;
-        gbc.weightx = 0.0;
-        gbc.fill = GridBagConstraints.NONE;
-        gbc.anchor = GridBagConstraints.WEST;
-        JLabel relatedFilesIcon = new JLabel(smallInfoIcon);
-        relatedFilesIcon.setToolTipText("Includes summaries of the most-closely-related files for each target file");
-        gbc.insets = new Insets(5, 2, 5, 5);
-        contentPanel.add(relatedFilesIcon, gbc);
-        gbc.insets = new Insets(5, 5, 5, 5);
-
-        gbc.gridx = 2;
-        gbc.weightx = 0.0;
-        gbc.fill = GridBagConstraints.NONE;
-        gbc.anchor = GridBagConstraints.WEST;
+        ctx.gridy++; ctx.gridx = 0; ctx.weightx = 0;
+        ctxPanel.add(new JLabel("Related files"), ctx);
+        ctx.gridx = 1;
+        var relatedIcon = new JLabel(smallInfoIcon);
+        relatedIcon.setToolTipText("Includes summaries of the most closely related files for each target file");
+        ctxPanel.add(relatedIcon, ctx);
+        ctx.gridx = 2;
         relatedClassesCombo = new JComboBox<>(new String[]{"0", "5", "10", "20"});
         relatedClassesCombo.setEditable(true);
         relatedClassesCombo.setSelectedItem("0");
-        contentPanel.add(relatedClassesCombo, gbc);
+        ctxPanel.add(relatedClassesCombo, ctx);
 
-        // Include Workspace Row
-        gbc.gridy++;
-        gbc.gridwidth = 1;
-        gbc.weighty = 0;
-        gbc.fill = GridBagConstraints.NONE;
-        gbc.gridx = 0;
-        gbc.weightx = 0.0;
-        gbc.anchor = GridBagConstraints.EAST;
-        JLabel workspaceLabel = new JLabel("Include Workspace");
-        contentPanel.add(workspaceLabel, gbc);
-
-        gbc.gridx = 1;
-        gbc.weightx = 0.0;
-        gbc.fill = GridBagConstraints.NONE;
-        gbc.anchor = GridBagConstraints.WEST;
-        var workspaceIcon = new JLabel(smallInfoIcon);
-        workspaceIcon.setToolTipText("Include the current Workspace contents with each file");
-        gbc.insets = new Insets(5, 2, 5, 5);
-        contentPanel.add(workspaceIcon, gbc);
-        gbc.insets = new Insets(5, 5, 5, 5);
-
-        gbc.gridx = 2;
-        gbc.weightx = 0.0;
-        gbc.fill = GridBagConstraints.NONE;
-        gbc.anchor = GridBagConstraints.WEST;
+        ctx.gridy++; ctx.gridx = 0;
+        ctxPanel.add(new JLabel("Workspace"), ctx);
+        ctx.gridx = 1;
+        var wsIcon = new JLabel(smallInfoIcon);
+        wsIcon.setToolTipText("Include the current Workspace contents with each file");
+        ctxPanel.add(wsIcon, ctx);
+        ctx.gridx = 2;
         includeWorkspaceCheckbox = new JCheckBox();
-        contentPanel.add(includeWorkspaceCheckbox, gbc);
+        ctxPanel.add(includeWorkspaceCheckbox, ctx);
 
-        // Invoke Architect on failure row
-        gbc.gridy++;
-        gbc.gridx = 0;
-        gbc.gridwidth = 1;
-        gbc.weightx = 0;
-        gbc.fill = GridBagConstraints.NONE;
-        gbc.anchor = GridBagConstraints.EAST;
-        JLabel architectLabel = new JLabel("Run");
-        contentPanel.add(architectLabel, gbc);
+        // ---- post-processing panel ------------------------
+        JPanel ppPanel = new JPanel();
+        ppPanel.setLayout(new BoxLayout(ppPanel, BoxLayout.Y_AXIS));
+        ppPanel.setBorder(BorderFactory.createTitledBorder("Post-processing"));
 
-        gbc.gridx = 1;
-        gbc.weightx = 0.0;
-        gbc.fill = GridBagConstraints.NONE;
-        gbc.anchor = GridBagConstraints.WEST;
-        JLabel architectIcon = new JLabel(smallInfoIcon);
-        architectIcon.setToolTipText("Post-processing to apply after parallel upgrade");
-        gbc.insets = new Insets(5, 2, 5, 5);
-        contentPanel.add(architectIcon, gbc);
-        gbc.insets = new Insets(5, 5, 5, 5);
-
-        gbc.gridx = 2;
-        gbc.weightx = 0.0;
-        gbc.fill = GridBagConstraints.HORIZONTAL;
-        gbc.anchor = GridBagConstraints.WEST;
         runPostProcessCombo = new JComboBox<>(new String[]{"None", "Architect", "Ask"});
-        contentPanel.add(runPostProcessCombo, gbc);
+        runPostProcessCombo.setAlignmentX(Component.LEFT_ALIGNMENT);
+        ppPanel.add(runPostProcessCombo);
 
-        // Include parallel output row
-        gbc.gridy++;
-        gbc.gridx = 0;
-        gbc.weightx = 0.0;
-        gbc.fill = GridBagConstraints.NONE;
-        gbc.anchor = GridBagConstraints.EAST;
-        JLabel inclOutputLabel = new JLabel("Include parallel output");
-        contentPanel.add(inclOutputLabel, gbc);
+        ppPanel.add(Box.createRigidArea(new Dimension(0, 5)));
 
-        gbc.gridx = 2;
-        gbc.weightx = 0.0;
-        gbc.fill = GridBagConstraints.NONE;
-        gbc.anchor = GridBagConstraints.WEST;
-        includeParallelOutputCheckbox = new JCheckBox();
+        includeParallelOutputCheckbox = new JCheckBox("Include parallel output");
+        includeParallelOutputCheckbox.setAlignmentX(Component.LEFT_ALIGNMENT);
         includeParallelOutputCheckbox.setSelected(true);
-        includeParallelOutputCheckbox.setEnabled(false); // only enabled for Ask
-        contentPanel.add(includeParallelOutputCheckbox, gbc);
+        includeParallelOutputCheckbox.setEnabled(false);
+        ppPanel.add(includeParallelOutputCheckbox);
 
         runPostProcessCombo.addActionListener(ev -> {
-            boolean isAsk = "Ask".equals(runPostProcessCombo.getSelectedItem());
-            includeParallelOutputCheckbox.setEnabled(isAsk);
-            if (isAsk) includeParallelOutputCheckbox.setSelected(true);
+            boolean ask = "Ask".equals(runPostProcessCombo.getSelectedItem());
+            includeParallelOutputCheckbox.setEnabled(ask);
+            if (ask) includeParallelOutputCheckbox.setSelected(true);
         });
+
+        // ---- add both panels ------------------------------
+        cmbc.gridx = 0;
+        combined.add(ctxPanel, cmbc);
+        cmbc.gridx = 1;
+        combined.add(ppPanel, cmbc);
+        contentPanel.add(combined, gbc);
 
         // Scope Panel at the bottom
         gbc.gridy++;
