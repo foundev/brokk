@@ -128,15 +128,14 @@ public class UpgradeAgentDialog extends JDialog {
         // Explanation Label
         gbc.gridx = 0;
         gbc.gridy = 0;
-        gbc.gridwidth = 2;
-        gbc.anchor = GridBagConstraints.NORTHWEST;
+        gbc.gridwidth = 3;
         JLabel explanationLabel = new JLabel("Upgrade Agent applies your instructions independently to multiple files in parallel:");
         contentPanel.add(explanationLabel, gbc);
 
         // Instructions TextArea
         gbc.gridx = 0;
         gbc.gridy++;
-        gbc.gridwidth = 2;
+        gbc.gridwidth = 3;
         gbc.weightx = 1.0;
         gbc.weighty = 1.0;
         gbc.fill = GridBagConstraints.BOTH;
@@ -153,10 +152,22 @@ public class UpgradeAgentDialog extends JDialog {
         gbc.weightx = 0.0;
         gbc.weighty = 0;
         gbc.fill = GridBagConstraints.NONE;
-        gbc.anchor = GridBagConstraints.NORTHEAST;
-        contentPanel.add(new JLabel("Model:"), gbc);
-        
-        gbc.gridx = 1;
+        gbc.anchor = GridBagConstraints.EAST;
+        contentPanel.add(new JLabel("Model"), gbc);
+
+        if (chrome.getProject().getDataRetentionPolicy() == MainProject.DataRetentionPolicy.IMPROVE_BROKK) {
+            gbc.gridx = 1;
+            gbc.weightx = 0.0;
+            gbc.fill = GridBagConstraints.NONE;
+            gbc.anchor = GridBagConstraints.WEST;
+            var deepSeekV3Icon = new JLabel(smallInfoIcon);
+        deepSeekV3Icon.setToolTipText("DeepSeek V3 is significantly faster than other options for parallel processing");
+        gbc.insets = new Insets(5, 2, 5, 5);
+        contentPanel.add(deepSeekV3Icon, gbc);
+        gbc.insets = new Insets(5, 5, 5, 5);
+        }
+
+        gbc.gridx = 2;
         gbc.weightx = 0.0;
         gbc.fill = GridBagConstraints.NONE;
         gbc.anchor = GridBagConstraints.WEST;
@@ -181,26 +192,18 @@ public class UpgradeAgentDialog extends JDialog {
 
         // Token Warning Label
         gbc.gridy++;
-        gbc.gridx = 1;
+        gbc.gridx = 2;
         tokenWarningLabel = new JLabel();
         tokenWarningLabel.setForeground(Color.RED);
         tokenWarningLabel.setVisible(false);
         contentPanel.add(tokenWarningLabel, gbc);
-
-        // DeepSeekV3 Speed Explanation Label (visible only if DataRetentionPolicy is IMPROVE_BROKK)
-        if (chrome.getProject().getDataRetentionPolicy() == MainProject.DataRetentionPolicy.IMPROVE_BROKK) {
-            gbc.gridy++;
-            gbc.gridx = 1;
-            JLabel deepSeekV3Label = new JLabel("DeepSeek V3 is significantly faster than other options for parallel processing");
-            contentPanel.add(deepSeekV3Label, gbc);
-        }
 
         // Scope Row
         gbc.gridy++;
         gbc.gridx = 0;
         gbc.weightx = 0.0;
         gbc.fill = GridBagConstraints.NONE;
-        gbc.anchor = GridBagConstraints.NORTHEAST;
+        gbc.anchor = GridBagConstraints.EAST;
         // Scope Cards Panel
         // This is now populated before being placed into the scope selection panel below
         scopeCardLayout = new CardLayout();
@@ -210,10 +213,10 @@ public class UpgradeAgentDialog extends JDialog {
         JPanel entireProjectPanel = new JPanel(new GridBagLayout());
         GridBagConstraints entireGbc = new GridBagConstraints();
         entireGbc.insets = new Insets(0, 0, 5, 5);
-        entireGbc.anchor = GridBagConstraints.NORTHWEST;
+        entireGbc.anchor = GridBagConstraints.WEST;
         entireGbc.gridx = 0;
         entireGbc.gridy = 0;
-        entireProjectPanel.add(new JLabel("Restrict to Language:"), entireGbc);
+        entireProjectPanel.add(new JLabel("Restrict to Language"), entireGbc);
 
         entireGbc.gridx = 1;
         entireGbc.weightx = 1.0;
@@ -323,7 +326,7 @@ public class UpgradeAgentDialog extends JDialog {
             public void changedUpdate(javax.swing.event.DocumentEvent e) { /* Not needed for plain text */ }
         });
         JScrollPane listFilesScrollPane = new JScrollPane(listFilesTextArea);
-        JLabel listFilesInstructions = new JLabel("Paste target files, separated by whitespace.");
+        JLabel listFilesInstructions = new JLabel("Paste target files, separated by whitespace");
         listFilesCardPanel.add(listFilesInstructions, BorderLayout.NORTH);
         listFilesCardPanel.add(listFilesScrollPane, BorderLayout.CENTER);
 
@@ -338,8 +341,8 @@ public class UpgradeAgentDialog extends JDialog {
         gbc.gridx = 0;
         gbc.weightx = 0.0;
         gbc.fill = GridBagConstraints.NONE;
-        gbc.anchor = GridBagConstraints.NORTHEAST;
-        JLabel perFileLabel = new JLabel("Per-file command:");
+        gbc.anchor = GridBagConstraints.EAST;
+        JLabel perFileLabel = new JLabel("Per-file command");
         contentPanel.add(perFileLabel, gbc);
 
         gbc.gridx = 1;
@@ -347,8 +350,10 @@ public class UpgradeAgentDialog extends JDialog {
         gbc.fill = GridBagConstraints.NONE;
         gbc.anchor = GridBagConstraints.WEST;
         JLabel perFileIcon = new JLabel(smallInfoIcon);
-        perFileIcon.setToolTipText("Command to run for each file. Use {{filepath}} for the file path. Blank for no command. The output will be sent to the LLM with each target file.");
+        perFileIcon.setToolTipText("Command to run for each file. Use {{filepath}} for the file path. Blank for no command. The output will be sent to the LLM with each target file");
+        gbc.insets = new Insets(5, 2, 5, 5);
         contentPanel.add(perFileIcon, gbc);
+        gbc.insets = new Insets(5, 5, 5, 5);
 
         gbc.gridx = 2;
         gbc.weightx = 1.0;
@@ -364,8 +369,8 @@ public class UpgradeAgentDialog extends JDialog {
         gbc.fill = GridBagConstraints.NONE;
         gbc.gridx = 0;
         gbc.weightx = 0.0;
-        gbc.anchor = GridBagConstraints.NORTHEAST;
-        JLabel relatedFilesLabel = new JLabel("Include related files:");
+        gbc.anchor = GridBagConstraints.EAST;
+        JLabel relatedFilesLabel = new JLabel("Include related files");
         contentPanel.add(relatedFilesLabel, gbc);
 
         gbc.gridx = 1;
@@ -373,8 +378,10 @@ public class UpgradeAgentDialog extends JDialog {
         gbc.fill = GridBagConstraints.NONE;
         gbc.anchor = GridBagConstraints.WEST;
         JLabel relatedFilesIcon = new JLabel(smallInfoIcon);
-        relatedFilesIcon.setToolTipText("Includes summaries of the most-closely-related files for each target file.");
+        relatedFilesIcon.setToolTipText("Includes summaries of the most-closely-related files for each target file");
+        gbc.insets = new Insets(5, 2, 5, 5);
         contentPanel.add(relatedFilesIcon, gbc);
+        gbc.insets = new Insets(5, 5, 5, 5);
 
         gbc.gridx = 2;
         gbc.weightx = 0.0;
@@ -392,15 +399,25 @@ public class UpgradeAgentDialog extends JDialog {
         gbc.fill = GridBagConstraints.NONE;
         gbc.gridx = 0;
         gbc.weightx = 0.0;
-        gbc.anchor = GridBagConstraints.NORTHEAST;
-        JLabel workspaceLabel = new JLabel("Include Workspace:");
+        gbc.anchor = GridBagConstraints.EAST;
+        JLabel workspaceLabel = new JLabel("Include Workspace");
         contentPanel.add(workspaceLabel, gbc);
 
         gbc.gridx = 1;
         gbc.weightx = 0.0;
         gbc.fill = GridBagConstraints.NONE;
         gbc.anchor = GridBagConstraints.WEST;
-        includeWorkspaceCheckbox = new JCheckBox("Include the current Workspace contents with each file");
+        var workspaceIcon = new JLabel(smallInfoIcon);
+        workspaceIcon.setToolTipText("Include the current Workspace contents with each file");
+        gbc.insets = new Insets(5, 2, 5, 5);
+        contentPanel.add(workspaceIcon, gbc);
+        gbc.insets = new Insets(5, 5, 5, 5);
+
+        gbc.gridx = 2;
+        gbc.weightx = 0.0;
+        gbc.fill = GridBagConstraints.NONE;
+        gbc.anchor = GridBagConstraints.WEST;
+        includeWorkspaceCheckbox = new JCheckBox();
         contentPanel.add(includeWorkspaceCheckbox, gbc);
 
         // Invoke Architect on failure row
@@ -409,8 +426,8 @@ public class UpgradeAgentDialog extends JDialog {
         gbc.gridwidth = 1;
         gbc.weightx = 0;
         gbc.fill = GridBagConstraints.NONE;
-        gbc.anchor = GridBagConstraints.NORTHEAST;
-        JLabel architectLabel = new JLabel("Invoke Architect on failure:");
+        gbc.anchor = GridBagConstraints.EAST;
+        JLabel architectLabel = new JLabel("Run Architect");
         contentPanel.add(architectLabel, gbc);
 
         gbc.gridx = 1;
@@ -418,21 +435,23 @@ public class UpgradeAgentDialog extends JDialog {
         gbc.fill = GridBagConstraints.NONE;
         gbc.anchor = GridBagConstraints.WEST;
         JLabel architectIcon = new JLabel(smallInfoIcon);
-        architectIcon.setToolTipText("If enabled, Brokk will run a build after processing and invoke an Architect agent on failure.");
+        architectIcon.setToolTipText("Brokk will run a build after processing and invoke an Architect agent to fix failures");
+        gbc.insets = new Insets(5, 2, 5, 5);
         contentPanel.add(architectIcon, gbc);
+        gbc.insets = new Insets(5, 5, 5, 5);
 
         gbc.gridx = 2;
         gbc.weightx = 0.0;
         gbc.fill = GridBagConstraints.NONE;
         gbc.anchor = GridBagConstraints.WEST;
-        invokeArchitectCheckbox = new JCheckBox("Automatically try to fix any resulting build errors");
+        invokeArchitectCheckbox = new JCheckBox();
         invokeArchitectCheckbox.setSelected(true); // enabled by default
         contentPanel.add(invokeArchitectCheckbox, gbc);
 
         // Scope Panel at the bottom
         gbc.gridy++;
         gbc.gridx = 0;
-        gbc.gridwidth = 2;
+        gbc.gridwidth = 3;
         gbc.weighty = 0.1;
         gbc.fill = GridBagConstraints.BOTH;
 
@@ -610,9 +629,9 @@ public class UpgradeAgentDialog extends JDialog {
             }
         }
 
-        String status = String.format("Found %d tracked files, %d untracked.", trackedCount, untrackedCount);
+        String status = String.format("Found %d tracked files, %d untracked", trackedCount, untrackedCount);
         if (untrackedCount > 0) {
-            status += " Untracked files will not be processed.";
+            status += " Untracked files will not be processed";
         }
         fileListStatusLabel.setText(status);
     }
@@ -620,13 +639,13 @@ public class UpgradeAgentDialog extends JDialog {
     private void onOK() {
         String instructions = instructionsArea.getText().trim();
         if (instructions.isEmpty()) {
-            JOptionPane.showMessageDialog(this, "Instructions cannot be empty.", "Input Error", JOptionPane.ERROR_MESSAGE);
+            JOptionPane.showMessageDialog(this, "Instructions cannot be empty", "Input Error", JOptionPane.ERROR_MESSAGE);
             return;
         }
 
         Service.FavoriteModel selectedFavorite = (Service.FavoriteModel) modelComboBox.getSelectedItem();
         if (selectedFavorite == null) {
-            JOptionPane.showMessageDialog(this, "Please select a model.", "Input Error", JOptionPane.ERROR_MESSAGE);
+            JOptionPane.showMessageDialog(this, "Please select a model", "Input Error", JOptionPane.ERROR_MESSAGE);
             return;
         }
 
@@ -649,15 +668,15 @@ public class UpgradeAgentDialog extends JDialog {
 
             if (filesToProcessList.isEmpty()) {
                 String message = (ALL_LANGUAGES_OPTION.equals(languageComboBox.getSelectedItem()) || languageComboBox.getSelectedItem() == null)
-                                 ? "No text files found in the project to process."
-                                 : "No text files found for the selected language (" + languageComboBox.getSelectedItem() + ").";
+                                 ? "No text files found in the project to process"
+                                 : "No text files found for the selected language (" + languageComboBox.getSelectedItem() + ")";
                 JOptionPane.showMessageDialog(this, message, "No Files", JOptionPane.INFORMATION_MESSAGE);
                 return;
             }
         } else if (listFilesScopeRadioButton.isSelected()) {
             String text = listFilesTextArea.getText();
             if (text.isBlank()) {
-                JOptionPane.showMessageDialog(this, "File list cannot be empty.", "Input Error", JOptionPane.ERROR_MESSAGE);
+                JOptionPane.showMessageDialog(this, "File list cannot be empty", "Input Error", JOptionPane.ERROR_MESSAGE);
                 return;
             }
             var trackedFiles = chrome.getProject().getRepo().getTrackedFiles();
@@ -675,12 +694,12 @@ public class UpgradeAgentDialog extends JDialog {
                                        .toList();
 
             if (filesToProcessList.isEmpty()) {
-                JOptionPane.showMessageDialog(this, "No tracked files found from the list.", "No Files", JOptionPane.INFORMATION_MESSAGE);
+                JOptionPane.showMessageDialog(this, "No tracked files found from the list", "No Files", JOptionPane.INFORMATION_MESSAGE);
                 return;
             }
         } else { // Select Files
             if (tableModel.getRowCount() == 0) {
-                JOptionPane.showMessageDialog(this, "No files have been selected.", "No Files", JOptionPane.INFORMATION_MESSAGE);
+                JOptionPane.showMessageDialog(this, "No files have been selected", "No Files", JOptionPane.INFORMATION_MESSAGE);
                 return;
             }
             List<ProjectFile> selectedFiles = new java.util.ArrayList<>();
@@ -697,14 +716,14 @@ public class UpgradeAgentDialog extends JDialog {
             try {
                 int kValue = Integer.parseInt(txt);
                 if (kValue < 0) {
-                    throw new NumberFormatException("Value must be non-negative.");
+                    throw new NumberFormatException("Value must be non-negative");
                 }
                 if (kValue > 0) {
                     relatedK = kValue;
                 }
             } catch (NumberFormatException ex) {
                 JOptionPane.showMessageDialog(this,
-                                              "Value for 'Include related classes' must be a non-negative integer.",
+                                              "Value for 'Include related classes' must be a non-negative integer",
                                               "Input Error", JOptionPane.ERROR_MESSAGE);
                 return;
             }
