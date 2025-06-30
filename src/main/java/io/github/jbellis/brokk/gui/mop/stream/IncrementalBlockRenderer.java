@@ -178,7 +178,7 @@ public final class IncrementalBlockRenderer {
      * Register or clear an HtmlCustomizer.
      */
     public void setHtmlCustomizer(HtmlCustomizer customizer) {
-        this.htmlCustomizer = customizer == null ? HtmlCustomizer.DEFAULT : customizer;
+        this.htmlCustomizer = customizer;
     }
 
     /**
@@ -297,7 +297,7 @@ public final class IncrementalBlockRenderer {
     public void applyUI(List<ComponentData> components) {
         if (compacted) {
             logger.warn("[COMPACTION] applyUI skipped - renderer already compacted. Incoming size: {}",
-                        components == null ? "null" : components.size());
+                        components.size());
             return;
         }
         assert SwingUtilities.isEventDispatchThread() : "applyUI must be called on EDT";
@@ -462,13 +462,6 @@ public final class IncrementalBlockRenderer {
 
         // Case 1: No initial markdown content. Mark as compacted and do nothing else.
         if (currentMarkdown.isEmpty()) {
-            compacted = true;
-            return;
-        }
-
-        // Case 2: buildCompactedSnapshot decided not to produce components (e.g., it thought it was already compacted, or content was empty).
-        // Mark as compacted.
-        if (mergedComponents == null) {
             compacted = true;
             return;
         }

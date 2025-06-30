@@ -11,7 +11,6 @@ import javax.imageio.ImageIO;
 import javax.swing.*;
 import java.awt.*;
 import java.awt.image.BufferedImage;
-import java.io.File;
 import java.io.IOException;
 import java.util.Objects;
 import java.util.Optional;
@@ -37,7 +36,6 @@ public class FileComparison extends SwingWorker<String, Object> {
     private final GuiTheme theme;
     private final boolean isMultipleCommitsContext;
 
-    // Constructor
     private FileComparison(FileComparisonBuilder builder, GuiTheme theme, ContextManager contextManager) {
         this.mainPanel = builder.mainPanel;
         this.leftSource = Objects.requireNonNull(builder.leftSource);
@@ -100,11 +98,7 @@ public class FileComparison extends SwingWorker<String, Object> {
         if (diffNode == null) {
             diffNode = createDiffNode(leftSource, rightSource);
         }
-        if (diffNode != null) { // createDiffNode can return null if sources are problematic though current logic implies non-null
-            diffNode.diff();
-        } else {
-            return "Failed to create diff node from sources.";
-        }
+        diffNode.diff();
         return null;
     }
 
@@ -116,7 +110,7 @@ public class FileComparison extends SwingWorker<String, Object> {
         }
 
         // For StringSource, originalTitle is typically a commit ID or "HEAD"
-        if (originalTitle == null || originalTitle.isBlank() || originalTitle.equals("HEAD") || originalTitle.startsWith("[No Parent]")) {
+        if (originalTitle.isBlank() || originalTitle.equals("HEAD") || originalTitle.startsWith("[No Parent]")) {
             return originalTitle; // Handle special markers or blank as is
         }
 

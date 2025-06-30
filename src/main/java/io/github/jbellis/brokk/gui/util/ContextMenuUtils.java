@@ -238,7 +238,7 @@ public final class ContextMenuUtils {
             }, "Edit files");
         });
         // Disable for dependency projects
-        if (cm.getProject() != null && !cm.getProject().hasGit()) {
+        if (!cm.getProject().hasGit()) {
             editItem.setEnabled(false);
             editItem.setToolTipText("Editing not available without Git");
         }

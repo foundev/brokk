@@ -134,7 +134,7 @@ public class SessionsDialog extends JDialog {
         // Set up icon renderer for first column of activity table
         activityTable.getColumnModel().getColumn(0).setCellRenderer(new DefaultTableCellRenderer() {
             @Override
-            public Component getTableCellRendererComponent(JTable table, Object value,
+            public Component getTableCellRendererComponent(JTable table, @Nullable Object value,
                                                           boolean isSelected, boolean hasFocus, int row, int column) {
                 JLabel label = (JLabel)super.getTableCellRendererComponent(
                         table, value, isSelected, hasFocus, row, column);
@@ -361,11 +361,6 @@ public class SessionsDialog extends JDialog {
     }
 
     private void updatePreviewPanels(Context context) {
-        if (context == null) {
-            clearPreviewPanels();
-            return;
-        }
-
         // Update workspace panel with selected context
         workspacePanel.populateContextTable(context);
 
@@ -513,9 +508,7 @@ public class SessionsDialog extends JDialog {
     @Override
     public void dispose() {
         // Clean up MOP resources
-        if (markdownOutputPanel != null) {
-            markdownOutputPanel.dispose();
-        }
+        markdownOutputPanel.dispose();
         super.dispose();
     }
 }

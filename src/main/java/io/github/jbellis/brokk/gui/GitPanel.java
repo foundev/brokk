@@ -30,15 +30,15 @@ public class GitPanel extends JPanel
     private final ContextManager contextManager;
     private final JTabbedPane tabbedPane;
 
-    // The “Commit” tab, now delegated to GitCommitTab
+    // The “Changes” tab, now delegated to GitCommitTab
     private final GitCommitTab commitTab;
 
-    // The “Log” tab extracted into its own class
+    // The “Log” tab
     private final GitLogTab gitLogTab;
 
     // The "Pull Requests" tab - conditionally added
-    @Nullable
-    private GitPullRequestsTab pullRequestsTab; // Keep if you still want PRs
+    @Nullable 
+    private GitPullRequestsTab pullRequestsTab;
 
     // The "Issues" tab - conditionally added
     @Nullable
@@ -92,9 +92,9 @@ public class GitPanel extends JPanel
         tabbedPane = new JTabbedPane();
         add(tabbedPane, BorderLayout.CENTER);
 
-        // 1) Commit tab (moved to GitCommitTab)
+        // 1) Changes tab (displays uncommitted changes, uses GitCommitTab internally)
         commitTab = new GitCommitTab(chrome, contextManager, this);
-        tabbedPane.addTab("Commit", commitTab);
+        tabbedPane.addTab("Changes", commitTab);
 
         // 2) Log tab (moved to GitLogTab)
         gitLogTab = new GitLogTab(chrome, contextManager);
@@ -177,7 +177,7 @@ public class GitPanel extends JPanel
         SwingUtilities.invokeLater(() -> {
             var border = getBorder();
             if (border instanceof TitledBorder titledBorder) {
-                String newTitle = branchName != null && !branchName.isBlank()
+                String newTitle = !branchName.isBlank()
                                   ? "Git (" + branchName + ") ▼"
                                   : "Git ▼";
                 titledBorder.setTitle(newTitle);
@@ -211,14 +211,6 @@ public class GitPanel extends JPanel
      */
     public void updateCommitPanel() {
         commitTab.updateCommitPanel();
-    }
-
-    /**
-     * Allows external code to set the commit message (e.g. from an LLM suggestion).
-     */
-    public void setCommitMessageText(String message)
-    {
-        commitTab.setCommitMessageText(message);
     }
 
     /**
@@ -335,7 +327,8 @@ public class GitPanel extends JPanel
         }
     }
 
-    public GitCommitTab getCommitTab() {
+    public GitCommitTab getCommitTab()
+    {
         return commitTab;
     }
 

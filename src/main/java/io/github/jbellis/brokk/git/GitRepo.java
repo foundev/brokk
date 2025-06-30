@@ -65,12 +65,26 @@ public class GitRepo implements Closeable, IGitRepo {
     private @Nullable Set<ProjectFile> trackedFilesCache = null;
 
     /**
-     * Returns true if the directory has a .git folder or is within a Git worktree.
+     * Returns true if the directory has a .git folder, is a valid repository,
+     * and contains at least one local branch.
      */
     public static boolean hasGitRepo(Path dir) {
-        FileRepositoryBuilder builder = new FileRepositoryBuilder();
-        builder.findGitDir(dir.toFile());
-        return builder.getGitDir() != null;
+        try {
+            var builder = new FileRepositoryBuilder().findGitDir(dir.toFile());
+            if (builder.getGitDir() == null) {
+                return false;
+            }
+            try (var repo = builder.build()) {
+                // A valid repo for Brokk must have at least one local branch
+                return !repo.getRefDatabase()
+                            .getRefsByPrefix("refs/heads/")
+                            .isEmpty();
+            }
+        } catch (IOException e) {
+            // Corrupted or unreadable repo -> treat as non-git
+            logger.warn("Could not read git repo at {}: {}", dir, e.getMessage());
+            return false;
+        }
     }
 
     /**
@@ -762,6 +776,34 @@ public class GitRepo implements Closeable, IGitRepo {
     }
 
     /**
+     * True iff {@code branchName} is one of this repository’s **local** branches.
+     * Falls back to {@code false} if the branch list cannot be obtained.
+     */
+    public boolean isLocalBranch(String branchName)
+    {
+        try {
+            return listLocalBranches().contains(branchName);
+        } catch (GitAPIException e) {
+            logger.warn("Unable to enumerate local branches", e);
+            return false;
+        }
+    }
+
+    /**
+     * True iff {@code branchName} is one of this repository’s **remote** branches
+     * (e.g. origin/main).  Falls back to {@code false} on error.
+     */
+    public boolean isRemoteBranch(String branchName)
+    {
+        try {
+            return listRemoteBranches().contains(branchName);
+        } catch (GitAPIException e) {
+            logger.warn("Unable to enumerate remote branches", e);
+            return false;
+        }
+    }
+
+    /**
      * Checkout a specific branch
      */
     public void checkout(String branchName) throws GitAPIException {
@@ -979,10 +1021,6 @@ public class GitRepo implements Closeable, IGitRepo {
 
         // Perform squash merge
         ObjectId resolvedBranch = resolve(branchName);
-        if (resolvedBranch == null) {
-            logger.error("Failed to resolve branch: {}", branchName);
-            throw new GitAPIException("Failed to resolve branch: " + branchName) {};
-        }
 
         // Check repository state before merge
         var status = git.status().call();
@@ -1237,6 +1275,7 @@ public class GitRepo implements Closeable, IGitRepo {
     /**
      * Get current branch name
      */
+    @Override
     public String getCurrentBranch() throws GitAPIException {
         try {
             var branch = repository.getBranch();
@@ -1901,6 +1940,12 @@ public class GitRepo implements Closeable, IGitRepo {
         }
     }
 
+    public static class NoDefaultBranchException extends GitAPIException {
+        public NoDefaultBranchException(String message) {
+            super(message);
+        }
+    }
+
     private static class GitWrappedIOException extends GitAPIException {
         public GitWrappedIOException(IOException e) {
             super(e.getMessage(), e);
@@ -2211,37 +2256,26 @@ public class GitRepo implements Closeable, IGitRepo {
             RevCommit sourceCommit = revWalk.parseCommit(sourceHead);
             revWalk.markStart(sourceCommit);
 
-            RevCommit targetCommit = null;
-            if (targetHead != null) {
-                targetCommit = revWalk.parseCommit(targetHead);
-            }
+            RevCommit targetCommit = revWalk.parseCommit(targetHead);
 
             if (excludeMergeCommitsFromTarget) {
-                if (targetCommit != null) {
-                    revWalk.markUninteresting(targetCommit); // Hide everything reachable from target
-                }
+                revWalk.markUninteresting(targetCommit); // Hide everything reachable from target
                 revWalk.setRevFilter(RevFilter.NO_MERGES); // Exclude all merge commits
             } else {
                 // Original logic for "target..source"
-                if (targetCommit != null) {
-                    ObjectId mergeBaseId = computeMergeBase(sourceCommit.getId(), targetCommit.getId());
-                    if (mergeBaseId != null) {
-                        // The RevCommit must be parsed by this revWalk instance to be used by it
-                        RevCommit mergeBaseForRevWalk = revWalk.parseCommit(mergeBaseId);
-                        revWalk.markUninteresting(mergeBaseForRevWalk);
-                    } else {
-                        // No common ancestor. This implies targetBranchName is either an ancestor of sourceBranchName,
-                        // or they are unrelated. To get `target..source` behavior, mark target as uninteresting.
-                        logger.warn("No common merge base found between {} ({}) and {} ({}). Listing commits from {} not on {}.",
-                                    sourceBranchName, sourceCommit.getName(),
-                                    targetBranchName, targetCommit.getName(),
-                                    sourceBranchName, targetBranchName);
-                        revWalk.markUninteresting(targetCommit);
-                    }
+                ObjectId mergeBaseId = computeMergeBase(sourceCommit.getId(), targetCommit.getId());
+                if (mergeBaseId != null) {
+                    // The RevCommit must be parsed by this revWalk instance to be used by it
+                    RevCommit mergeBaseForRevWalk = revWalk.parseCommit(mergeBaseId);
+                    revWalk.markUninteresting(mergeBaseForRevWalk);
                 } else {
-                    logger.warn("Target branch {} could not be resolved. Listing all commits from source branch {}.",
-                                targetBranchName, sourceBranchName);
-                    // No target head, so list all commits from sourceCommit. Nothing to mark uninteresting.
+                    // No common ancestor. This implies targetBranchName is either an ancestor of sourceBranchName,
+                    // or they are unrelated. To get `target..source` behavior, mark target as uninteresting.
+                    logger.warn("No common merge base found between {} ({}) and {} ({}). Listing commits from {} not on {}.",
+                                sourceBranchName, sourceCommit.getName(),
+                                targetBranchName, targetCommit.getName(),
+                                sourceBranchName, targetBranchName);
+                    revWalk.markUninteresting(targetCommit);
                 }
             }
 
@@ -2387,6 +2421,7 @@ public class GitRepo implements Closeable, IGitRepo {
                     RebaseResult rebaseResult = git.rebase().setUpstream(targetBranchId.getName()).call();
                     RebaseResult.Status status = rebaseResult.getStatus();
                     logger.debug("Rebase simulation result: {}", status);
+                    logger.debug("Rebase result conflicts: {}", rebaseResult.getConflicts());
 
                     if (status == RebaseResult.Status.CONFLICTS || status == RebaseResult.Status.STOPPED) {
                         // Get conflicts before aborting, just in case abort clears them from the result object
@@ -2449,11 +2484,18 @@ public class GitRepo implements Closeable, IGitRepo {
                         mergeCmd.setSquash(true);
                     } else { // MERGE_COMMIT
                         mergeCmd.setSquash(false);
-                        mergeCmd.setFastForward(MergeCommand.FastForwardMode.NO_FF);
+                        // Do NOT force NO_FF during conflict-check simulation —
+                        // allowing a fast-forward here avoids JGit reporting
+                        // MergeStatus.FAILED when a fast-forward would succeed.
+                        // The real merge (performMerge) still sets NO_FF so the
+                        // actual operation behaves as expected.
                     }
                     MergeResult mergeResult = mergeCmd.call();
                     MergeResult.MergeStatus status = mergeResult.getMergeStatus();
                     logger.debug("Merge simulation result: {}", status);
+                    logger.debug("Merge result conflicts map: {}", mergeResult.getConflicts());
+                    logger.debug("Merge result failing paths: {}", mergeResult.getFailingPaths());
+                    logger.debug("Merge result checkout conflicts: {}", mergeResult.getCheckoutConflicts());
 
                     if (status == MergeResult.MergeStatus.CONFLICTING) {
                         var conflicts = requireNonNull(mergeResult.getConflicts());
@@ -2505,5 +2547,62 @@ public class GitRepo implements Closeable, IGitRepo {
             }
             throw e;
         }
+    }
+
+    /**
+     * Attempts to determine the repository's default branch.
+     * Order of preference:
+     *   1. The symbolic ref refs/remotes/origin/HEAD (remote's default)
+     *   2. Local branch named 'main'
+     *   3. Local branch named 'master'
+     *   4. First local branch (alphabetically)
+     * @return The default branch name.
+     * @throws NoDefaultBranchException if no default branch can be determined (e.g., in an empty repository).
+     * @throws GitAPIException if an error occurs while accessing Git data.
+     */
+    @Override
+    public String getDefaultBranch() throws GitAPIException {
+        // 1. Check remote HEAD symbolic ref (typically origin/HEAD)
+        try {
+            var remoteHeadRef = repository.findRef("refs/remotes/origin/HEAD");
+            if (remoteHeadRef != null && remoteHeadRef.isSymbolic()) {
+                var target = remoteHeadRef.getTarget().getName(); // e.g., "refs/remotes/origin/main"
+                if (target.startsWith("refs/remotes/origin/")) {
+                    var branchName = target.substring("refs/remotes/origin/".length());
+                    // Verify this branch actually exists locally, otherwise it's not a usable default
+                    if (listLocalBranches().contains(branchName)) {
+                        logger.debug("Default branch from origin/HEAD: {}", branchName);
+                        return branchName;
+                    }
+                }
+            }
+        } catch (IOException e) {
+            // Log and continue, as this is just one way to find the default
+            logger.warn("IOException while trying to read refs/remotes/origin/HEAD", e);
+        }
+
+        // 2. Check for local 'main'
+        var localBranches = listLocalBranches();
+        if (localBranches.contains("main")) {
+            logger.debug("Default branch found: local 'main'");
+            return "main";
+        }
+
+        // 3. Check for local 'master'
+        if (localBranches.contains("master")) {
+            logger.debug("Default branch found: local 'master'");
+            return "master";
+        }
+
+        // 4. Fallback to the first local branch alphabetically
+        if (!localBranches.isEmpty()) {
+            Collections.sort(localBranches);
+            var firstBranch = localBranches.getFirst();
+            logger.debug("Default branch fallback: alphabetically first local branch '{}'", firstBranch);
+            return firstBranch;
+        }
+
+        // 5. No branches found
+        throw new NoDefaultBranchException("Repository has no local branches and no default can be determined.");
     }
 }

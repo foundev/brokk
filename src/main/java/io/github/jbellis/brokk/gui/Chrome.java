@@ -3,7 +3,6 @@ package io.github.jbellis.brokk.gui;
 import dev.langchain4j.data.message.ChatMessage;
 import dev.langchain4j.data.message.ChatMessageType;
 import io.github.jbellis.brokk.*;
-import io.github.jbellis.brokk.analyzer.BrokkFile;
 import io.github.jbellis.brokk.analyzer.ExternalFile;
 import io.github.jbellis.brokk.analyzer.ProjectFile;
 import io.github.jbellis.brokk.context.FrozenFragment;
@@ -42,7 +41,6 @@ import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.Optional;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutionException;
 
@@ -86,6 +84,8 @@ public class Chrome implements AutoCloseable, IConsoleIO, IContextManager.Contex
     // Global Copy/Paste Actions
     private final GlobalCopyAction globalCopyAction;
     private final GlobalPasteAction globalPasteAction;
+    // Global Toggle Mic Action
+    private final ToggleMicAction globalToggleMicAction;
     // necessary for undo/redo because clicking on menubar takes focus from whatever had it
     @Nullable private Component lastRelevantFocusOwner = null;
 
@@ -141,6 +141,7 @@ public class Chrome implements AutoCloseable, IConsoleIO, IContextManager.Contex
         this.globalRedoAction = new GlobalRedoAction("Redo");
         this.globalCopyAction = new GlobalCopyAction("Copy");
         this.globalPasteAction = new GlobalPasteAction("Paste");
+        this.globalToggleMicAction = new ToggleMicAction("Toggle Microphone");
 
         initializeThemeManager();
 
@@ -218,6 +219,7 @@ public class Chrome implements AutoCloseable, IConsoleIO, IContextManager.Contex
             globalRedoAction.updateEnabledState();
             globalCopyAction.updateEnabledState();
             globalPasteAction.updateEnabledState();
+            globalToggleMicAction.updateEnabledState();
         });
 
         // Listen for context changes (Chrome already implements IContextManager.ContextListener)
@@ -360,8 +362,7 @@ public class Chrome implements AutoCloseable, IConsoleIO, IContextManager.Contex
                 gitRepo.add(filesToAdd);
                 systemOutput("Added shared .brokk project files (style.md, review.md, project.properties) to git");
 
-                // Update commit message
-                gitPanel.setCommitMessageText("Update for Brokk project files");
+                // Refresh the commit panel to show the new files
                 updateCommitPanel();
             } catch (Exception e) {
                 logger.error(e);
@@ -432,7 +433,7 @@ public class Chrome implements AutoCloseable, IConsoleIO, IContextManager.Contex
         logger.debug("Loading context.  active={}, new={}", activeContext, ctx);
         // If skipUpdateOutputPanelOnContextChange is true it is not updating the MOP => end of runSessions should not scroll MOP away
 
-        final boolean updateOutput = (activeContext != ctx && !isSkipNextUpdateOutputPanelOnContextChange());
+        final boolean updateOutput = (!activeContext.equals(ctx) && !isSkipNextUpdateOutputPanelOnContextChange());
         setSkipNextUpdateOutputPanelOnContextChange(false);
         activeContext = ctx;
 
@@ -576,6 +577,11 @@ public class Chrome implements AutoCloseable, IConsoleIO, IContextManager.Contex
         var pasteKeyStroke = KeyStroke.getKeyStroke(KeyEvent.VK_V, Toolkit.getDefaultToolkit().getMenuShortcutKeyMaskEx());
         rootPane.getInputMap(JComponent.WHEN_IN_FOCUSED_WINDOW).put(pasteKeyStroke, "globalPaste");
         rootPane.getActionMap().put("globalPaste", globalPasteAction);
+
+        // Cmd/Ctrl+L => toggle microphone
+        var toggleMicKeyStroke = io.github.jbellis.brokk.gui.util.KeyboardShortcutUtil.createPlatformShortcut(KeyEvent.VK_L);
+        rootPane.getInputMap(JComponent.WHEN_IN_FOCUSED_WINDOW).put(toggleMicKeyStroke, "globalToggleMic");
+        rootPane.getActionMap().put("globalToggleMic", globalToggleMicAction);
     }
 
     @Override
@@ -628,7 +634,7 @@ public class Chrome implements AutoCloseable, IConsoleIO, IContextManager.Contex
             }
 
             // Update label text (show only the latest message)
-            systemMessageLabel.setText(message);
+            systemMessageLabel.setText(timestampedMessage);
 
             // Update tooltip with all recent messages
             StringBuilder tooltipText = new StringBuilder("<html>");
@@ -678,6 +684,7 @@ public class Chrome implements AutoCloseable, IConsoleIO, IContextManager.Contex
             globalRedoAction.updateEnabledState();
             globalCopyAction.updateEnabledState();
             globalPasteAction.updateEnabledState();
+            globalToggleMicAction.updateEnabledState();
 
             // Also update HistoryOutputPanel's local buttons
             historyOutputPanel.updateUndoRedoButtonStates();
@@ -1310,6 +1317,10 @@ public class Chrome implements AutoCloseable, IConsoleIO, IContextManager.Contex
         return globalPasteAction;
     }
 
+    public Action getGlobalToggleMicAction() {
+        return globalToggleMicAction;
+    }
+
     private boolean isFocusInContextArea(@org.jetbrains.annotations.Nullable Component focusOwner) {
         if (focusOwner == null) return false;
         // Check if focus is within ContextPanel or HistoryOutputPanel's historyTable
@@ -1458,6 +1469,29 @@ public class Chrome implements AutoCloseable, IConsoleIO, IContextManager.Contex
                 canPasteNow = true;
             }
             setEnabled(canPasteNow);
+        }
+    }
+
+    // --- Global Toggle Mic Action Class ---
+    private class ToggleMicAction extends AbstractAction {
+        public ToggleMicAction(String name) {
+            super(name);
+        }
+
+        @Override
+        public void actionPerformed(ActionEvent e) {
+            InstructionsPanel currentInstructionsPanel = Chrome.this.instructionsPanel;
+            VoiceInputButton micButton = currentInstructionsPanel.getVoiceInputButton();
+            if (micButton.isEnabled()) {
+                micButton.doClick();
+            }
+        }
+
+        public void updateEnabledState() {
+            InstructionsPanel currentInstructionsPanel = Chrome.this.instructionsPanel;
+            VoiceInputButton micButton = currentInstructionsPanel.getVoiceInputButton();
+            boolean canToggleMic = micButton.isEnabled();
+            setEnabled(canToggleMic);
         }
     }
 
