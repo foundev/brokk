@@ -2,6 +2,7 @@ import sbt.*
 import sbt.Keys.*
 import sbtbuildinfo.BuildInfoPlugin
 import sbtbuildinfo.BuildInfoPlugin.autoImport.*
+import scala.sys.process._
 
 scalaVersion := "3.6.4"
 version := "0.11.1"
@@ -206,7 +207,67 @@ javaOptions ++= Seq(
   "--add-modules=jdk.incubator.vector",
   "-Dbrokk.devmode=true",
   "-Dbrokk.upgradeagenttab=true"
-)
+) ++ sys.env.get("UI_SCALE").map { scale =>
+  Seq(
+    s"-Dsun.java2d.uiScale=$scale",
+    "-Dsun.java2d.dpiaware=true"
+  )
+}.getOrElse(Seq.empty)
+
 testFrameworks += new TestFramework("com.github.sbt.junit.JupiterFramework")
 Test / javacOptions := (Compile / javacOptions).value.filterNot(_.contains("-Xplugin:ErrorProne"))
 Test / fork := true
+
+// Task to bundle JavaScript with Rollup only when sources change
+lazy val bundleJs = taskKey[File]("Bundle UI code with Rollup only when stale")
+
+bundleJs := {
+  val log = streams.value.log
+  val root = baseDirectory.value
+  val frontendDir = root / "frontend-mop"
+  val outputDir = root / "src" / "main" / "resources" / "mop-web"
+  val bundleFile = outputDir / "bundle.js"
+  IO.createDirectory(outputDir)
+
+  // Inputs that trigger rebuild
+  val inputs: Seq[File] = 
+    (frontendDir / "src" ** "*").get ++
+    Seq(
+      frontendDir / "package.json",
+      frontendDir / "package-lock.json",
+      frontendDir / "rollup.config.mjs"
+    ).filter(_.exists)
+
+  // Cache directory to store input hashes
+  val cacheDir = streams.value.cacheDirectory / "rollup"
+
+  // Cached function to avoid rebuild if inputs haven't changed
+  val cachedBuild = FileFunction.cached(cacheDir, inStyle = FilesInfo.hash) { _ =>
+    log.info("JavaScript sources changed - rebuilding bundle")
+    
+    // Ensure dependencies are installed (fast if already present)
+    Process("npm ci", frontendDir) ! log
+    
+    // Run the build
+    if ((Process("npm run build", frontendDir) ! log) != 0) {
+      sys.error("Rollup build failed")
+    }
+    
+    Set(bundleFile)
+  }
+
+  // Execute the cached function (skipped if inputs unchanged)
+  cachedBuild(inputs.toSet)
+  
+  // Safety check
+  if (!bundleFile.exists) {
+    log.warn("Bundle file not found after build attempt - frontend directory may not be set up")
+  }
+  
+  bundleFile
+}
+
+// Add the bundle to resources so it is included in the JAR
+Compile / resourceGenerators += Def.task {
+  Seq(bundleJs.value)
+}.taskValue
