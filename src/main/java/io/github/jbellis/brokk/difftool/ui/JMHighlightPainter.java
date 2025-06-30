@@ -4,7 +4,11 @@ import io.github.jbellis.brokk.difftool.utils.Colors;
 import javax.swing.text.BadLocationException;
 import javax.swing.text.DefaultHighlighter;
 import javax.swing.text.JTextComponent;
+
 import io.github.jbellis.brokk.gui.SwingUtil;
+import org.apache.logging.log4j.LogManager;
+import org.apache.logging.log4j.Logger;
+
 import java.awt.*;
 
 /**
