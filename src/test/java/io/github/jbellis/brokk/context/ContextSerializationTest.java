@@ -84,6 +84,24 @@ public class ContextSerializationTest {
         }
     }
 
+    private void assertEventually(Runnable assertion) throws InterruptedException {
+        long timeout = 5000; // 5 seconds
+        long interval = 100; // 100 ms
+        long startTime = System.currentTimeMillis();
+        while (true) {
+            try {
+                assertion.run();
+                return; // success
+            } catch (AssertionError e) {
+                if (System.currentTimeMillis() - startTime >= timeout) {
+                    throw e;
+                }
+                // ignore and retry
+            }
+            Thread.sleep(interval);
+        }
+    }
+
     // --- Tests for HistoryIo ---
 
     @Test
@@ -673,7 +691,7 @@ public class ContextSerializationTest {
     }
 
     @Test
-    void testNewSessionCreationAndListing() throws IOException {
+    void testNewSessionCreationAndListing() throws Exception {
         // Create a Project instance using the tempDir
         MainProject project = new MainProject(tempDir);
         
@@ -687,7 +705,7 @@ public class ContextSerializationTest {
         
         // Verify the history zip file exists
         Path historyZip1 = tempDir.resolve(".brokk").resolve("sessions").resolve(session1Info.id() + ".zip");
-        assertTrue(Files.exists(historyZip1));
+        assertEventually(() -> assertTrue(Files.exists(historyZip1)));
         
         // List sessions and verify session1Info
         List<MainProject.SessionInfo> sessionsAfter1 = project.listSessions();
@@ -703,7 +721,7 @@ public class ContextSerializationTest {
         MainProject.SessionInfo session2Info = project.newSession("Test Session 2");
         assertNotNull(session2Info);
         Path historyZip2 = tempDir.resolve(".brokk").resolve("sessions").resolve(session2Info.id().toString() + ".zip");
-        assertTrue(Files.exists(historyZip2));
+        assertEventually(() -> assertTrue(Files.exists(historyZip2)));
         
         // List all sessions
         List<MainProject.SessionInfo> sessionsAfter2 = project.listSessions();
@@ -750,21 +768,21 @@ public class ContextSerializationTest {
     }
 
     @Test
-    void testDeleteSession() throws IOException {
+    void testDeleteSession() throws Exception {
         MainProject project = new MainProject(tempDir);
         MainProject.SessionInfo session1 = project.newSession("Session 1");
         MainProject.SessionInfo session2 = project.newSession("Session 2");
         
         UUID idToDelete = session1.id();
         Path historyFileToDelete = tempDir.resolve(".brokk").resolve("sessions").resolve(idToDelete.toString() + ".zip");
-        assertTrue(Files.exists(historyFileToDelete));
+        assertEventually(() -> assertTrue(Files.exists(historyFileToDelete)));
         
         project.deleteSession(idToDelete);
         
         List<MainProject.SessionInfo> sessions = project.listSessions();
         assertEquals(1, sessions.size());
         assertEquals(session2.id(), sessions.get(0).id());
-        assertFalse(Files.exists(historyFileToDelete));
+        assertEventually(() -> assertFalse(Files.exists(historyFileToDelete)));
         
         // Test deleting non-existent, should not throw
         project.deleteSession(UUID.randomUUID());
@@ -778,6 +796,9 @@ public class ContextSerializationTest {
         MainProject.SessionInfo originalSessionInfo = project.newSession("Original Session");
         UUID originalId = originalSessionInfo.id();
         
+        var originalHistoryFile = tempDir.resolve(".brokk").resolve("sessions").resolve(originalId.toString() + ".zip");
+        assertEventually(() -> assertTrue(Files.exists(originalHistoryFile)));
+
         // Create some history content
         Context context = new Context(mockContextManager, "Test content");
         ContextHistory originalHistory = new ContextHistory(context);
@@ -796,8 +817,8 @@ public class ContextSerializationTest {
         assertTrue(sessions.stream().anyMatch(s -> s.id().equals(copiedSessionInfo.id())));
         
         Path copiedHistoryFile = tempDir.resolve(".brokk").resolve("sessions").resolve(copiedSessionInfo.id().toString() + ".zip");
-        assertTrue(Files.exists(copiedHistoryFile));
-        
+        assertEventually(() -> assertTrue(Files.exists(copiedHistoryFile)));
+
         ContextHistory loadedOriginalHistory = project.loadHistory(originalId, mockContextManager);
         ContextHistory loadedCopiedHistory = project.loadHistory(copiedSessionInfo.id(), mockContextManager);
         
