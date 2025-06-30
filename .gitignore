@@ -4,13 +4,7 @@ target/
 !**/src/test/**/target/
 
 ### IntelliJ IDEA ###
-.idea/modules.xml
-.idea/workspace.xml
-.idea/jarRepositories.xml
-.idea/compiler.xml
-.idea/libraries/
-.idea/scala_settings.xml
-.idea/misc.xml
+.idea
 *.iws
 *.iml
 *.ipr
@@ -54,3 +48,5 @@ project/project/
 !.brokk/style.md
 !.brokk/review.md
 !.brokk/project.properties
+/frontend-mop/node_modules/
+/.idea/shelf/Uncommitted_changes_before_Checkout_at_2025-05-13_00_01_[Changes]/shelved.patch

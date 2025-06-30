@@ -218,56 +218,27 @@ testFrameworks += new TestFramework("com.github.sbt.junit.JupiterFramework")
 Test / javacOptions := (Compile / javacOptions).value.filterNot(_.contains("-Xplugin:ErrorProne"))
 Test / fork := true
 
-// Task to bundle JavaScript with Rollup only when sources change
-lazy val bundleJs = taskKey[File]("Bundle UI code with Rollup only when stale")
+lazy val bundleJs = taskKey[Unit]("Bundle UI code with Vite")
 
 bundleJs := {
   val log = streams.value.log
   val root = baseDirectory.value
   val frontendDir = root / "frontend-mop"
   val outputDir = root / "src" / "main" / "resources" / "mop-web"
-  val bundleFile = outputDir / "bundle.js"
   IO.createDirectory(outputDir)
 
-  // Inputs that trigger rebuild
-  val inputs: Seq[File] = 
-    (frontendDir / "src" ** "*").get ++
-    Seq(
-      frontendDir / "package.json",
-      frontendDir / "package-lock.json",
-      frontendDir / "rollup.config.mjs"
-    ).filter(_.exists)
+  log.info("Building frontend bundle")
 
-  // Cache directory to store input hashes
-  val cacheDir = streams.value.cacheDirectory / "rollup"
-
-  // Cached function to avoid rebuild if inputs haven't changed
-  val cachedBuild = FileFunction.cached(cacheDir, inStyle = FilesInfo.hash) { _ =>
-    log.info("JavaScript sources changed - rebuilding bundle")
-    
-    // Ensure dependencies are installed (fast if already present)
-    Process("npm ci", frontendDir) ! log
-    
-    // Run the build
-    if ((Process("npm run build", frontendDir) ! log) != 0) {
-      sys.error("Rollup build failed")
-    }
-    
-    Set(bundleFile)
+  // Ensure dependencies are installed (fast if already present)
+  if ((Process("npm ci", frontendDir) ! log) != 0) {
+    sys.error("npm ci failed")
   }
 
-  // Execute the cached function (skipped if inputs unchanged)
-  cachedBuild(inputs.toSet)
-  
-  // Safety check
-  if (!bundleFile.exists) {
-    log.warn("Bundle file not found after build attempt - frontend directory may not be set up")
+  // Run the build
+  if ((Process("npm run build", frontendDir) ! log) != 0) {
+    sys.error("Vite build failed")
   }
-  
-  bundleFile
 }
 
-// Add the bundle to resources so it is included in the JAR
-Compile / resourceGenerators += Def.task {
-  Seq(bundleJs.value)
-}.taskValue
+// Alias for buildMop
+addCommandAlias("buildMop", "bundleJs")
