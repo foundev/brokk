@@ -1,5 +1,6 @@
 package io.github.jbellis.brokk.gui.mop.webview;
 
+import dev.langchain4j.data.message.ChatMessageType;
 import javafx.application.Platform;
 import javafx.embed.swing.JFXPanel;
 import javafx.scene.Scene;
@@ -44,10 +45,17 @@ public final class MOPWebViewHost extends JPanel {
         });
     }
 
-    public void append(String text, boolean isNewMessage) {
+    public void append(String text, boolean isNewMessage, ChatMessageType msgType) {
         var bridge = bridgeRef.get();
         if (bridge != null) {
-            bridge.append(text, isNewMessage);
+            bridge.append(text, isNewMessage, msgType);
+        }
+    }
+
+    public void setTheme(boolean isDark) {
+        var bridge = bridgeRef.get();
+        if (bridge != null) {
+            bridge.setTheme(isDark);
         }
     }
 
