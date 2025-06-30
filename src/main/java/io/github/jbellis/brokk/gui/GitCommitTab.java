@@ -187,8 +187,8 @@ public class GitCommitTab extends JPanel {
         JPanel buttonPanel = new JPanel(new FlowLayout(FlowLayout.LEFT));
 
         // Stash Button
-        stashButton = new JButton("Stash All"); // Default label
-        stashButton.setToolTipText("Save your changes to the stash");
+        stashButton = new JButton("Stash All..."); // Default label
+        stashButton.setToolTipText("Save your changes to the stash...");
         stashButton.setEnabled(false);
         stashButton.addActionListener(e -> {
             List<ProjectFile> selectedFiles = getSelectedFilesFromTable();
@@ -347,13 +347,13 @@ public class GitCommitTab extends JPanel {
         if (selectedRowCount > 0) {
             commitButton.setText("Commit Selected...");
             commitButton.setToolTipText("Commit the selected files...");
-            stashButton.setText("Stash Selected");
-            stashButton.setToolTipText("Save selected changes to the stash");
+            stashButton.setText("Stash Selected...");
+            stashButton.setToolTipText("Save selected changes to the stash...");
         } else {
             commitButton.setText("Commit All...");
             commitButton.setToolTipText("Commit all files...");
-            stashButton.setText("Stash All");
-            stashButton.setToolTipText("Save all changes to the stash");
+            stashButton.setText("Stash All...");
+            stashButton.setToolTipText("Save all changes to the stash...");
         }
     }
 
