@@ -309,9 +309,19 @@ public class UpgradeAgentDialog extends JDialog {
         paraGBC.insets = new Insets(5, 5, 5, 5);
         paraGBC.fill = GridBagConstraints.HORIZONTAL;
 
-        // Instructions TextArea
+        // Instructions label
         paraGBC.gridx = 0;
         paraGBC.gridy = 0;
+        paraGBC.gridwidth = 3;
+        paraGBC.weightx = 0;
+        paraGBC.weighty = 0;
+        paraGBC.fill = GridBagConstraints.NONE;
+        paraGBC.anchor = GridBagConstraints.WEST;
+        parallelProcessingPanel.add(new JLabel("Instructions:"), paraGBC);
+
+        // Instructions TextArea
+        paraGBC.gridy = 1;
+        paraGBC.gridx = 0;
         paraGBC.gridwidth = 3;
         paraGBC.weightx = 1.0;
         paraGBC.weighty = 1.0;
@@ -396,9 +406,12 @@ public class UpgradeAgentDialog extends JDialog {
                                    </html>
                                    """);
         parallelProcessingPanel.add(perFileIconCtx, paraGBC);
-        paraGBC.gridx = 2; paraGBC.weightx = 1.0;
+        paraGBC.gridx = 1;
+        paraGBC.gridwidth = 2;
+        paraGBC.weightx = 1.0;
         perFileCommandTextField = new JTextField();
         parallelProcessingPanel.add(perFileCommandTextField, paraGBC);
+        paraGBC.gridwidth = 1;   // reset for subsequent rows
 
         paraGBC.gridy++; paraGBC.gridx = 0; paraGBC.weightx = 0; paraGBC.anchor = GridBagConstraints.EAST;
         parallelProcessingPanel.add(new JLabel("Related files"), paraGBC);
@@ -427,24 +440,25 @@ public class UpgradeAgentDialog extends JDialog {
         ppPanel.setLayout(new BoxLayout(ppPanel, BoxLayout.Y_AXIS));
         ppPanel.setBorder(BorderFactory.createTitledBorder("Post-processing"));
 
-        runPostProcessCombo = new JComboBox<>(new String[]{"None", "Architect", "Ask"});
-        runPostProcessCombo.setAlignmentX(Component.LEFT_ALIGNMENT);
-        ppPanel.add(runPostProcessCombo);
-
-        ppPanel.add(Box.createRigidArea(new Dimension(0, 5)));
-
-        postProcessingModelLabel = new JLabel(" ");
-        postProcessingModelLabel.setAlignmentX(Component.LEFT_ALIGNMENT);
-        ppPanel.add(postProcessingModelLabel);
-
-        ppPanel.add(Box.createRigidArea(new Dimension(0, 5)));
-
+        // --- Instructions area at top ---
+        ppPanel.add(new JLabel("Instructions:"));
         postProcessingInstructionsArea = new JTextArea(3, 30);
         postProcessingInstructionsArea.setLineWrap(true);
         postProcessingInstructionsArea.setWrapStyleWord(true);
         JScrollPane postProcessingScrollPane = new JScrollPane(postProcessingInstructionsArea);
         postProcessingScrollPane.setAlignmentX(Component.LEFT_ALIGNMENT);
         ppPanel.add(postProcessingScrollPane);
+
+        ppPanel.add(Box.createRigidArea(new Dimension(0, 5)));
+
+        // --- run-choice and model label ---
+        runPostProcessCombo = new JComboBox<>(new String[]{"None", "Architect", "Ask"});
+        runPostProcessCombo.setAlignmentX(Component.LEFT_ALIGNMENT);
+        ppPanel.add(runPostProcessCombo);
+
+        postProcessingModelLabel = new JLabel(" ");
+        postProcessingModelLabel.setAlignmentX(Component.LEFT_ALIGNMENT);
+        ppPanel.add(postProcessingModelLabel);
 
         ppPanel.add(Box.createRigidArea(new Dimension(0, 5)));
 
@@ -473,11 +487,13 @@ public class UpgradeAgentDialog extends JDialog {
                 includeParallelOutputCheckbox.setSelected(false);
             }
 
+            var cm = chrome.getContextManager();
             if (architect) {
-                String modelName = chrome.getContextManager().getArchitectModel().toString();
+                String modelName = cm.getService().nameOf(cm.getArchitectModel());
                 postProcessingModelLabel.setText("Model: " + modelName);
             } else if (ask) {
-                postProcessingModelLabel.setText("Default Ask model will be used");
+                String modelName = cm.getService().nameOf(cm.getAskModel());
+                postProcessingModelLabel.setText("Default " + modelName + " model will be used");
             } else {
                 postProcessingModelLabel.setText(" ");
             }
