@@ -406,13 +406,16 @@ public class UpgradeAgentDialog extends JDialog {
                                    </html>
                                    """);
         parallelProcessingPanel.add(perFileIconCtx, paraGBC);
-        paraGBC.gridy++;
-        paraGBC.gridx = 0;
-        paraGBC.gridwidth = 3;
+        // Per-file command input on the same row, spanning the remaining column(s)
+        paraGBC.gridx = 2;
         paraGBC.weightx = 1.0;
+        paraGBC.fill = GridBagConstraints.HORIZONTAL;
         perFileCommandTextField = new JTextField();
         parallelProcessingPanel.add(perFileCommandTextField, paraGBC);
-        paraGBC.gridwidth = 1;   // reset for subsequent rows
+        // reset for subsequent rows
+        paraGBC.weightx = 0.0;
+        paraGBC.fill = GridBagConstraints.NONE;
+        paraGBC.gridwidth = 1;
 
         paraGBC.gridy++; paraGBC.gridx = 0; paraGBC.weightx = 0; paraGBC.anchor = GridBagConstraints.EAST;
         parallelProcessingPanel.add(new JLabel("Related files"), paraGBC);
