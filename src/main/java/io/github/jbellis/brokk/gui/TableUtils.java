@@ -16,6 +16,8 @@ import java.util.List;
 
 public final class TableUtils {
 
+    private static final int DEFAULT_SCROLLBAR_WIDTH_PX = 15;
+
     /**
      * Returns the preferred row height for a table cell that renders
      * a {@link FileReferenceList}, by measuring a sample rendered cell.
@@ -127,8 +129,8 @@ public final class TableUtils {
         // Create a wrapping FileReferenceList with a width that accounts for a potential vertical scrollbar,
         // which prevents re-wrapping and incorrect height calculations.
         int scrollbarWidth = UIManager.getInt("ScrollBar.width");
-        if (scrollbarWidth == 0) {
-            scrollbarWidth = 15; // A reasonable fallback for platforms where this isn't set
+        if (scrollbarWidth <= 0) {
+            scrollbarWidth = DEFAULT_SCROLLBAR_WIDTH_PX; // A reasonable fallback for platforms where this isn't set
         }
         var fullList = new WrappingFileReferenceList(files, colWidth - scrollbarWidth);
         fullList.setOpaque(false); // For visual continuity
@@ -184,14 +186,30 @@ public final class TableUtils {
             }
         }
 
-        // Create a scrollable container but do not set its size yet.
+        // Create a scrollable container
         var scroll = new JScrollPane(fullList);
         scroll.setBorder(BorderFactory.createEmptyBorder());
         scroll.setViewportBorder(BorderFactory.createEmptyBorder());
         scroll.setHorizontalScrollBarPolicy(ScrollPaneConstants.HORIZONTAL_SCROLLBAR_NEVER);
         scroll.setVerticalScrollBarPolicy(ScrollPaneConstants.VERTICAL_SCROLLBAR_AS_NEEDED);
 
-        // Create and configure the popup, letting it pack to the ideal size first.
+        // To correctly cap the height, we need to set the preferred size
+        // of the scroll pane itself, BEFORE it gets packed.
+        Dimension listPrefSize = fullList.getPreferredSize();
+
+        if (!files.isEmpty()) {
+            JLabel sampleLabel = fullList.createBadgeLabel(files.get(0).getFileName());
+            int vgap = 2; // from FlowLayout
+            int rowHeight = sampleLabel.getPreferredSize().height + vgap;
+            int maxHeight = rowHeight * 4; // 4 rows
+            maxHeight += 4; // Safety margin
+
+            if (listPrefSize.height > maxHeight) {
+                scroll.setPreferredSize(new Dimension(listPrefSize.width, maxHeight));
+            }
+        }
+
+        // Create and configure the popup
         var popup = new JPopupMenu();
         popup.setLayout(new BorderLayout());
         popup.add(scroll);
@@ -220,37 +238,8 @@ public final class TableUtils {
         // Register popup with theme manager if available
         chrome.themeManager.registerPopupMenu(popup);
 
-        // Pack the popup to determine its ideal size based on the content.
+        // Now pack. It will use the scroll pane's preferred size, which might be capped.
         popup.pack();
-
-        // Now, cap the height to a reasonable maximum (e.g., 4 rows).
-        if (!files.isEmpty()) {
-            JLabel sampleLabel = fullList.createBadgeLabel(files.get(0).getFileName());
-            // vgap is 2, so row height for layout is pref height + vgap.
-            int maxHeight = (sampleLabel.getPreferredSize().height + 2) * 4;
-            // Add a small safety margin to prevent clipping on some platforms
-            maxHeight += 4;
-            Dimension packedSize = popup.getSize();
-            if (packedSize.height > maxHeight) {
-                popup.setSize(packedSize.width, maxHeight);
-            }
-        }
-
-        // Pack the popup to determine its ideal size based on the content.
-        popup.pack();
-
-        // Now, cap the height to a reasonable maximum (e.g., 4 rows).
-        if (!files.isEmpty()) {
-            JLabel sampleLabel = fullList.createBadgeLabel(files.get(0).getFileName());
-            // vgap is 2, so row height for layout is pref height + vgap.
-            int maxHeight = (sampleLabel.getPreferredSize().height + 2) * 4;
-            // Add a small safety margin to prevent clipping on some platforms
-            maxHeight += 4;
-            Dimension packedSize = popup.getSize();
-            if (packedSize.height > maxHeight) {
-                popup.setSize(packedSize.width, maxHeight);
-            }
-        }
 
         // Show popup below the specific cell
         var cellRect = table.getCellRect(row, col, true);
