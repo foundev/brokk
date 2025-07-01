@@ -1,24 +1,30 @@
+import { mount } from 'svelte';
+import { writable } from 'svelte/store';
 import App from './App.svelte';
 
 // Entry point for Brokk frontend
 console.log('Brokk frontend initialized');
 
-// Instantiate the app using legacy Svelte API
-const app = new App({ target: document.body, props: { event: { type: '' } } });
+// Create a writable store for events
+const eventStore = writable({ type: '' });
+
+// Instantiate the app using Svelte 5 API
+const app = mount(App, {
+  target: document.body,
+  props: { eventStore }
+});
 
 // Expose brokk event handler for Java interaction
 window.brokk = {
   onEvent: (payload) => {
     console.log('Received event from Java:', payload);
-    app.$set({ event: payload });
+    eventStore.set(payload);
 
     // ACK after a frame render to ensure UI has updated
     if (payload.epoch) {
       requestAnimationFrame(() => {
         if (window.javaBridge) {
           window.javaBridge.onAck(payload.epoch);
-        } else {
-          console.error('javaBridge not available to ACK epoch ' + payload.epoch);
         }
       });
     }
