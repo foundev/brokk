@@ -1,5 +1,7 @@
 <script>
-  import SvelteMarkdown from '@humanspeak/svelte-markdown';
+
+  import SvelteMarkdown from 'svelte-markdown'
+  import { marked } from 'marked'
 
   export let event = { type: '' };
 
