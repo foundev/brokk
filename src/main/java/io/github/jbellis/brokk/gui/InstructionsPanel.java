@@ -33,6 +33,7 @@ import io.github.jbellis.brokk.util.LoggingExecutorService;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 import org.eclipse.jgit.api.errors.GitAPIException;
+import org.fife.ui.autocomplete.AutoCompletion;
 import org.jetbrains.annotations.Nullable;
 
 import javax.swing.*;
@@ -126,6 +127,8 @@ public class InstructionsPanel extends JPanel implements IContextManager.Context
     private @Nullable String lastCheckedInputText = null;
     private @Nullable float[][] lastCheckedEmbeddings = null;
     private @Nullable List<FileReferenceData> pendingQuickContext = null;
+    private @Nullable AutoCompletion instructionAutoCompletion;
+    private @Nullable InstructionCompletionProvider instructionCompletionProvider;
 
     public InstructionsPanel(Chrome chrome) {
         super(new BorderLayout(2, 2));
@@ -146,6 +149,17 @@ public class InstructionsPanel extends JPanel implements IContextManager.Context
 
         // Initialize components
         instructionsArea = buildCommandInputField(); // Build first to add listener
+        
+        // Initialize autocomplete for instructions if contextManager is available
+        if (contextManager != null) {
+            instructionCompletionProvider = new InstructionCompletionProvider(contextManager);
+            instructionAutoCompletion = new AutoCompletion(instructionCompletionProvider);
+            instructionAutoCompletion.setAutoActivationEnabled(true);
+            instructionAutoCompletion.setAutoActivationDelay(200);
+            instructionAutoCompletion.install(instructionsArea);
+            AutoCompleteUtil.bindCtrlEnter(instructionAutoCompletion, instructionsArea);
+        }
+        
         micButton = new VoiceInputButton(instructionsArea, contextManager, () -> {
             activateCommandInput();
             chrome.actionOutput("Recording");
@@ -1807,6 +1821,12 @@ public class InstructionsPanel extends JPanel implements IContextManager.Context
             if (isPopupOpen) return; // Already showing one
 
             isPopupOpen = true;
+            
+            // Disable instruction autocompletion while @ popup is shown
+            if (instructionAutoCompletion != null) {
+                instructionAutoCompletion.setAutoActivationEnabled(false);
+            }
+            
             try {
                 Rectangle r = instructionsArea.modelToView2D(atOffset).getBounds();
                 // Point p = SwingUtilities.convertPoint(instructionsArea, r.x, r.y + r.height, chrome.getFrame()); // Unused variable p
@@ -1845,6 +1865,11 @@ public class InstructionsPanel extends JPanel implements IContextManager.Context
                         popup.removePopupMenuListener(this);
                         isPopupOpen = false; // Allow new popups
                         // Removal of "@" is now handled by the JMenuItem's ActionListener
+                        
+                        // Re-enable instruction autocompletion
+                        if (instructionAutoCompletion != null) {
+                            instructionAutoCompletion.setAutoActivationEnabled(true);
+                        }
                     }
 
                     @Override
@@ -1856,6 +1881,11 @@ public class InstructionsPanel extends JPanel implements IContextManager.Context
                         popup.removePopupMenuListener(this);
                         isPopupOpen = false; // Allow new popups
                         // Do not remove "@" on cancel
+                        
+                        // Re-enable instruction autocompletion
+                        if (instructionAutoCompletion != null) {
+                            instructionAutoCompletion.setAutoActivationEnabled(true);
+                        }
                     }
                 });
 
