@@ -111,6 +111,7 @@ assembly / mainClass := Some("io.github.jbellis.brokk.Brokk")
 Compile / mainClass := Some("io.github.jbellis.brokk.Brokk")
 
 testFrameworks += new TestFramework("com.github.sbt.junit.JupiterFramework")
+Test / fork := true
 
 Compile / run / fork := true
 javaOptions += "-ea"

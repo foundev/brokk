@@ -722,7 +722,7 @@ public abstract class TreeSitterAnalyzer implements IAnalyzer {
                 continue;
             }
 
-            String signature = buildSignatureString(node, simpleName, src, primaryCaptureName, modifierKeywords);
+            String signature = buildSignatureString(node, simpleName, src, primaryCaptureName, modifierKeywords, file);
             log.trace("Built signature for '{}': [{}]", simpleName, signature == null ? "NULL" : signature.isBlank() ? "BLANK" : signature.lines().findFirst().orElse("EMPTY"));
 
 
@@ -853,7 +853,7 @@ public abstract class TreeSitterAnalyzer implements IAnalyzer {
      * @param simpleName The simple name of the definition, pre-determined by query captures.
      * @param modifierKeywords A list of modifier keywords (e.g., "export", "static", "const") from the query.
      */
-    private String buildSignatureString(TSNode definitionNode, String simpleName, String src, String primaryCaptureName, List<String> capturedModifierKeywords) {
+    private String buildSignatureString(TSNode definitionNode, String simpleName, String src, String primaryCaptureName, List<String> capturedModifierKeywords, ProjectFile file) {
         List<String> signatureLines = new ArrayList<>();
         var profile = getLanguageSyntaxProfile();
         SkeletonType skeletonType = getSkeletonTypeForCapture(primaryCaptureName); // Get skeletonType early
@@ -964,7 +964,7 @@ public abstract class TreeSitterAnalyzer implements IAnalyzer {
                         fieldSignatureText = fieldSignatureText.substring(strippedExportPrefix.length()).stripLeading();
                     }
                 }
-                String fieldLine = formatFieldSignature(nodeForContent, src, exportPrefix, fieldSignatureText, "");
+                String fieldLine = formatFieldSignature(nodeForContent, src, exportPrefix, fieldSignatureText, "", file);
                 if (fieldLine != null && !fieldLine.isBlank()) signatureLines.add(fieldLine);
                 break;
             }
@@ -984,7 +984,7 @@ public abstract class TreeSitterAnalyzer implements IAnalyzer {
                     valueText = textSlice(valueNode, src).strip();
                 } else {
                      log.warn("Type alias '{}' (node type {}) in {} at line {} is missing its 'value' child. Resulting skeleton may be incomplete. Node text: {}",
-                             simpleName, nodeForContent.getType(), project.getRoot().relativize(nodeForContent.getTsTree().getPath()), nodeForContent.getStartPoint().getRow() +1, textSlice(nodeForContent,src));
+                             simpleName, nodeForContent.getType(), project.getRoot().relativize(file.absPath()), nodeForContent.getStartPoint().getRow() +1, textSlice(nodeForContent,src));
                     valueText = "any"; // Fallback or indicate error
                 }
 
@@ -1081,7 +1081,7 @@ public abstract class TreeSitterAnalyzer implements IAnalyzer {
      * @param baseIndent The indentation string for this line.
      * @return The fully formatted field signature line.
      */
-    protected abstract String formatFieldSignature(TSNode fieldNode, String src, String exportPrefix, String signatureText, String baseIndent);
+    protected abstract String formatFieldSignature(TSNode fieldNode, String src, String exportPrefix, String signatureText, String baseIndent, ProjectFile file);
 
     /**
      * Determines a visibility or export prefix (e.g., "export ", "public ") for a given node.

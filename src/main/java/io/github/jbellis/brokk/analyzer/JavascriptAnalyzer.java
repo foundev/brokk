@@ -21,6 +21,7 @@ public final class JavascriptAnalyzer extends TreeSitterAnalyzer {
             "body",       // bodyFieldName
             "parameters", // parametersFieldName
             "",           // returnTypeFieldName (JS doesn't have a standard named child for return type)
+            "",           // typeParametersFieldName (JS doesn't have type parameters)
             java.util.Map.of( // captureConfiguration
                 "class.definition", SkeletonType.CLASS_LIKE,
                 "function.definition", SkeletonType.FUNCTION_LIKE,
@@ -213,5 +214,14 @@ public final class JavascriptAnalyzer extends TreeSitterAnalyzer {
     @Override
     protected LanguageSyntaxProfile getLanguageSyntaxProfile() {
         return JS_SYNTAX_PROFILE;
+    }
+
+    @Override
+    protected String formatFieldSignature(TSNode fieldNode, String src, String exportPrefix, String signatureText, String baseIndent, ProjectFile file) {
+        String fullSignature = (exportPrefix.stripTrailing() + " " + signatureText.strip()).strip();
+        if (!fullSignature.endsWith(";")) {
+            fullSignature += ";";
+        }
+        return baseIndent + fullSignature;
     }
 }

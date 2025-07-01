@@ -25,6 +25,7 @@ public final class RustAnalyzer extends TreeSitterAnalyzer {
             /* bodyFieldName       */ "body", // e.g., function_item.body, impl_item.body
             /* parametersFieldName */ "parameters", // e.g., function_item.parameters
             /* returnTypeFieldName */ "return_type", // e.g., function_item.return_type
+            /* typeParametersFieldName */ "type_parameters", // Rust generics
             /* capture → Skeleton  */ Map.of(
                     "class.definition", SkeletonType.CLASS_LIKE,    // For struct, trait, enum
                     "impl.definition", SkeletonType.CLASS_LIKE,     // For impl blocks
@@ -299,5 +300,14 @@ public final class RustAnalyzer extends TreeSitterAnalyzer {
             throw new IllegalStateException("super.extractSimpleName (from RustAnalyzer) failed to find a name for " + errorContext);
         }
         return nameFromSuper;
+    }
+
+    @Override
+    protected String formatFieldSignature(TSNode fieldNode, String src, String exportPrefix, String signatureText, String baseIndent, ProjectFile file) {
+        String fullSignature = (exportPrefix.stripTrailing() + " " + signatureText.strip()).strip();
+        if (!fullSignature.endsWith(";")) {
+            fullSignature += ";";
+        }
+        return baseIndent + fullSignature;
     }
 }

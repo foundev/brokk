@@ -23,6 +23,7 @@ public final class CSharpAnalyzer extends TreeSitterAnalyzer {
             "body",         // bodyFieldName
             "parameters",   // parametersFieldName
             "type",         // returnTypeFieldName (used by method_declaration for its return type node)
+            "type_parameter_list", // typeParametersFieldName (C# generics)
             java.util.Map.of( // captureConfiguration
                 "class.definition", SkeletonType.CLASS_LIKE,
                 "function.definition", SkeletonType.FUNCTION_LIKE,
@@ -180,5 +181,14 @@ public final class CSharpAnalyzer extends TreeSitterAnalyzer {
     @Override
     protected LanguageSyntaxProfile getLanguageSyntaxProfile() {
         return CS_SYNTAX_PROFILE;
+    }
+
+    @Override
+    protected String formatFieldSignature(TSNode fieldNode, String src, String exportPrefix, String signatureText, String baseIndent, ProjectFile file) {
+        String fullSignature = (exportPrefix.stripTrailing() + " " + signatureText.strip()).strip();
+        if (!fullSignature.endsWith(";")) {
+            fullSignature += ";";
+        }
+        return baseIndent + fullSignature;
     }
 }

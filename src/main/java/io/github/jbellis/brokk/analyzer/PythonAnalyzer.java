@@ -22,6 +22,7 @@ public final class PythonAnalyzer extends TreeSitterAnalyzer {
             "body",        // bodyFieldName
             "parameters",  // parametersFieldName
             "return_type", // returnTypeFieldName
+            "",            // typeParametersFieldName (Python doesn't have explicit type parameters)
             java.util.Map.of( // captureConfiguration
                 "class.definition", SkeletonType.CLASS_LIKE,
                 "function.definition", SkeletonType.FUNCTION_LIKE,
@@ -192,5 +193,12 @@ public final class PythonAnalyzer extends TreeSitterAnalyzer {
     @Override
     protected LanguageSyntaxProfile getLanguageSyntaxProfile() {
         return PY_SYNTAX_PROFILE;
+    }
+
+    @Override
+    protected String formatFieldSignature(TSNode fieldNode, String src, String exportPrefix, String signatureText, String baseIndent, ProjectFile file) {
+        String fullSignature = (exportPrefix.stripTrailing() + " " + signatureText.strip()).strip();
+        // Python doesn't typically end field assignments with semicolons
+        return baseIndent + fullSignature;
     }
 }

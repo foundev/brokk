@@ -28,6 +28,7 @@ public final class PhpAnalyzer extends TreeSitterAnalyzer {
             "body",                                                                  // bodyFieldName (applies to functions/methods, class body is declaration_list)
             "parameters",                                                            // parametersFieldName
             "return_type",                                                           // returnTypeFieldName (for return type declaration)
+            "",                                                                      // typeParametersFieldName (PHP doesn't have generics)
             java.util.Map.of(                                                        // captureConfiguration
                     "class.definition", SkeletonType.CLASS_LIKE,
                     "interface.definition", SkeletonType.CLASS_LIKE,
@@ -293,5 +294,14 @@ public final class PhpAnalyzer extends TreeSitterAnalyzer {
         // as namespace processing is now handled by computeFilePackageName.
         // attribute.definition is handled by decorator logic in base class.
         return Set.of("namespace.definition", "namespace.name", "attribute.definition");
+    }
+
+    @Override
+    protected String formatFieldSignature(TSNode fieldNode, String src, String exportPrefix, String signatureText, String baseIndent, ProjectFile file) {
+        String fullSignature = (exportPrefix.stripTrailing() + " " + signatureText.strip()).strip();
+        if (!fullSignature.endsWith(";")) {
+            fullSignature += ";";
+        }
+        return baseIndent + fullSignature;
     }
 }

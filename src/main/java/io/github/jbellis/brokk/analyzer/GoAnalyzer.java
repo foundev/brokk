@@ -28,6 +28,7 @@ public final class GoAnalyzer extends TreeSitterAnalyzer {
             "body",        // bodyFieldName (e.g. function_declaration.body -> block)
             "parameters",  // parametersFieldName
             "result",      // returnTypeFieldName (Go's grammar uses "result" for return types)
+            "type_parameters", // typeParametersFieldName (Go generics)
             java.util.Map.of(
               "function.definition", SkeletonType.FUNCTION_LIKE,
               "type.definition", SkeletonType.CLASS_LIKE,
@@ -262,5 +263,11 @@ public final class GoAnalyzer extends TreeSitterAnalyzer {
     protected Set<String> getIgnoredCaptures() {
         log.trace("Stage 0: getIgnoredCaptures called. Returning empty set.");
         return Set.of();
+    }
+
+    @Override
+    protected String formatFieldSignature(TSNode fieldNode, String src, String exportPrefix, String signatureText, String baseIndent, ProjectFile file) {
+        String fullSignature = (exportPrefix.stripTrailing() + " " + signatureText.strip()).strip();
+        return baseIndent + fullSignature;
     }
 }
