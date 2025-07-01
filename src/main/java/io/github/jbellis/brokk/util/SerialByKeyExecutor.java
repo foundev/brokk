@@ -46,7 +46,8 @@ public class SerialByKeyExecutor {
      * @return a CompletableFuture representing the pending completion of the task
      */
     public <T> CompletableFuture<T> submit(Set<String> keys, Callable<T> task) {
-        if (keys.isEmpty()) {
+        var taskKeys = Set.copyOf(keys);
+        if (taskKeys.isEmpty()) {
             throw new IllegalArgumentException("keys must not be empty");
         }
 
@@ -54,7 +55,7 @@ public class SerialByKeyExecutor {
             try {
                 return task.call();
             } catch (Exception e) {
-                logger.error("Task for keys '{}' failed", String.join(",", keys), e);
+                logger.error("Task for keys '{}' failed", String.join(",", taskKeys), e);
                 if (e instanceof RuntimeException re) {
                     throw re;
                 }
@@ -64,7 +65,7 @@ public class SerialByKeyExecutor {
 
         CompletableFuture<T> taskFuture;
         synchronized (submissionLock) {
-            var prerequisiteFutures = keys.stream()
+            var prerequisiteFutures = taskKeys.stream()
                                           .map(activeFutures::get)
                                           .filter(Objects::nonNull)
                                           .distinct()
@@ -80,12 +81,12 @@ public class SerialByKeyExecutor {
                                              .thenComposeAsync(ignored -> taskRunner.get(), executor);
             }
 
-            for (var key : keys) {
+            for (var key : taskKeys) {
                 activeFutures.put(key, taskFuture);
             }
 
             taskFuture.whenComplete((res, err) -> {
-                for (var key : keys) {
+                for (var key : taskKeys) {
                     activeFutures.remove(key, taskFuture);
                 }
             });
