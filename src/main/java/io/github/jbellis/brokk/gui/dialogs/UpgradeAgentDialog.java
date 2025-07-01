@@ -297,9 +297,10 @@ public class UpgradeAgentDialog extends JDialog {
         JPanel combined = new JPanel(new GridBagLayout());
         GridBagConstraints cmbc = new GridBagConstraints();
         cmbc.insets = new Insets(0, 0, 0, 0);
-        cmbc.fill = GridBagConstraints.HORIZONTAL;
+        // allow both panels to expand equally in both directions
+        cmbc.fill = GridBagConstraints.BOTH;
         cmbc.anchor = GridBagConstraints.NORTH;
-        cmbc.weighty = 0;
+        cmbc.weighty = 1.0;
         cmbc.weightx = 0.5;
 
         // ---- parallel processing panel --------------------------------
