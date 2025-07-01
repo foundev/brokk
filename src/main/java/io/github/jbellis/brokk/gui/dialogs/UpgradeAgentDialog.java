@@ -406,8 +406,9 @@ public class UpgradeAgentDialog extends JDialog {
                                    </html>
                                    """);
         parallelProcessingPanel.add(perFileIconCtx, paraGBC);
-        paraGBC.gridx = 1;
-        paraGBC.gridwidth = 2;
+        paraGBC.gridy++;
+        paraGBC.gridx = 0;
+        paraGBC.gridwidth = 3;
         paraGBC.weightx = 1.0;
         perFileCommandTextField = new JTextField();
         parallelProcessingPanel.add(perFileCommandTextField, paraGBC);
@@ -425,9 +426,9 @@ public class UpgradeAgentDialog extends JDialog {
         relatedClassesCombo.setSelectedItem("0");
         parallelProcessingPanel.add(relatedClassesCombo, paraGBC);
 
-        paraGBC.gridy++; paraGBC.gridx = 0;
+        paraGBC.gridy++; paraGBC.gridx = 0; paraGBC.anchor = GridBagConstraints.EAST;
         parallelProcessingPanel.add(new JLabel("Workspace"), paraGBC);
-        paraGBC.gridx = 1;
+        paraGBC.gridx = 1; paraGBC.anchor = GridBagConstraints.WEST;
         var wsIcon = new JLabel(smallInfoIcon);
         wsIcon.setToolTipText("Include the current Workspace contents with each file");
         parallelProcessingPanel.add(wsIcon, paraGBC);
@@ -436,36 +437,62 @@ public class UpgradeAgentDialog extends JDialog {
         parallelProcessingPanel.add(includeWorkspaceCheckbox, paraGBC);
 
         // ---- post-processing panel ------------------------
-        JPanel ppPanel = new JPanel();
-        ppPanel.setLayout(new BoxLayout(ppPanel, BoxLayout.Y_AXIS));
+        JPanel ppPanel = new JPanel(new GridBagLayout());
         ppPanel.setBorder(BorderFactory.createTitledBorder("Post-processing"));
+        GridBagConstraints ppGBC = new GridBagConstraints();
+        ppGBC.insets = new Insets(5, 5, 5, 5);
+        ppGBC.fill = GridBagConstraints.HORIZONTAL;
+        ppGBC.anchor = GridBagConstraints.WEST;
 
         // --- Instructions area at top ---
-        ppPanel.add(new JLabel("Instructions:"));
-        postProcessingInstructionsArea = new JTextArea(3, 30);
+        ppGBC.gridx = 0;
+        ppGBC.gridy = 0;
+        ppGBC.gridwidth = 3;
+        ppPanel.add(new JLabel("Instructions:"), ppGBC);
+
+        ppGBC.gridy++;
+        postProcessingInstructionsArea = new JTextArea(4, 30);
         postProcessingInstructionsArea.setLineWrap(true);
         postProcessingInstructionsArea.setWrapStyleWord(true);
         JScrollPane postProcessingScrollPane = new JScrollPane(postProcessingInstructionsArea);
-        postProcessingScrollPane.setAlignmentX(Component.LEFT_ALIGNMENT);
-        ppPanel.add(postProcessingScrollPane);
+        ppGBC.weightx = 1.0;
+        ppGBC.weighty = 1.0;
+        ppGBC.fill = GridBagConstraints.BOTH;
+        ppPanel.add(postProcessingScrollPane, ppGBC);
+        ppGBC.weighty = 0; // reset
+        ppGBC.weightx = 0;
+        ppGBC.fill = GridBagConstraints.HORIZONTAL;
+        ppGBC.gridwidth = 1;
 
-        ppPanel.add(Box.createRigidArea(new Dimension(0, 5)));
+        // --- run-choice ---
+        ppGBC.gridy++;
+        ppGBC.gridx = 0;
+        ppGBC.anchor = GridBagConstraints.EAST;
+        ppPanel.add(new JLabel("Action"), ppGBC);
 
-        // --- run-choice and model label ---
+        ppGBC.gridx = 2;
+        ppGBC.anchor = GridBagConstraints.WEST;
         runPostProcessCombo = new JComboBox<>(new String[]{"None", "Architect", "Ask"});
-        runPostProcessCombo.setAlignmentX(Component.LEFT_ALIGNMENT);
-        ppPanel.add(runPostProcessCombo);
+        ppPanel.add(runPostProcessCombo, ppGBC);
 
+        ppGBC.gridy++;
+        ppGBC.gridx = 2;
         postProcessingModelLabel = new JLabel(" ");
-        postProcessingModelLabel.setAlignmentX(Component.LEFT_ALIGNMENT);
-        ppPanel.add(postProcessingModelLabel);
+        ppPanel.add(postProcessingModelLabel, ppGBC);
 
-        ppPanel.add(Box.createRigidArea(new Dimension(0, 5)));
-
+        ppGBC.gridy++;
+        ppGBC.gridx = 2;
         includeParallelOutputCheckbox = new JCheckBox("Include parallel output");
-        includeParallelOutputCheckbox.setAlignmentX(Component.LEFT_ALIGNMENT);
         includeParallelOutputCheckbox.setSelected(true);
-        ppPanel.add(includeParallelOutputCheckbox);
+        ppPanel.add(includeParallelOutputCheckbox, ppGBC);
+
+        // --- spacer ---
+        var ppSpacer = new GridBagConstraints();
+        ppSpacer.gridy = ppGBC.gridy + 1;
+        ppSpacer.gridwidth = 3;
+        ppSpacer.weighty = 1.0;
+        ppSpacer.fill = GridBagConstraints.VERTICAL;
+        ppPanel.add(new JPanel(), ppSpacer);
 
         java.awt.event.ActionListener postProcessListener = ev -> {
             String selectedOption = (String) runPostProcessCombo.getSelectedItem();
@@ -493,7 +520,7 @@ public class UpgradeAgentDialog extends JDialog {
                 postProcessingModelLabel.setText("Model: " + modelName);
             } else if (ask) {
                 String modelName = cm.getService().nameOf(cm.getAskModel());
-                postProcessingModelLabel.setText("Default " + modelName + " model will be used");
+                postProcessingModelLabel.setText("Model: " + modelName);
             } else {
                 postProcessingModelLabel.setText(" ");
             }
