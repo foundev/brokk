@@ -218,8 +218,22 @@ public final class TableUtils {
         fullList.setForeground(fgColor);
 
         // Register popup with theme manager if available
-        if (chrome.themeManager != null) {
-            chrome.themeManager.registerPopupMenu(popup);
+        chrome.themeManager.registerPopupMenu(popup);
+
+        // Pack the popup to determine its ideal size based on the content.
+        popup.pack();
+
+        // Now, cap the height to a reasonable maximum (e.g., 4 rows).
+        if (!files.isEmpty()) {
+            JLabel sampleLabel = fullList.createBadgeLabel(files.get(0).getFileName());
+            // vgap is 2, so row height for layout is pref height + vgap.
+            int maxHeight = (sampleLabel.getPreferredSize().height + 2) * 4;
+            // Add a small safety margin to prevent clipping on some platforms
+            maxHeight += 4;
+            Dimension packedSize = popup.getSize();
+            if (packedSize.height > maxHeight) {
+                popup.setSize(packedSize.width, maxHeight);
+            }
         }
 
         // Pack the popup to determine its ideal size based on the content.

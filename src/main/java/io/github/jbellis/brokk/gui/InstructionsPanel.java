@@ -179,7 +179,7 @@ public class InstructionsPanel extends JPanel implements IContextManager.Context
         askButton = new io.github.jbellis.brokk.gui.components.SplitButton(" Ask");
         askButton.setMnemonic(KeyEvent.VK_A);
         askButton.setToolTipText("Ask the LLM a question about the current context (click ▼ for model options)");
-        askButton.addActionListener(e -> runAskCommand()); // Main button action
+        askButton.addActionListener(e -> runAskCommand(getInstructions())); // Main button action
         askButton.setMenuSupplier(() -> createModelSelectionMenu(
                 (modelName, reasoningLevel) -> {
                     var models = chrome.getContextManager().getService();
@@ -278,15 +278,13 @@ public class InstructionsPanel extends JPanel implements IContextManager.Context
         });
 
         SwingUtilities.invokeLater(() -> {
-            if (chrome.getFrame() != null && chrome.getFrame().getRootPane() != null) {
+            if (chrome.getFrame().getRootPane() != null) {
                 chrome.getFrame().getRootPane().setDefaultButton(codeButton);
             }
         });
 
         // Add this panel as a listener to context changes, only if CM is available
-        if (this.contextManager != null) {
-            this.contextManager.addContextListener(this);
-        }
+        this.contextManager.addContextListener(this);
 
         // Buttons start disabled and will be enabled by ContextManager when session loading completes
         disableButtons();
@@ -611,48 +609,39 @@ public class InstructionsPanel extends JPanel implements IContextManager.Context
         logger.trace("Showing history menu");
         JPopupMenu historyMenu = new JPopupMenu();
         var project = chrome.getProject();
-        if (project == null) {
-            logger.warn("Cannot show history menu: project is null");
-            JMenuItem errorItem = new JMenuItem("Project not loaded");
-            errorItem.setEnabled(false);
-            historyMenu.add(errorItem);
+        List<String> historyItems = project.loadTextHistory();
+        logger.trace("History items loaded: {}", historyItems.size());
+        if (historyItems.isEmpty()) {
+            JMenuItem emptyItem = new JMenuItem("(No history items)");
+            emptyItem.setEnabled(false);
+            historyMenu.add(emptyItem);
         } else {
-            List<String> historyItems = project.loadTextHistory();
-            logger.trace("History items loaded: {}", historyItems.size());
-            if (historyItems.isEmpty()) {
-                JMenuItem emptyItem = new JMenuItem("(No history items)");
-                emptyItem.setEnabled(false);
-                historyMenu.add(emptyItem);
-            } else {
-                for (int i = historyItems.size() - 1; i >= 0; i--) {
-                    String item = historyItems.get(i);
-                    String itemWithoutNewlines = item.replace('\n', ' ');
-                    String displayText = itemWithoutNewlines.length() > TRUNCATION_LENGTH
-                                         ? itemWithoutNewlines.substring(0, TRUNCATION_LENGTH) + "..."
-                                         : itemWithoutNewlines;
-                    String escapedItem = item.replace("&", "&amp;")
-                            .replace("<", "&lt;")
-                            .replace(">", "&gt;")
-                            .replace("\"", "&quot;");
-                    JMenuItem menuItem = new JMenuItem(displayText);
-                    menuItem.setToolTipText("<html><pre>" + escapedItem + "</pre></html>");
-                    menuItem.addActionListener(event -> {
-                        // Hide overlay and enable input field and deep scan button
-                        commandInputOverlay.hideOverlay();
-                        setCommandInputAndDeepScanEnabled(true);
+            for (int i = historyItems.size() - 1; i >= 0; i--) {
+                String item = historyItems.get(i);
+                String itemWithoutNewlines = item.replace('\n', ' ');
+                String displayText = itemWithoutNewlines.length() > TRUNCATION_LENGTH
+                                     ? itemWithoutNewlines.substring(0, TRUNCATION_LENGTH) + "..."
+                                     : itemWithoutNewlines;
+                String escapedItem = item.replace("&", "&amp;")
+                        .replace("<", "&lt;")
+                        .replace(">", "&gt;")
+                        .replace("\"", "&quot;");
+                JMenuItem menuItem = new JMenuItem(displayText);
+                menuItem.setToolTipText("<html><pre>" + escapedItem + "</pre></html>");
+                menuItem.addActionListener(event -> {
+                    // Hide overlay and enable input field and deep scan button
+                    commandInputOverlay.hideOverlay();
+                    setCommandInputAndDeepScanEnabled(true);
 
-                        // Set text and request focus
-                        instructionsArea.setText(item);
-                        commandInputUndoManager.discardAllEdits(); // Clear undo history for new text
-                        instructionsArea.requestFocusInWindow();
-                    });
-                    historyMenu.add(menuItem);
-                }
+                    // Set text and request focus
+                    instructionsArea.setText(item);
+                    commandInputUndoManager.discardAllEdits(); // Clear undo history for new text
+                    instructionsArea.requestFocusInWindow();
+                });
+                historyMenu.add(menuItem);
             }
         }
-        if (chrome.themeManager != null) {
-            chrome.themeManager.registerPopupMenu(historyMenu);
-        }
+        chrome.themeManager.registerPopupMenu(historyMenu);
         historyMenu.setMinimumSize(new Dimension(DROPDOWN_MENU_WIDTH, 0));
         historyMenu.setPreferredSize(new Dimension(DROPDOWN_MENU_WIDTH, historyMenu.getPreferredSize().height));
         historyMenu.pack();
@@ -1013,7 +1002,7 @@ public class InstructionsPanel extends JPanel implements IContextManager.Context
      */
     private void triggerDeepScan(ActionEvent e) {
         var goal = getInstructions();
-        if (contextManager == null || contextManager.getProject() == null) {
+        if (contextManager == null) {
             chrome.toolError("Deep Scan requires a project and ContextManager to be active.");
             deepScanButton.setEnabled(false);
             return;
@@ -1021,7 +1010,7 @@ public class InstructionsPanel extends JPanel implements IContextManager.Context
         deepScanButton.setLoading(true, "Scanning…");
 
         DeepScanDialog.triggerDeepScan(chrome, goal)
-            .whenComplete((v, throwable) -> {
+            .whenComplete((Void v, @Nullable Throwable throwable) -> {
                 // This callback runs when the analysis phase (ContextAgent, ValidationAgent) is complete.
                 SwingUtilities.invokeLater(() -> {
                     deepScanButton.setLoading(false, null); // Restores button state
@@ -1131,8 +1120,8 @@ public class InstructionsPanel extends JPanel implements IContextManager.Context
         contextManager.getAnalyzerWrapper().pause();
         try {
             var result = new CodeAgent(contextManager, model).runTask(input, false);
+            // code agent has displayed status in llmoutput
             if (result.stopDetails().reason() == TaskResult.StopReason.INTERRUPTED) {
-                chrome.systemOutput("Code Agent cancelled!");
                 // Save the partial result (if we didn't interrupt before we got any replies)
                 if (result.output().messages().stream().anyMatch(m -> m instanceof AiMessage)) {
                     chrome.setSkipNextUpdateOutputPanelOnContextChange(true);
@@ -1140,10 +1129,6 @@ public class InstructionsPanel extends JPanel implements IContextManager.Context
                 }
                 populateInstructionsArea(input);
             } else {
-                if (result.stopDetails().reason() == TaskResult.StopReason.SUCCESS) {
-                    chrome.systemOutput("Code Agent complete!");
-                }
-                // Code agent has logged error to console already
                 chrome.setSkipNextUpdateOutputPanelOnContextChange(true);
                 contextManager.addToHistory(result, false);
             }
@@ -1183,13 +1168,11 @@ public class InstructionsPanel extends JPanel implements IContextManager.Context
                 chrome.systemOutput("Ask command complete!");
             }
         } catch (InterruptedException e) {
-            chrome.systemOutput("Ask command cancelled!");
-            // Check if we have any partial output to save
-                maybeAddInterruptedResult("Ask", question);
-            }
+            throw new CancellationException(e.getMessage());
         }
+    }
 
-        private void maybeAddInterruptedResult(String action, String input) {
+        public void maybeAddInterruptedResult(String action, String input) {
             if (chrome.getLlmRawMessages().stream().anyMatch(m -> m instanceof AiMessage)) {
                 logger.debug(action + " command cancelled with partial results");
                 var sessionResult = new TaskResult("%s (Cancelled): %s".formatted(action, input),
@@ -1208,17 +1191,15 @@ public class InstructionsPanel extends JPanel implements IContextManager.Context
      * @param goal    The initial user instruction passed to the agent.
      * @param options The configured options for the agent's tools.
      */
-    private void executeAgentCommand(StreamingChatLanguageModel model, String goal, ArchitectAgent.ArchitectOptions options) {
+    private void executeArchitectCommand(StreamingChatLanguageModel model, String goal, ArchitectAgent.ArchitectOptions options) {
         var contextManager = chrome.getContextManager();
         try {
-            // Pass options to the constructor
             var agent = new ArchitectAgent(contextManager, model, contextManager.getToolRegistry(), goal, options);
             var result = agent.execute();
             chrome.systemOutput("Architect complete!");
             contextManager.addToHistory(result, false);
         } catch (InterruptedException e) {
-            chrome.systemOutput("Architect Agent cancelled!");
-            maybeAddInterruptedResult("Architect", goal);
+            throw new CancellationException(e.getMessage());
         } catch (Exception e) {
             logger.error("Error during Agent execution", e);
             chrome.toolError("Internal error during Agent command: " + e.getMessage());
@@ -1234,19 +1215,18 @@ public class InstructionsPanel extends JPanel implements IContextManager.Context
             chrome.toolError("Please provide a search query");
             return;
         }
+
+        var contextManager = chrome.getContextManager();
         try {
-            var contextManager = chrome.getContextManager();
-            var agent = new SearchAgent(query, contextManager, model, contextManager.getToolRegistry(), 0);
+            SearchAgent agent = new SearchAgent(query, contextManager, model, contextManager.getToolRegistry(), 0);
             var result = agent.execute();
-            assert result != null;
+
             // Search does not stream to llmOutput, so add the final answer here
-            
             chrome.setSkipNextUpdateOutputPanelOnContextChange(true);
             contextManager.addToHistory(result, false);
             chrome.systemOutput("Search complete!");
         } catch (InterruptedException e) {
-            chrome.toolError("Search agent cancelled without answering");
-            populateInstructionsArea(query);
+            throw new CancellationException(e.getMessage());
         }
     }
 
@@ -1273,13 +1253,7 @@ public class InstructionsPanel extends JPanel implements IContextManager.Context
             logger.warn("Run command '{}' failed: {}", input, e.getMessage(), e);
             chrome.llmOutput("\n**Command Failed**", ChatMessageType.CUSTOM);
         } catch (InterruptedException e) {
-            // If interrupted, the ```bash block might be open.
-            // It's tricky to know if llmOutput for closing ``` is safe or needed here.
-            // For now, just log and return, consistent with previous behavior for interruption.
-            chrome.systemOutput("Cancelled!");
-            populateInstructionsArea(input);
-            // No action needed for context history on cancellation here
-            return;
+            throw new CancellationException(e.getMessage());
         } finally {
             chrome.hideOutputSpinner();
         }
@@ -1327,7 +1301,7 @@ public class InstructionsPanel extends JPanel implements IContextManager.Context
 
         // If the user cancelled the dialog, choices will be null.
         if (choices == null) {
-            chrome.systemOutput("Architect command cancelled during option selection.");
+            logger.debug("Architect command cancelled during option selection.");
             enableButtons(); // Re-enable buttons since the action was cancelled before submission
             return;
         }
@@ -1353,7 +1327,7 @@ public class InstructionsPanel extends JPanel implements IContextManager.Context
         // Add to history of current project (already done by caller if not worktree)
         // No need to clearCommandInput, also done by caller
 
-        // Submit the entire worktree setup and eventual Architect run as a background task
+        // don't use submitAction, we're going to kick off a new Worktree + Chrome and run in that, leaving the original free
         cm.submitUserTask("Setup Architect Worktree", true, () -> {
             try {
                 chrome.showOutputSpinner("Setting up Git worktree...");
@@ -1400,9 +1374,8 @@ public class InstructionsPanel extends JPanel implements IContextManager.Context
                 MainProject mainProject = (currentProject instanceof MainProject mainProj)
                                                 ? mainProj
                                                 : (MainProject) currentProject.getParent();
-        assert mainProject != null;
 
-        new Brokk.OpenProjectBuilder(newWorktreePath)
+                new Brokk.OpenProjectBuilder(newWorktreePath)
                         .parent(mainProject)
                         .initialTask(initialArchitectTask)
                         .sourceContextForSession(cm.topContext())
@@ -1421,8 +1394,7 @@ public class InstructionsPanel extends JPanel implements IContextManager.Context
                     return null;
                 });
             } catch (InterruptedException e) {
-                logger.warn("Architect worktree setup interrupted.", e);
-                chrome.systemOutput("Architect worktree setup was cancelled.");
+                logger.debug("Architect worktree setup interrupted.", e);
                 populateInstructionsArea(originalInstructions);
             } catch (GitAPIException | IOException | ExecutionException ex) {
                 chrome.toolError("Error setting up worktree: " + ex.getMessage());
@@ -1446,7 +1418,7 @@ public class InstructionsPanel extends JPanel implements IContextManager.Context
 
         submitAction(ACTION_ARCHITECT, goal, () -> {
             // Proceed with execution using the selected options
-            executeAgentCommand(architectModel, goal, options);
+            executeArchitectCommand(architectModel, goal, options);
         });
     }
 
@@ -1488,19 +1460,18 @@ public class InstructionsPanel extends JPanel implements IContextManager.Context
     }
 
     // Public entry point for default Ask model
-    public void runAskCommand() {
+    public void runAskCommand(String input) {
         var contextManager = chrome.getContextManager();
-        prepareAndRunAskCommand(contextManager.getAskModel());
+        prepareAndRunAskCommand(contextManager.getAskModel(), input);
     }
 
     // Public entry point for selected Ask model from SplitButton
-    public void runAskCommand(StreamingChatLanguageModel modelToUse) {
-        prepareAndRunAskCommand(modelToUse);
+    private void runAskCommand(StreamingChatLanguageModel modelToUse) {
+        prepareAndRunAskCommand(modelToUse, getInstructions());
     }
 
     // Core method to prepare and submit the Ask action
-    private void prepareAndRunAskCommand(StreamingChatLanguageModel modelToUse) {
-        var input = getInstructions();
+    private void prepareAndRunAskCommand(StreamingChatLanguageModel modelToUse, String input) {
         if (input.isBlank()) {
             chrome.toolError("Please enter a question");
             return;
@@ -1576,6 +1547,9 @@ public class InstructionsPanel extends JPanel implements IContextManager.Context
             try {
                 chrome.showOutputSpinner("Executing " + action + " command...");
                 task.run();
+            } catch (CancellationException e) {
+                maybeAddInterruptedResult(action, input);
+                throw e; // propagate to ContextManager
             } finally {
                 chrome.hideOutputSpinner();
                 checkBalanceAndNotify();
@@ -1604,14 +1578,13 @@ public class InstructionsPanel extends JPanel implements IContextManager.Context
      */
     private void updateButtonStates() {
         SwingUtilities.invokeLater(() -> {
-            boolean projectLoaded = chrome.getProject() != null;
             boolean cmAvailable = this.contextManager != null;
-            boolean gitAvailable = projectLoaded && chrome.getProject().hasGit();
+            boolean gitAvailable = chrome.getProject().hasGit();
             // boolean worktreesSupported = gitAvailable && chrome.getProject().getRepo().supportsWorktrees(); // No longer needed here
 
             // Architect Button
-            architectButton.setEnabled(projectLoaded && cmAvailable);
-            if (projectLoaded && cmAvailable) {
+            architectButton.setEnabled(cmAvailable);
+            if (cmAvailable) {
                  architectButton.setToolTipText("Run the multi-step agent (options include worktree setup)");
             } else {
                  architectButton.setToolTipText("Architect agent unavailable (project/CM not ready)");
@@ -1619,23 +1592,23 @@ public class InstructionsPanel extends JPanel implements IContextManager.Context
             // Worktree option is now part of ArchitectOptionsDialog
 
             // Code Button
-            if (projectLoaded && !gitAvailable) {
+            if (!gitAvailable) {
                 codeButton.setEnabled(false);
                 codeButton.setToolTipText("Code feature requires Git integration for this project.");
             } else {
-                codeButton.setEnabled(projectLoaded && cmAvailable);
+                codeButton.setEnabled(cmAvailable);
                 // Default tooltip is set during initialization, no need to reset unless it changed
             }
 
-            askButton.setEnabled(projectLoaded && cmAvailable);
-            searchButton.setEnabled(projectLoaded && cmAvailable);
+            askButton.setEnabled(cmAvailable);
+            searchButton.setEnabled(cmAvailable);
             runButton.setEnabled(cmAvailable); // Requires CM for getRoot()
             // Enable deepScanButton only if instructionsArea is also enabled
-            deepScanButton.setEnabled(projectLoaded && cmAvailable && instructionsArea.isEnabled());
+            deepScanButton.setEnabled(cmAvailable && instructionsArea.isEnabled());
             // Stop is only enabled when an action is running
             stopButton.setEnabled(false);
 
-            if (projectLoaded && cmAvailable) {
+            if (cmAvailable) {
                 chrome.enableHistoryPanel();
             } else {
                 chrome.disableHistoryPanel();
@@ -1749,9 +1722,7 @@ public class InstructionsPanel extends JPanel implements IContextManager.Context
             var item = new JMenuItem("Models unavailable (ContextManager not ready)");
             item.setEnabled(false);
             popupMenu.add(item);
-            if (chrome.themeManager != null) {
-                chrome.themeManager.registerPopupMenu(popupMenu);
-            }
+            chrome.themeManager.registerPopupMenu(popupMenu);
             return popupMenu;
         }
 
@@ -1761,10 +1732,10 @@ public class InstructionsPanel extends JPanel implements IContextManager.Context
         // Cast the result of loadFavoriteModels and ensure it's handled correctly
         var favoriteModels = MainProject.loadFavoriteModels();
 
-        // Filter favorite models to show only those that are currently available, and sort by alias
+        // Filter favorite models to show only those that are currently available, and sort by alias case-insensitively
         var favoriteModelsToShow = favoriteModels.stream()
                 .filter(fav -> availableModelsMap.containsKey(fav.modelName()))
-                .sorted(Comparator.comparing(Service.FavoriteModel::alias))
+                .sorted(Comparator.comparing(Service.FavoriteModel::alias, String.CASE_INSENSITIVE_ORDER))
                 .toList();
 
         if (favoriteModelsToShow.isEmpty()) {
@@ -1786,9 +1757,7 @@ public class InstructionsPanel extends JPanel implements IContextManager.Context
         }
 
         // Apply theme to the popup menu itself and its items
-        if (chrome.themeManager != null) {
-            chrome.themeManager.registerPopupMenu(popupMenu);
-        }
+        chrome.themeManager.registerPopupMenu(popupMenu);
         return popupMenu;
     }
 
@@ -1881,9 +1850,7 @@ public class InstructionsPanel extends JPanel implements IContextManager.Context
                     }
                 });
 
-                if (chrome.themeManager != null) {
-                    chrome.themeManager.registerPopupMenu(popup);
-                }
+                chrome.themeManager.registerPopupMenu(popup);
                 popup.show(instructionsArea, r.x, r.y + r.height);
 
                 // Preselect the first item in the popup

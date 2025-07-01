@@ -1,33 +1,35 @@
 package io.github.jbellis.brokk.gui;
 
-import com.google.common.base.Ascii;
 import io.github.jbellis.brokk.ContextManager;
+import io.github.jbellis.brokk.GitHubAuth;
 import io.github.jbellis.brokk.IConsoleIO;
 import io.github.jbellis.brokk.git.CommitInfo;
 import io.github.jbellis.brokk.git.GitRepo;
-import io.github.jbellis.brokk.git.ICommitInfo;
 import io.github.jbellis.brokk.git.GitRepo.MergeMode;
+import io.github.jbellis.brokk.git.ICommitInfo;
 import io.github.jbellis.brokk.gui.components.LoadingButton;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 import org.eclipse.jgit.api.MergeResult;
-import org.eclipse.jgit.api.RebaseCommand;
-import org.eclipse.jgit.api.RebaseResult;
 import org.eclipse.jgit.api.errors.GitAPIException;
-import org.eclipse.jgit.lib.ObjectId;
-import org.jetbrains.annotations.Nullable;
 import org.eclipse.jgit.lib.ProgressMonitor;
 
 import javax.swing.*;
 import javax.swing.table.DefaultTableModel;
 import javax.swing.table.TableCellRenderer;
-import io.github.jbellis.brokk.gui.MergeBranchDialogPanel;
 import java.awt.*;
 import java.awt.event.MouseAdapter;
 import java.awt.event.MouseEvent;
 import java.util.*;
 import java.util.List;
 import java.util.stream.Collectors;
+import java.util.concurrent.Executors;
+import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.TimeUnit;
+import java.time.ZonedDateTime;
+import java.time.ZoneId;
+import java.time.temporal.ChronoUnit;
+import java.time.Duration;
 
 /**
  * Panel that contains the "Log" tab UI and related functionality:
@@ -45,6 +47,11 @@ public class GitLogTab extends JPanel {
 
     private final Chrome chrome;
     private final ContextManager contextManager;
+
+    /**
+     * Schedules a refresh shortly after midnight so relative dates stay correct.
+     */
+    private final ScheduledExecutorService midnightRefreshScheduler;
 
     // Branches
     private JTable branchTable;
@@ -68,11 +75,18 @@ public class GitLogTab extends JPanel {
 
         var project = contextManager.getProject();
         // Determine if the "Create PR" button should be shown, mirroring logic in GitPanel for the PR tab.
-        var showCreatePrButton = project.isGitHubRepo();
+        var showCreatePrButton = project.isGitHubRepo() && GitHubAuth.tokenPresent(project);
         var panelOptions = new GitCommitBrowserPanel.Options(true, true, showCreatePrButton);
 
         this.gitCommitBrowserPanel = new GitCommitBrowserPanel(chrome, contextManager, this::reloadCurrentBranchOrContext, panelOptions);
         buildLogTabUI();
+
+        this.midnightRefreshScheduler = Executors.newSingleThreadScheduledExecutor(r -> {
+            Thread t = new Thread(r, "GitLogTab-MidnightRefresh");
+            t.setDaemon(true);
+            return t;
+        });
+        scheduleMidnightRefresh();
     }
 
     /**
@@ -220,7 +234,7 @@ public class GitLogTab extends JPanel {
                 String branchName = (String) branchTableModel.getValueAt(branchTable.getSelectedRow(), 1);
                 remoteBranchTable.clearSelection();
                 updateCommitsForBranch(branchName);
-                if (gitCommitBrowserPanel != null) gitCommitBrowserPanel.clearSearchField(); // Clear search in panel
+                gitCommitBrowserPanel.clearSearchField(); // Clear search in panel
             }
         });
         remoteBranchTable.getSelectionModel().addListSelectionListener(e -> {
@@ -228,21 +242,13 @@ public class GitLogTab extends JPanel {
                 String branchName = (String) remoteBranchTableModel.getValueAt(remoteBranchTable.getSelectedRow(), 0);
                 branchTable.clearSelection();
                 updateCommitsForBranch(branchName);
-                if (gitCommitBrowserPanel != null) gitCommitBrowserPanel.clearSearchField(); // Clear search in panel
+                gitCommitBrowserPanel.clearSearchField(); // Clear search in panel
             }
         });
 
         // Local branch context menu
         JPopupMenu branchContextMenu = new JPopupMenu();
-        if (chrome.themeManager != null) {
-            chrome.themeManager.registerPopupMenu(branchContextMenu);
-        } else {
-            SwingUtilities.invokeLater(() -> {
-                if (chrome.themeManager != null) {
-                    chrome.themeManager.registerPopupMenu(branchContextMenu);
-                }
-            });
-        }
+        chrome.themeManager.registerPopupMenu(branchContextMenu);
         JMenuItem checkoutItem = new JMenuItem("Checkout");
         JMenuItem newBranchItem = new JMenuItem("New Branch From This");
         JMenuItem mergeItem = new JMenuItem("Merge into HEAD");
@@ -348,16 +354,16 @@ public class GitLogTab extends JPanel {
         // Remote branch context menu
         JPopupMenu remoteBranchContextMenu = new JPopupMenu();
         SwingUtilities.invokeLater(() -> {
-            if (chrome.themeManager != null) {
-                chrome.themeManager.registerPopupMenu(remoteBranchContextMenu);
-            }
+            chrome.themeManager.registerPopupMenu(remoteBranchContextMenu);
         });
         JMenuItem remoteCheckoutItem = new JMenuItem("Checkout");
         JMenuItem remoteNewBranchItem = new JMenuItem("New Branch From This");
+        JMenuItem remoteMergeItem = new JMenuItem(); // text set dynamically
         JMenuItem remoteDiffItem = new JMenuItem("Capture Diff vs Branch");
 
         remoteBranchContextMenu.add(remoteCheckoutItem);
         remoteBranchContextMenu.add(remoteNewBranchItem);
+        remoteBranchContextMenu.add(remoteMergeItem);
         remoteBranchContextMenu.add(remoteDiffItem);
 
         remoteBranchTable.addMouseListener(new MouseAdapter() {
@@ -377,6 +383,20 @@ public class GitLogTab extends JPanel {
                     if (row >= 0 && !remoteBranchTable.isRowSelected(row)) {
                         remoteBranchTable.setRowSelectionInterval(row, row);
                     }
+                    String currentBranch = null;
+                    try {
+                        currentBranch = getRepo().getCurrentBranch();
+                    } catch (Exception ex) {
+                        logger.error("Could not get current branch for remote context menu", ex);
+                        // currentBranch remains null
+                    }
+                    if (row >= 0 && currentBranch != null) {
+                        remoteMergeItem.setText("Merge into " + currentBranch);
+                        remoteMergeItem.setEnabled(true);
+                    } else {
+                        remoteMergeItem.setText("Merge into...");
+                        remoteMergeItem.setEnabled(false);
+                    }
                     SwingUtilities.invokeLater(() -> {
                         remoteBranchContextMenu.show(remoteBranchTable, e.getX(), e.getY());
                     });
@@ -386,7 +406,23 @@ public class GitLogTab extends JPanel {
 
         remoteCheckoutItem.addActionListener(e -> performRemoteBranchAction(this::checkoutBranch));
         remoteNewBranchItem.addActionListener(e -> performRemoteBranchAction(this::createNewBranchFrom));
+        remoteMergeItem.addActionListener(e -> performRemoteBranchAction(this::showMergeDialog));
         remoteDiffItem.addActionListener(e -> performRemoteBranchAction(this::captureDiffVsRemoteBranch));
+    }
+
+    /**
+     * Schedule a daily refresh right after local midnight so that formatted
+     * dates like "Today" and "Yesterday" stay current.
+     */
+    private void scheduleMidnightRefresh() {
+        var now = ZonedDateTime.now(ZoneId.systemDefault());
+        var nextMidnight = now.plusDays(1).truncatedTo(ChronoUnit.DAYS);
+        long initialDelayMs = Duration.between(now, nextMidnight).toMillis() + 1;
+
+        midnightRefreshScheduler.scheduleAtFixedRate(this::reloadCurrentBranchOrContext,
+                                                     initialDelayMs,
+                                                     TimeUnit.DAYS.toMillis(1),
+                                                     TimeUnit.MILLISECONDS);
     }
 
     // Methods getFilePathFromTreePath, isFileNode, hasFileNodesSelected, getSelectedFilePaths
@@ -808,45 +844,6 @@ public class GitLogTab extends JPanel {
     private GitRepo getRepo() {
         return (GitRepo) contextManager.getProject().getRepo();
     }
-
-    // expandAllNodes was for the local changesTree, now handled by GitCommitBrowserPanel.
-
-    /**
-     * Format commit date to show e.g. "HH:MM:SS today" if it is today's date.
-     */
-    static String formatCommitDate(java.time.Instant commitInstant, java.time.LocalDate today) {
-        try {
-            java.time.ZonedDateTime commitZonedDateTime = commitInstant.atZone(java.time.ZoneId.systemDefault());
-            java.time.LocalDate commitDate = commitZonedDateTime.toLocalDate();
-
-            java.time.format.DateTimeFormatter timeFormatter = java.time.format.DateTimeFormatter.ofPattern("HH:mm:ss");
-            String timeStr = commitZonedDateTime.format(timeFormatter);
-
-            if (commitDate.equals(today)) {
-                // If it's today's date, just show the time with "today"
-                return "Today " + timeStr;
-            } else if (commitDate.equals(today.minusDays(1))) {
-                // If it's yesterday
-                return "Yesterday " + timeStr;
-            } else if (commitDate.isAfter(today.minusDays(7))) {
-                // If within the last week, show day of week
-                String dayName = commitDate.getDayOfWeek().getDisplayName(java.time.format.TextStyle.FULL, Locale.getDefault());
-                // Ensure proper capitalization (e.g., "Monday" not "MONDAY")
-                dayName = Ascii.toUpperCase(dayName.substring(0, 1)) + Ascii.toLowerCase(dayName.substring(1));
-                return dayName + " " + timeStr;
-            }
-
-            // Otherwise, show the standard date format
-            java.time.format.DateTimeFormatter dateTimeFormatter = java.time.format.DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss");
-            return commitZonedDateTime.format(dateTimeFormatter);
-        } catch (Exception e) {
-            logger.debug("Could not format date: {}", commitInstant, e);
-            return commitInstant.toString();
-        }
-    }
-
-    // Methods hasFileNodesSelected, getSelectedFilePaths, popStash, applyStash, dropStash
-    // were related to UI elements or actions now managed by GitCommitBrowserPanel.
 
     /**
      * Enables/Disables items in the local-branch context menu based on selection.

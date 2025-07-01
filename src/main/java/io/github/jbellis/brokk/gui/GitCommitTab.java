@@ -8,7 +8,6 @@ import io.github.jbellis.brokk.difftool.ui.BrokkDiffPanel;
 import io.github.jbellis.brokk.difftool.ui.BufferSource;
 import io.github.jbellis.brokk.git.GitRepo;
 import io.github.jbellis.brokk.git.GitWorkflowService;
-import io.github.jbellis.brokk.gui.CommitDialog;
 import io.github.jbellis.brokk.gui.widgets.FileStatusTable;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
@@ -185,26 +184,7 @@ public class GitCommitTab extends JPanel {
         add(fileStatusPane, BorderLayout.CENTER);
 
         // Bottom panel for buttons
-        JPanel buttonPanel = new JPanel(new FlowLayout(FlowLayout.LEFT));
-
-        // Stash Button
-        stashButton = new JButton("Stash All"); // Default label
-        stashButton.setToolTipText("Save your changes to the stash");
-        stashButton.setEnabled(false);
-        stashButton.addActionListener(e -> {
-            List<ProjectFile> selectedFiles = getSelectedFilesFromTable();
-            // Stash without asking for a message, using a default one.
-            String stashMessage = "Stash created by Brokk";
-            contextManager.submitUserTask("Stashing changes", () -> {
-                try {
-                    performStash(selectedFiles, stashMessage);
-                } catch (GitAPIException ex) {
-                    logger.error("Error stashing changes:", ex);
-                    SwingUtilities.invokeLater(() -> chrome.toolError("Error stashing changes: " + ex.getMessage(), "Stash Error"));
-                }
-            });
-        });
-        buttonPanel.add(stashButton);
+        JPanel buttonPanel = new JPanel(new FlowLayout(FlowLayout.LEFT, 0, Constants.V_GAP));
 
         // Commit Button
         commitButton = new JButton("Commit All..."); // Default label with ellipsis
@@ -231,8 +211,8 @@ public class GitCommitTab extends JPanel {
                     filesToCommit,
                     commitResult -> { // This is the onCommitSuccessCallback
                         chrome.systemOutput("Committed "
-                                + GitUiUtil.shortenCommitId(commitResult.commitId())
-                                + ": " + commitResult.firstLine());
+                                            + GitUiUtil.shortenCommitId(commitResult.commitId())
+                                            + ": " + commitResult.firstLine());
                         updateCommitPanel(); // Refresh file list
                         gitPanel.updateLogTab();
                         gitPanel.selectCurrentBranchInLogTab();
@@ -242,6 +222,27 @@ public class GitCommitTab extends JPanel {
         });
         buttonPanel.add(commitButton);
 
+        // Add horizontal glue between buttons
+        buttonPanel.add(Box.createHorizontalStrut(Constants.H_GAP));
+
+        // Stash Button
+        stashButton = new JButton("Stash All"); // Default label
+        stashButton.setToolTipText("Save your changes to the stash");
+        stashButton.setEnabled(false);
+        stashButton.addActionListener(e -> {
+            List<ProjectFile> selectedFiles = getSelectedFilesFromTable();
+            // Stash without asking for a message, using a default one.
+            String stashMessage = "Stash created by Brokk";
+            contextManager.submitUserTask("Stashing changes", () -> {
+                try {
+                    performStash(selectedFiles, stashMessage);
+                } catch (GitAPIException ex) {
+                    logger.error("Error stashing changes:", ex);
+                    SwingUtilities.invokeLater(() -> chrome.toolError("Error stashing changes: " + ex.getMessage(), "Stash Error"));
+                }
+            });
+        });
+        buttonPanel.add(stashButton);
 
         // Table selection => update commit button text and enable/disable buttons
         uncommittedFilesTable.getSelectionModel().addListSelectionListener(e -> {
@@ -270,7 +271,6 @@ public class GitCommitTab extends JPanel {
      */
     private GitRepo getRepo() {
         var repo = contextManager.getProject().getRepo();
-        assert repo != null;
         return (GitRepo) repo;
     }
 
@@ -508,9 +508,7 @@ public class GitCommitTab extends JPanel {
                     String headContent = "";
                     try {
                         var repo = contextManager.getProject().getRepo();
-                        if (repo != null) {
-                            headContent = repo.getFileContent("HEAD", file);
-                        }
+                        headContent = repo.getFileContent("HEAD", file);
                     } catch (Exception ex) {
                         // new file or retrieval error – treat as empty
                         headContent = "";
