@@ -3,9 +3,8 @@ import App from './App.svelte';
 // Entry point for Brokk frontend
 console.log('Brokk frontend initialized');
 
-const app = new App({
-  target: document.body
-});
+// Instantiate the app using legacy Svelte API
+const app = new App({ target: document.body, props: { event: { type: '' } } });
 
 // Expose brokk event handler for Java interaction
 window.brokk = {
