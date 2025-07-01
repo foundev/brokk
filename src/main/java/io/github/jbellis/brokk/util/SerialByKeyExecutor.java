@@ -2,9 +2,9 @@ package io.github.jbellis.brokk.util;
 
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
-import org.jetbrains.annotations.Nullable;
 
 import java.util.Objects;
+import java.util.Set;
 import java.util.concurrent.Callable;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
@@ -12,8 +12,9 @@ import java.util.concurrent.ExecutorService;
 import java.util.function.Supplier;
 
 /**
- * A utility class that submits tasks to an ExecutorService, with the constraint that tasks
- * submitted with the same key are executed serially.
+ * A utility class that submits tasks to an ExecutorService. Tasks sharing one or more keys
+ * will be executed serially in submission order, i.e. a running task takes an exclusive lock
+ * on the resources guarded by the provided keys.
  */
 public class SerialByKeyExecutor {
 
@@ -25,6 +26,7 @@ public class SerialByKeyExecutor {
      * Maps task key to the last Future submitted with that key.
      */
     private final ConcurrentHashMap<String, CompletableFuture<?>> activeFutures = new ConcurrentHashMap<>();
+    private final Object submissionLock = new Object();
 
     /**
      * Creates a new SerialByKeyExecutor that will use the given ExecutorService to run tasks.
@@ -36,6 +38,63 @@ public class SerialByKeyExecutor {
     }
 
     /**
+     * Submits a task for execution. Tasks sharing one or more keys will be executed serially in submission order.
+     *
+     * @param keys the keys to associate with the task
+     * @param task the task to execute
+     * @param <T> the type of the task's result
+     * @return a CompletableFuture representing the pending completion of the task
+     */
+    public <T> CompletableFuture<T> submit(Set<String> keys, Callable<T> task) {
+        if (keys.isEmpty()) {
+            throw new IllegalArgumentException("keys must not be empty");
+        }
+
+        Supplier<T> supplier = () -> {
+            try {
+                return task.call();
+            } catch (Exception e) {
+                logger.error("Task for keys '{}' failed", String.join(",", keys), e);
+                if (e instanceof RuntimeException re) {
+                    throw re;
+                }
+                throw new RuntimeException(e);
+            }
+        };
+
+        CompletableFuture<T> taskFuture;
+        synchronized (submissionLock) {
+            var prerequisiteFutures = keys.stream()
+                                          .map(activeFutures::get)
+                                          .filter(Objects::nonNull)
+                                          .distinct()
+                                          .toList();
+
+            Supplier<CompletableFuture<T>> taskRunner = () -> CompletableFuture.supplyAsync(supplier, executor);
+
+            if (prerequisiteFutures.isEmpty()) {
+                taskFuture = taskRunner.get();
+            } else {
+                var allPrerequisites = CompletableFuture.allOf(prerequisiteFutures.toArray(new CompletableFuture[0]));
+                taskFuture = allPrerequisites.handle((r, e) -> null) // ignore errors from prerequisites
+                                             .thenComposeAsync(ignored -> taskRunner.get(), executor);
+            }
+
+            for (var key : keys) {
+                activeFutures.put(key, taskFuture);
+            }
+
+            taskFuture.whenComplete((res, err) -> {
+                for (var key : keys) {
+                    activeFutures.remove(key, taskFuture);
+                }
+            });
+        }
+
+        return taskFuture;
+    }
+
+    /**
      * Submits a task for execution. Tasks with the same key will be executed in the order they were submitted.
      *
      * @param key the key to associate with the task
@@ -43,41 +102,8 @@ public class SerialByKeyExecutor {
      * @param <T> the type of the task's result
      * @return a CompletableFuture representing the pending completion of the task
      */
-    @SuppressWarnings({"unchecked"})
     public <T> CompletableFuture<T> submit(String key, Callable<T> task) {
-        Supplier<T> supplier = toSupplier(() -> {
-            try {
-                return task.call();
-            } catch (Exception e) {
-                logger.error("Task for key '{}' failed", key, e);
-                throw e;
-            }
-        });
-
-        // The compute() operation is atomic, ensuring that even concurrent submissions
-        // with the same key will be properly chained together for serial execution
-        CompletableFuture<?> future = activeFutures.compute(key, (var k, @Nullable var existingFuture) -> {
-            CompletableFuture<T> taskFuture;
-            if (existingFuture == null) {
-                // First task for this key - execute immediately
-                taskFuture = CompletableFuture.supplyAsync(supplier, executor);
-            } else {
-                // Chain this task to execute after the existing future completes.
-                // We use handle() to ensure that the next task runs even if the previous one fails.
-                taskFuture = existingFuture
-                        .handle((r, e) -> null)
-                        .thenComposeAsync(ignored -> CompletableFuture.supplyAsync(supplier, executor), executor);
-            }
-
-            // When the task completes, remove it from the map if it's the most recent one for this key.
-            taskFuture.whenComplete((res, err) -> {
-                activeFutures.remove(k, taskFuture);
-            });
-
-            return taskFuture;
-        });
-
-        return (CompletableFuture<T>) future;
+        return submit(Set.of(key), task);
     }
 
     /**
@@ -89,32 +115,25 @@ public class SerialByKeyExecutor {
      */
     public CompletableFuture<Void> submit(String key, Runnable task) {
         return submit(key, () -> {
-            try {
-                task.run();
-            } catch (Exception e) {
-                throw e;
-            }
+            task.run();
             return null;
         });
     }
 
-
-
     /**
-     * Converts a Callable into a Supplier, wrapping any checked exceptions from the Callable in a RuntimeException.
+     * Submits a task with no return value for execution. Tasks sharing one or more keys will be executed serially.
+     *
+     * @param keys the keys to associate with the task
+     * @param task the task to execute
+     * @return a CompletableFuture representing the pending completion of the task
      */
-    private static <T> Supplier<T> toSupplier(Callable<T> callable) {
-        return () -> {
-            try {
-                return callable.call();
-            } catch (Exception e) {
-                if (e instanceof RuntimeException runtimeException) {
-                    throw runtimeException;
-                }
-                throw new RuntimeException(e);
-            }
-        };
+    public CompletableFuture<Void> submit(Set<String> keys, Runnable task) {
+        return submit(keys, () -> {
+            task.run();
+            return null;
+        });
     }
+
 
     /**
      * @return the number of keys with active tasks.

@@ -3,6 +3,7 @@ package io.github.jbellis.brokk.util;
 import org.junit.jupiter.api.*;
 
 import java.util.List;
+import java.util.Set;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
@@ -50,6 +51,42 @@ class SerialByKeyExecutorTest {
         });
 
         var future3 = serialByKeyExecutor.submit(key, () -> {
+            executionOrder.add("task3");
+            return "result3";
+        });
+
+        // Wait for all tasks to complete and verify results
+        assertEquals("result1", future1.get(1, TimeUnit.SECONDS));
+        assertEquals("result2", future2.get(1, TimeUnit.SECONDS));
+        assertEquals("result3", future3.get(1, TimeUnit.SECONDS));
+
+        // Verify they executed in order
+        assertEquals(List.of("task1", "task2", "task3"), executionOrder);
+
+        // Verify the key is no longer active
+        assertEquals(0, serialByKeyExecutor.getActiveKeyCount());
+    }
+
+    @Test
+    void testSerialExecutionWithSameKey_multipleKeys() throws Exception {
+        var executionOrder = new CopyOnWriteArrayList<String>();
+
+        // Create three callables that record their execution order
+        var future1 = serialByKeyExecutor.submit(Set.of("key1", "key2"), () -> {
+            executionOrder.add("task1");
+            // Add a small delay to make timing issues more obvious if they exist
+            Thread.sleep(100);
+            return "result1";
+        });
+
+        var future2 = serialByKeyExecutor.submit(Set.of("key2", "key3"), () -> {
+            executionOrder.add("task2");
+            // Add a small delay to make timing issues more obvious if they exist
+            Thread.sleep(50);
+            return "result2";
+        });
+
+        var future3 = serialByKeyExecutor.submit(Set.of("key1", "key2"), () -> {
             executionOrder.add("task3");
             return "result3";
         });
@@ -130,6 +167,32 @@ class SerialByKeyExecutorTest {
 
         // Verify serial execution
         assertEquals(List.of("runnable1", "runnable2"), executionOrder);
+        assertEquals(0, serialByKeyExecutor.getActiveKeyCount());
+    }
+
+    @Test
+    void testRunnableSubmission_multipleKeys() throws Exception {
+        var executionOrder = new CopyOnWriteArrayList<String>();
+
+        var future1 = serialByKeyExecutor.submit(Set.of("key1", "key2"), () -> {
+            executionOrder.add("runnable1");
+        });
+
+        var future2 = serialByKeyExecutor.submit(Set.of("key2", "key3"), () -> {
+            executionOrder.add("runnable2");
+        });
+
+        var future3 = serialByKeyExecutor.submit(Set.of("key1", "key2"), () -> {
+            executionOrder.add("runnable3");
+        });
+
+        // Wait for completion - Runnable tasks return null
+        assertNull(future1.get(1, TimeUnit.SECONDS));
+        assertNull(future2.get(1, TimeUnit.SECONDS));
+        assertNull(future3.get(1, TimeUnit.SECONDS));
+
+        // Verify serial execution
+        assertEquals(List.of("runnable1", "runnable2", "runnable3"), executionOrder);
         assertEquals(0, serialByKeyExecutor.getActiveKeyCount());
     }
 

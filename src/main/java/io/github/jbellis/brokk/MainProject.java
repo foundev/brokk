@@ -1498,22 +1498,18 @@ public final class MainProject extends AbstractProject {
         var newSessionInfo = new SessionInfo(newSessionId, newSessionName, currentTime, currentTime);
         sessionsCache.put(newSessionId, newSessionInfo);
 
-        sessionExecutorByKey.submit(newSessionId.toString(), () -> {
+        var keys = Set.of(originalSessionId.toString(), newSessionId.toString());
+        sessionExecutorByKey.submit(keys, () -> {
             try {
                 Path originalHistoryPath = getSessionHistoryPath(originalSessionId);
                 if (!Files.exists(originalHistoryPath)) {
                     throw new IOException("Original session %s not found, cannot copy".formatted(originalHistoryPath.getFileName()));
                 }
+                
                 Path newHistoryPath = getSessionHistoryPath(newSessionId);
-
                 Files.createDirectories(newHistoryPath.getParent());
-                // This needs to be serialized against the original session ID as well.
-                // We submit to new session's key, but we need to wait for original session's queue to clear.
-                sessionExecutorByKey.submit(originalSessionId.toString(), () -> {
-                    Files.copy(originalHistoryPath, newHistoryPath);
-                    logger.info("Copied session zip {} to {}", originalHistoryPath.getFileName(), newHistoryPath.getFileName());
-                    return null;
-                }).get(); // wait for copy to complete
+                Files.copy(originalHistoryPath, newHistoryPath);
+                logger.info("Copied session zip {} to {}", originalHistoryPath.getFileName(), newHistoryPath.getFileName());
 
                 writeSessionInfoToZip(newHistoryPath, newSessionInfo);
                 logger.info("Updated manifest.json in new session zip {} for session ID {}", newHistoryPath.getFileName(), newSessionId);
