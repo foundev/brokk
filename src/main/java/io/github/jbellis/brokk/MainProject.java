@@ -8,8 +8,6 @@ import io.github.jbellis.brokk.issues.IssueProviderType;
 import org.jetbrains.annotations.Nullable;
 import io.github.jbellis.brokk.analyzer.Language;
 import io.github.jbellis.brokk.analyzer.ProjectFile;
-import io.github.jbellis.brokk.context.Context;
-import io.github.jbellis.brokk.context.ContextFragment;
 import io.github.jbellis.brokk.context.ContextHistory;
 import io.github.jbellis.brokk.git.GitRepo;
 import io.github.jbellis.brokk.util.AtomicWrites;
@@ -18,7 +16,6 @@ import org.apache.logging.log4j.Logger;
 
 import java.io.IOException;
 
-import java.nio.file.FileSystems;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.*;

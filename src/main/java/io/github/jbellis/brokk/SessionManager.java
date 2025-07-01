@@ -157,10 +157,7 @@ public class SessionManager implements AutoCloseable
                 writeSessionInfoToZip(newHistoryPath, newSessionInfo);
                 logger.info("Updated manifest.json in new session zip {} for session ID {}", newHistoryPath.getFileName(), newSessionId);
             } catch (Exception e) {
-                logger.error("Failed to copy session from {} to new session {}: {}", originalSessionId, newSessionName, e.getMessage(), e);
-                if (e instanceof InterruptedException) {
-                    Thread.currentThread().interrupt();
-                }
+                logger.error("Failed to copy session from {} to new session {}:", originalSessionId, newSessionName, e);
                 throw new RuntimeException("Failed to copy session " + originalSessionId, e);
             }
         });
@@ -273,7 +270,7 @@ public class SessionManager implements AutoCloseable
         try {
             return future.get();
         } catch (InterruptedException | ExecutionException e) {
-            logger.warn("Error waiting for session history to load for session {}: {}", sessionId, e);
+            logger.warn("Error waiting for session history to load for session {}:", sessionId, e);
             if (e instanceof InterruptedException) {
                 Thread.currentThread().interrupt();
             }
