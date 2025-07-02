@@ -1,6 +1,5 @@
 package io.github.jbellis.brokk;
 
-import io.github.jbellis.brokk.IProject.SessionInfo;
 import io.github.jbellis.brokk.context.Context;
 import io.github.jbellis.brokk.context.ContextFragment;
 import io.github.jbellis.brokk.context.ContextHistory;
@@ -32,6 +31,12 @@ import java.util.concurrent.TimeUnit;
 
 public class SessionManager implements AutoCloseable
 {
+    /**
+     * Record representing session metadata for the sessions management system.
+     */
+    public record SessionInfo(UUID id, String name, long created, long modified) {
+    }
+
     private static final Logger logger = LogManager.getLogger(SessionManager.class);
 
     private final ExecutorService sessionExecutor;

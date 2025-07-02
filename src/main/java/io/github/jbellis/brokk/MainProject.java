@@ -8,36 +8,43 @@ import io.github.jbellis.brokk.issues.IssueProviderType;
 import org.jetbrains.annotations.Nullable;
 import io.github.jbellis.brokk.analyzer.Language;
 import io.github.jbellis.brokk.analyzer.ProjectFile;
-import io.github.jbellis.brokk.context.ContextHistory;
 import io.github.jbellis.brokk.git.GitRepo;
 import io.github.jbellis.brokk.util.AtomicWrites;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 
 import java.io.IOException;
-
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.util.*;
 import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.Comparator;
+import java.util.HashMap;
+import java.util.HashSet;
+import java.util.LinkedHashSet;
+import java.util.List;
+import java.util.Locale;
+import java.util.Map;
+import java.util.Objects;
+import java.util.Optional;
+import java.util.Properties;
+import java.util.Set;
+import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.ExecutionException;
 import java.util.stream.Collectors;
-import java.util.Set;
-import java.util.LinkedHashSet;
-import java.util.HashSet;
 
 public final class MainProject extends AbstractProject {
     private static final Logger logger = LogManager.getLogger(MainProject.class); // Separate logger from AbstractProject
 
-    private final SessionManager sessionManager;
     private final Path propertiesFile;
     private final Properties projectProps;
     private final Path styleGuidePath;
     private final Path reviewGuidePath;
     private final Path mainWorkspacePropertiesPath;
     private final Properties mainWorkspaceProps;
+    private final SessionManager sessionManager;
     private volatile CompletableFuture<BuildAgent.BuildDetails> detailsFuture = new CompletableFuture<>();
 
     private static final String BUILD_DETAILS_KEY = "buildDetailsJson";
@@ -722,16 +729,6 @@ public final class MainProject extends AbstractProject {
         }
     }
 
-    @Override
-    public void saveHistory(ContextHistory ch, UUID sessionId) {
-        sessionManager.saveHistory(ch, sessionId);
-    }
-
-    @Override
-    public @Nullable ContextHistory loadHistory(UUID sessionId, IContextManager contextManager) {
-        return sessionManager.loadHistory(sessionId, contextManager);
-    }
-
     public static LlmProxySetting getProxySetting() {
         var props = loadGlobalProperties();
         String val = props.getProperty(LLM_PROXY_SETTING_KEY, LlmProxySetting.BROKK.name());
@@ -1226,31 +1223,6 @@ public final class MainProject extends AbstractProject {
     }
 
     @Override
-    public List<SessionInfo> listSessions() {
-        return sessionManager.listSessions();
-    }
-
-    @Override
-    public SessionInfo newSession(String name) {
-        return sessionManager.newSession(name);
-    }
-
-    @Override
-    public void renameSession(UUID sessionId, String newName) {
-        sessionManager.renameSession(sessionId, newName);
-    }
-
-    @Override
-    public void deleteSession(UUID sessionId) {
-        sessionManager.deleteSession(sessionId);
-    }
-
-    @Override
-    public SessionInfo copySession(UUID originalSessionId, String newSessionName) throws IOException {
-        return sessionManager.copySession(originalSessionId, newSessionName);
-    }
-
-    @Override
     public void close() {
         super.close();
         sessionManager.close();
@@ -1295,5 +1267,10 @@ public final class MainProject extends AbstractProject {
         } catch (Exception e) {
             logger.error("Error listing worktrees or reserving their sessions for main project {}: {}", this.root.getFileName(), e.getMessage(), e);
         }
+    }
+
+    @Override
+    public SessionManager getSessionManager() {
+        return sessionManager;
     }
 }
