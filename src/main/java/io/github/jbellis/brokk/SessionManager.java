@@ -199,6 +199,8 @@ public class SessionManager implements AutoCloseable
     }
 
     public void saveHistory(ContextHistory ch, UUID sessionId) {
+        // ContextHistory is mutable, take a copy before passing it to an async task
+        var contextHistory = new ContextHistory(ch.getHistory(), ch.getResetEdges());
         SessionInfo infoToSave = null;
         SessionInfo currentInfo = sessionsCache.get(sessionId);
         if (currentInfo != null) {
@@ -212,7 +214,7 @@ public class SessionManager implements AutoCloseable
         sessionExecutorByKey.submit(sessionId.toString(), () -> {
             try {
                 Path sessionHistoryPath = getSessionHistoryPath(sessionId);
-                HistoryIo.writeZip(ch, sessionHistoryPath);
+                HistoryIo.writeZip(contextHistory, sessionHistoryPath);
                 if (finalInfoToSave != null) {
                     writeSessionInfoToZip(sessionHistoryPath, finalInfoToSave);
                 }
