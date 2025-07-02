@@ -1,10 +1,8 @@
 <script lang="ts">
-  import Markdown from 'svelte-exmarkdown';
-  import remarkBreaks from 'remark-breaks';
-  import { gfmPlugin } from 'svelte-exmarkdown/gfm';
   import { onDestroy } from 'svelte';
   import type { Writable } from 'svelte/store';
   import type { BrokkEvent, Bubble } from './types';
+  import MessageBubble from './components/MessageBubble.svelte';
 
   export let eventStore: Writable<BrokkEvent>;
 
@@ -28,6 +26,12 @@
         break;
       case 'theme':
         isDarkTheme = event.dark;
+        // Ensure the theme-dark class is applied or removed from the body element
+        if (event.dark) {
+          document.body.classList.add('theme-dark');
+        } else {
+          document.body.classList.remove('theme-dark');
+        }
         break;
       case 'clear':
         bubbles = [];
@@ -44,53 +48,17 @@
 </script>
 
 <style>
-  body.theme-dark {
+  :global(body.theme-dark) {
     background-color: #2b2b2b;
     color: #bbb;
   }
+
   .chat-container {
     display: flex;
     flex-direction: column;
     gap: 1em;
     max-width: 100%;
     margin: 0 auto;
-  }
-  .bubble {
-    padding: 0.8em 1.2em;
-    border-radius: 0.8em;
-    max-width: 80%;
-    white-space: pre-wrap;
-    word-break: break-word;
-    display: inline-block;
-  }
-  .bubble.USER {
-    background-color: #e3f2fd;
-    color: #0d47a1;
-    align-self: flex-start;
-  }
-  .bubble.AI {
-    background-color: #f5f5f5;
-    color: #1b5e20;
-    align-self: flex-end;
-    text-align: right;
-  }
-  .bubble.SYSTEM {
-    background-color: #fff3e0;
-    color: #e65100;
-    align-self: center;
-    text-align: center;
-  }
-  body.theme-dark .bubble.USER {
-    background-color: #1e3a8a;
-    color: #bbdefb;
-  }
-  body.theme-dark .bubble.AI {
-    background-color: #2e7d32;
-    color: #c8e6c9;
-  }
-  body.theme-dark .bubble.SYSTEM {
-    background-color: #9a3412;
-    color: #ffcc80;
   }
   #spinner {
     padding: 0.5em;
@@ -105,9 +73,7 @@
 
 <div class="chat-container" class:theme-dark={isDarkTheme}>
   {#each bubbles as bubble (bubble.id)}
-    <div class="bubble {bubble.type}">
-      <Markdown md={bubble.markdown} plugins={[gfmPlugin(), remarkBreaks()]} />
-    </div>
+    <MessageBubble {bubble} dark={isDarkTheme} />
   {/each}
 </div>
 <div id="spinner" style:display={spinnerMessage ? 'block' : 'none'}>{spinnerMessage}</div>
