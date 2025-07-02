@@ -2,6 +2,7 @@
   import Markdown from 'svelte-exmarkdown';
   import remarkBreaks from 'remark-breaks';
   import { gfmPlugin } from 'svelte-exmarkdown/gfm';
+  import { onDestroy } from 'svelte';
 
   export let eventStore;
 
@@ -9,14 +10,12 @@
   let spinnerMessage = '';
   let isDarkTheme = false;
 
-  // Subscribe to store changes
-  $: event = $eventStore;
-
-  $: {
+  // Subscribe to store changes explicitly to handle every event
+  const unsubscribe = eventStore.subscribe(event => {
     switch (event.type) {
       case 'chunk':
-        if (event.content) {
-          markdown += event.content;
+        if (event.text) {
+          markdown += event.text;
         }
         break;
       case 'theme':
@@ -29,7 +28,10 @@
         spinnerMessage = event.message;
         break;
     }
-  }
+  });
+
+  // Unsubscribe when component is destroyed to prevent memory leaks
+  onDestroy(unsubscribe);
 </script>
 
 <style>

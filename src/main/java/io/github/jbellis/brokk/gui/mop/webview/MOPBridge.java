@@ -5,6 +5,8 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import dev.langchain4j.data.message.ChatMessageType;
 import javafx.application.Platform;
 import javafx.scene.web.WebEngine;
+import org.apache.logging.log4j.LogManager;
+import org.apache.logging.log4j.Logger;
 
 import java.io.UncheckedIOException;
 import java.util.ArrayList;
@@ -14,6 +16,7 @@ import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 
 public final class MOPBridge {
+    private static final Logger logger = LogManager.getLogger(MOPBridge.class);
     private static final ObjectMapper MAPPER = new ObjectMapper();
 
     private final WebEngine engine;
@@ -141,6 +144,15 @@ public final class MOPBridge {
             });
         });
         return future;
+    }
+
+    public void jsLog(String level, String message) {
+        switch (level.toUpperCase()) {
+            case "ERROR" -> logger.error("JS: {}", message);
+            case "WARN" -> logger.warn("JS: {}", message);
+            case "DEBUG" -> logger.debug("JS: {}", message);
+            default -> logger.info("JS: {}", message);
+        }
     }
 
     private static String toJson(BrokkEvent event) {

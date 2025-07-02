@@ -2,8 +2,6 @@ import { mount } from 'svelte';
 import { writable } from 'svelte/store';
 import App from './App.svelte';
 
-// Entry point for Brokk frontend
-console.log('Brokk frontend initialized');
 
 // Create a writable store for events
 const eventStore = writable({ type: '' });
@@ -14,10 +12,13 @@ const app = mount(App, {
   props: { eventStore }
 });
 
-// Expose brokk event handler for Java interaction
+// Save any buffered events
+const bufferedEvents = window.brokk._eventBuffer || [];
+
+// Replace the temporary brokk event handler with the real one
 window.brokk = {
   onEvent: (payload) => {
-    console.log('Received event from Java:', payload);
+    console.log('Received event from Java bridge:', JSON.stringify(payload));
     eventStore.set(payload);
 
     // ACK after a frame render to ensure UI has updated
@@ -30,4 +31,10 @@ window.brokk = {
     }
   }
 };
-console.log('brokk event handler registered.');
+
+// Process any events that were buffered before initialization
+if (bufferedEvents.length > 0) {
+  bufferedEvents.forEach(event => {
+    window.brokk.onEvent(event);
+  });
+}

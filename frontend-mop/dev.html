@@ -346,10 +346,6 @@
 <body>
   <h1>Brokk MOP - Development Mode</h1>
   <p>Events from Java will be logged to the console and displayed raw below.</p>
-  <div id="app"></div>
-  <pre id="log"></pre>
-  <div id="spinner" style="display: none;"></div>
-  <div id="dev-tools">
     <h3>Dev Tools</h3>
     <button onclick="simulateAskResponse()">Simulate Ask Response</button>
     <button onclick="simulateEvent('theme', { dark: !document.body.classList.contains('theme-dark') })">Toggle Theme</button>
@@ -358,6 +354,14 @@
   </div>
   <script type="module" src="/src/index.js"></script>
   <script>
+    // Immediately define brokk with a buffer to catch early events from Java
+    window.brokk = {
+      _eventBuffer: [],
+      onEvent: function(payload) {
+        console.log('Buffering early event from Java:', payload);
+        window.brokk._eventBuffer.push(payload);
+      }
+    };
     // Mock Java bridge for dev mode
     window.javaBridge = {
       onAck: (epoch) => console.log('Mock ACK for epoch:', epoch)
@@ -450,7 +454,7 @@ Both approaches:
       simulateEvent('clear');
       const interval = setInterval(() => {
         if (index < chunks.length) {
-          simulateEvent('chunk', { content: chunks[index] });
+          simulateEvent('chunk', { text: chunks[index] });
           index++;
         } else {
           clearInterval(interval);

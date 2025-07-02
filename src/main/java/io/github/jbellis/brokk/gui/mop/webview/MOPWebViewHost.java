@@ -1,45 +1,113 @@
 package io.github.jbellis.brokk.gui.mop.webview;
 
 import dev.langchain4j.data.message.ChatMessageType;
+import io.github.jbellis.brokk.gui.GitLogTab;
 import javafx.application.Platform;
 import javafx.embed.swing.JFXPanel;
 import javafx.scene.Scene;
 import javafx.scene.web.WebView;
 import netscape.javascript.JSObject;
+import org.apache.logging.log4j.LogManager;
+import org.apache.logging.log4j.Logger;
+import org.jetbrains.annotations.Nullable;
 
 import javax.swing.*;
 import java.awt.*;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.atomic.AtomicReference;
 
+import static java.util.Objects.requireNonNull;
+
 public final class MOPWebViewHost extends JPanel {
-    private final JFXPanel fxPanel = new JFXPanel();
+    private static final Logger logger = LogManager.getLogger(MOPWebViewHost.class);
+    @Nullable private JFXPanel fxPanel;
     private final AtomicReference<MOPBridge> bridgeRef = new AtomicReference<>();
 
     public MOPWebViewHost() {
         super(new BorderLayout());
+
+        // Defer JFXPanel creation to avoid EDT event pumping during construction
+        SwingUtilities.invokeLater(this::initializeFxPanel);
+    }
+
+    private void initializeFxPanel() {
+        fxPanel = new JFXPanel();
         add(fxPanel, BorderLayout.CENTER);
+        revalidate();
+        repaint();
 
         Platform.runLater(() -> {
             var view = new WebView();
             var scene = new Scene(view);
-            fxPanel.setScene(scene);
+            requireNonNull(fxPanel).setScene(scene);
 
             var bridge = new MOPBridge(view.getEngine());
             bridgeRef.set(bridge);
+
+            // Add JavaScript error handling
+            view.getEngine().setOnError(errorEvent -> {
+                logger.error("WebView JavaScript Error: {}", errorEvent.getMessage(), errorEvent.getException());
+            });
+
+            // Log page loading errors
+            view.getEngine().getLoadWorker().exceptionProperty().addListener((obs, oldException, newException) -> {
+                if (newException != null) {
+                    logger.error("WebView Load Error: {}", newException.getMessage(), newException);
+                }
+            });
+
+            // Add listener for resource loading errors
+            view.getEngine().setOnError(errorEvent -> {
+                logger.error("WebView Resource Load Error: {}", errorEvent.getMessage());
+            });
 
             // Expose Java object to JS after the page loads
             view.getEngine().getLoadWorker().stateProperty().addListener((obs, oldState, newState) -> {
                 if (newState == javafx.concurrent.Worker.State.SUCCEEDED) {
                     var window = (JSObject) view.getEngine().executeScript("window");
-                    window.setMember("javaBridge", bridge);
+                window.setMember("javaBridge", bridge);
+                
+                // Inject JavaScript to intercept console methods and forward to Java bridge
+                view.getEngine().executeScript("""
+                    (function() {
+                        var originalLog = console.log;
+                        var originalError = console.error;
+                        var originalWarn = console.warn;
+                        
+                        console.log = function() {
+                            var msg = Array.prototype.slice.call(arguments).join(' ');
+                            if (window.javaBridge) window.javaBridge.jsLog('INFO', msg);
+                            originalLog.apply(console, arguments);
+                        };
+                        console.error = function() {
+                            var msg = Array.prototype.slice.call(arguments).join(' ');
+                            if (window.javaBridge) window.javaBridge.jsLog('ERROR', msg);
+                            originalError.apply(console, arguments);
+                        };
+                        console.warn = function() {
+                            var msg = Array.prototype.slice.call(arguments).join(' ');
+                            if (window.javaBridge) window.javaBridge.jsLog('WARN', msg);
+                            originalWarn.apply(console, arguments);
+                        };
+                    })();
+                    """);
+            } else if (newState == javafx.concurrent.Worker.State.FAILED) {
+                    logger.error("WebView Page Load Failed");
                 }
             });
 
             var resourceUrl = getClass().getResource("/mop-web/index.html");
             if (resourceUrl == null) {
                 view.getEngine().loadContent("<html><body><h1>Error: mop-web/index.html not found</h1></body></html>", "text/html");
+            } else if ("jar".equals(resourceUrl.getProtocol())) {
+                // When running from a JAR, serve resources via an embedded HTTP server to avoid CORS issues
+                int port = ClasspathHttpServer.ensureStarted();
+                var url = "http://127.0.0.1:" + port + "/index.html";
+                logger.info("Loading WebView content from embedded server: {}", url);
+                view.getEngine().load(url);
             } else {
+                // When running from IDE or exploded classes, load directly from file system
+                logger.info("Loading WebView content from filesystem: {}", resourceUrl.toExternalForm());
                 view.getEngine().load(resourceUrl.toExternalForm());
             }
         });
@@ -87,9 +155,10 @@ public final class MOPWebViewHost extends JPanel {
             bridge.shutdown();
         }
         Platform.runLater(() -> {
-            if (fxPanel.getScene() != null && fxPanel.getScene().getRoot() instanceof WebView webView) {
+            if (fxPanel != null && fxPanel.getScene() != null && fxPanel.getScene().getRoot() instanceof WebView webView) {
                 webView.getEngine().load(null); // release memory
             }
         });
+        // Note: ClasspathHttpServer shutdown is handled at application level, not per WebView instance
     }
 }

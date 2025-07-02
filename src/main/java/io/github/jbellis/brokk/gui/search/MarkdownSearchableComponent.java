@@ -152,16 +152,16 @@ public class MarkdownSearchableComponent extends BaseSearchableComponent {
             };
 
             // No render listener needed for initial scroll
-            try {
-                panel.setHtmlCustomizerWithCallback(searchCustomizer, processMarkdownSearchResults);
-            } catch (Exception e) {
-                logger.error("Error applying search customizer to panel for Markdown", e);
-                notifySearchError("Search failed during Markdown highlighting: " + e.getMessage());
-                // Even if one panel fails, try to complete with what we have
-                if (remainingMarkdownOperations.decrementAndGet() == 0) {
-                    handleSearchComplete();
-                }
-            }
+//            try {
+//                panel.setHtmlCustomizerWithCallback(searchCustomizer, processMarkdownSearchResults);
+//            } catch (Exception e) {
+//                logger.error("Error applying search customizer to panel for Markdown", e);
+//                notifySearchError("Search failed during Markdown highlighting: " + e.getMessage());
+//                // Even if one panel fails, try to complete with what we have
+//                if (remainingMarkdownOperations.decrementAndGet() == 0) {
+//                    handleSearchComplete();
+//                }
+//            }
         }
     }
 
@@ -169,7 +169,7 @@ public class MarkdownSearchableComponent extends BaseSearchableComponent {
     public void clearHighlights() {
         // Clear Markdown highlights
         for (MarkdownOutputPanel panel : panels) {
-            panel.setHtmlCustomizer(HtmlCustomizer.DEFAULT);
+            // panel.setHtmlCustomizer(HtmlCustomizer.DEFAULT);
         }
         // Clear code highlights
         for (RTextAreaSearchableComponent codeComp : codeSearchComponents) {
@@ -256,13 +256,13 @@ public class MarkdownSearchableComponent extends BaseSearchableComponent {
 
     private void updateMarkdownMarkerStyle(int markerId, boolean isCurrent) {
         SwingUtilities.invokeLater(() -> { // Ensure UI updates on EDT
-            for (MarkdownOutputPanel panel : panels) {
-                panel.renderers().forEach(renderer -> {
-                    if (renderer.findByMarkerId(markerId).isPresent()) {
-                        renderer.updateMarkerStyle(markerId, isCurrent);
-                    }
-                });
-            }
+//            for (MarkdownOutputPanel panel : panels) {
+//                panel.renderers().forEach(renderer -> {
+//                    if (renderer.findByMarkerId(markerId).isPresent()) {
+//                        renderer.updateMarkerStyle(markerId, isCurrent);
+//                    }
+//                });
+//            }
         });
     }
 
@@ -401,26 +401,26 @@ public class MarkdownSearchableComponent extends BaseSearchableComponent {
         allMatches.clear();
         var tempMatches = new ArrayList<SearchMatch>();
 
-        for (int panelIdx = 0; panelIdx < panels.size(); panelIdx++) {
-            MarkdownOutputPanel panel = panels.get(panelIdx);
-            List<IncrementalBlockRenderer> renderers = panel.renderers().toList();
-
-            for (int rendererIdx = 0; rendererIdx < renderers.size(); rendererIdx++) {
-                IncrementalBlockRenderer renderer = renderers.get(rendererIdx);
-                JComponent rendererRoot = renderer.getRoot();
-                Component[] componentsInRenderer = rendererRoot.getComponents();
-
-                // Track processed components to avoid duplicates
-                var processedComponents = new IdentityHashMap<Component, Boolean>();
-
-                // Recursively collect matches from all components and their nested children
-                for (int compVisOrder = 0; compVisOrder < componentsInRenderer.length; compVisOrder++) {
-                    Component comp = componentsInRenderer[compVisOrder];
-                    var subComponentCounter = new AtomicInteger(0);
-                    collectMatchesFromComponent(comp, renderer, panelIdx, rendererIdx, compVisOrder, subComponentCounter, tempMatches, processedComponents);
-                }
-            }
-        }
+//        for (int panelIdx = 0; panelIdx < panels.size(); panelIdx++) {
+//            MarkdownOutputPanel panel = panels.get(panelIdx);
+//            List<IncrementalBlockRenderer> renderers = panel.renderers().toList();
+//
+//            for (int rendererIdx = 0; rendererIdx < renderers.size(); rendererIdx++) {
+//                IncrementalBlockRenderer renderer = renderers.get(rendererIdx);
+//                JComponent rendererRoot = renderer.getRoot();
+//                Component[] componentsInRenderer = rendererRoot.getComponents();
+//
+//                // Track processed components to avoid duplicates
+//                var processedComponents = new IdentityHashMap<Component, Boolean>();
+//
+//                // Recursively collect matches from all components and their nested children
+//                for (int compVisOrder = 0; compVisOrder < componentsInRenderer.length; compVisOrder++) {
+//                    Component comp = componentsInRenderer[compVisOrder];
+//                    var subComponentCounter = new AtomicInteger(0);
+//                    collectMatchesFromComponent(comp, renderer, panelIdx, rendererIdx, compVisOrder, subComponentCounter, tempMatches, processedComponents);
+//                }
+//            }
+//        }
         Collections.sort(tempMatches); // Sort using SearchMatch.compareTo
         allMatches.addAll(tempMatches);
     }
@@ -487,21 +487,21 @@ public class MarkdownSearchableComponent extends BaseSearchableComponent {
         codeSearchComponents.clear();
 
         // Find and highlight code components after markdown rendering is complete
-        for (MarkdownOutputPanel panel : panels) {
-            panel.renderers().forEach(renderer -> {
-                List<RSyntaxTextArea> textAreas = ComponentUtils.findComponentsOfType(renderer.getRoot(), RSyntaxTextArea.class);
-                for (RSyntaxTextArea textArea : textAreas) {
-                    RTextAreaSearchableComponent rsc = RTextAreaSearchableComponent.wrapWithoutJumping(textArea);
-                    codeSearchComponents.add(rsc);
-                    // Temporarily set a null callback to prevent RTextAreaSearchableComponent from calling back to GenericSearchBar
-                    // as we will consolidate results in handleSearchComplete.
-                    SearchableComponent.SearchCompleteCallback originalCallback = rsc.getSearchCompleteCallback();
-                    rsc.setSearchCompleteCallback(SearchableComponent.SearchCompleteCallback.NONE);
-                    rsc.highlightAll(currentSearchTerm, currentCaseSensitive);
-                    rsc.setSearchCompleteCallback(originalCallback); // Restore original if any
-                }
-            });
-        }
+//        for (MarkdownOutputPanel panel : panels) {
+//            panel.renderers().forEach(renderer -> {
+//                List<RSyntaxTextArea> textAreas = ComponentUtils.findComponentsOfType(renderer.getRoot(), RSyntaxTextArea.class);
+//                for (RSyntaxTextArea textArea : textAreas) {
+//                    RTextAreaSearchableComponent rsc = RTextAreaSearchableComponent.wrapWithoutJumping(textArea);
+//                    codeSearchComponents.add(rsc);
+//                    // Temporarily set a null callback to prevent RTextAreaSearchableComponent from calling back to GenericSearchBar
+//                    // as we will consolidate results in handleSearchComplete.
+//                    SearchableComponent.SearchCompleteCallback originalCallback = rsc.getSearchCompleteCallback();
+//                    rsc.setSearchCompleteCallback(SearchableComponent.SearchCompleteCallback.NONE);
+//                    rsc.highlightAll(currentSearchTerm, currentCaseSensitive);
+//                    rsc.setSearchCompleteCallback(originalCallback); // Restore original if any
+//                }
+//            });
+//        }
     }
 
     private void printSearchResults() {
