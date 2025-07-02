@@ -13,6 +13,7 @@ declare global {
     javaBridge?: {
       onAck: (epoch: number) => void;
       jsLog: (level: string, message: string) => void;
+      getSelection: () => string;
     };
   }
 }
@@ -30,21 +31,24 @@ const app = mount(App, {
 const bufferedEvents = window.brokk._eventBuffer || [];
 
 // Replace the temporary brokk event handler with the real one
-window.brokk = {
-  onEvent: (payload) => {
-    console.log('Received event from Java bridge:', JSON.stringify(payload));
-    eventStore.set(payload);
+  window.brokk = {
+    onEvent: (payload) => {
+      console.log('Received event from Java bridge:', JSON.stringify(payload));
+      eventStore.set(payload);
 
-    // ACK after a frame render to ensure UI has updated
-    if (payload.epoch) {
-      requestAnimationFrame(() => {
-        if (window.javaBridge) {
-          window.javaBridge.onAck(payload.epoch);
-        }
-      });
+      // ACK after a frame render to ensure UI has updated
+      if (payload.epoch) {
+        requestAnimationFrame(() => {
+          if (window.javaBridge) {
+            window.javaBridge.onAck(payload.epoch);
+          }
+        });
+      }
+    },
+    getSelection: () => {
+      return window.getSelection()?.toString() ?? '';
     }
-  }
-};
+  };
 
 // Process any events that were buffered before initialization
 if (bufferedEvents.length > 0) {

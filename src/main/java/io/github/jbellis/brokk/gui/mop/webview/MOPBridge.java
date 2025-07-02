@@ -129,6 +129,20 @@ public final class MOPBridge {
         }
     }
 
+    public CompletableFuture<String> getSelection() {
+        var future = new CompletableFuture<String>();
+        Platform.runLater(() -> {
+            try {
+                Object result = engine.executeScript("window.brokk.getSelection()");
+                future.complete(result != null ? result.toString() : "");
+            } catch (Exception ex) {
+                logger.error("Failed to get selection from WebView", ex);
+                future.complete("");
+            }
+        });
+        return future;
+    }
+
     public CompletableFuture<Void> flushAsync() {
         var future = new CompletableFuture<Void>();
         xmit.submit(() -> {

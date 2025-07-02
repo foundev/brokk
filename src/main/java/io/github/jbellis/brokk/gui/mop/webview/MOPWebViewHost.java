@@ -149,6 +149,14 @@ public final class MOPWebViewHost extends JPanel {
         return CompletableFuture.completedFuture(null);
     }
 
+    public CompletableFuture<String> getSelectedText() {
+        var bridge = bridgeRef.get();
+        if (bridge != null) {
+            return bridge.getSelection();
+        }
+        return CompletableFuture.completedFuture("");
+    }
+
     public void dispose() {
         var bridge = bridgeRef.getAndSet(null);
         if (bridge != null) {

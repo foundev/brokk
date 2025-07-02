@@ -13,6 +13,7 @@ import org.apache.logging.log4j.Logger;
 
 import javax.swing.*;
 import java.awt.*;
+import java.awt.datatransfer.StringSelection;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
@@ -30,6 +31,7 @@ public class MarkdownOutputPanel extends JPanel implements ThemeAware {
     private final MOPWebViewHost webHost;
     private boolean blockClearAndReset = false;
     private final List<Runnable> textChangeListeners = new ArrayList<>();
+    private final List<ChatMessage> messages = new ArrayList<>();
 
     public MarkdownOutputPanel(boolean escapeHtml) {
         super(new BorderLayout());
@@ -64,6 +66,7 @@ public class MarkdownOutputPanel extends JPanel implements ThemeAware {
             logger.debug("Ignoring clear() request while blocking is enabled");
             return;
         }
+        messages.clear();
         webHost.clear();
         textChangeListeners.forEach(Runnable::run);
     }
@@ -71,6 +74,13 @@ public class MarkdownOutputPanel extends JPanel implements ThemeAware {
     public void append(String text, ChatMessageType type, boolean isNewMessage) {
         if (text.isEmpty()) {
             return;
+        }
+        if (isNewMessage || messages.isEmpty() || messages.get(messages.size() - 1).type() != type) {
+            messages.add(Messages.create(text, type));
+        } else {
+            var lastIdx = messages.size() - 1;
+            var combined = Messages.getText(messages.get(lastIdx)) + text;
+            messages.set(lastIdx, Messages.create(combined, type));
         }
         webHost.append(text, isNewMessage, type);
         textChangeListeners.forEach(Runnable::run);
@@ -89,6 +99,8 @@ public class MarkdownOutputPanel extends JPanel implements ThemeAware {
             logger.debug("Ignoring setText() request while blocking is enabled");
             return;
         }
+        messages.clear();
+        messages.addAll(newMessages);
         webHost.clear();
         for (var message : newMessages) {
             webHost.append(Messages.getText(message), true, message.type());
@@ -114,13 +126,13 @@ public class MarkdownOutputPanel extends JPanel implements ThemeAware {
     }
 
     public String getText() {
-        logger.warn("getText() is not supported in WebView mode and will return an empty string.");
-        return "";
+        return messages.stream()
+                       .map(Messages::getRepr)
+                       .collect(java.util.stream.Collectors.joining("\n\n"));
     }
 
     public List<ChatMessage> getRawMessages() {
-        logger.warn("getRawMessages() is not supported in WebView mode and will return an empty list.");
-        return List.of();
+        return List.copyOf(messages);
     }
 
     public void addTextChangeListener(Runnable listener) {
@@ -136,8 +148,7 @@ public class MarkdownOutputPanel extends JPanel implements ThemeAware {
     }
 
     public List<ChatMessage> getMessages() {
-        logger.warn("getMessages() is not supported in WebView mode and will return an empty list.");
-        return List.of();
+        return getRawMessages();
     }
 
     public CompletableFuture<Void> flushAsync() {
@@ -145,18 +156,27 @@ public class MarkdownOutputPanel extends JPanel implements ThemeAware {
     }
 
     public String getDisplayedText() {
-        logger.warn("getDisplayedText() is not supported in WebView mode and will return an empty string.");
-        return "";
+        return messages.stream()
+                       .map(Messages::getText)
+                       .collect(java.util.stream.Collectors.joining("\n\n"));
     }
 
     public String getSelectedText() {
-        logger.warn("getSelectedText() is not supported in WebView mode and will return an empty string.");
-        return "";
+        try {
+            return webHost.getSelectedText().get(200, java.util.concurrent.TimeUnit.MILLISECONDS);
+        } catch (Exception e) {
+            logger.warn("Failed to fetch selected text from WebView", e);
+            return "";
+        }
     }
 
     public void copy() {
-        logger.warn("copy() is not yet implemented in WebView mode.");
-        // In future, this could be: webHost.copy();
+        String selectedText = getSelectedText();
+        String textToCopy = selectedText.isEmpty() ? getDisplayedText() : selectedText;
+        if (!textToCopy.isEmpty()) {
+            var selection = new StringSelection(textToCopy);
+            Toolkit.getDefaultToolkit().getSystemClipboard().setContents(selection, selection);
+        }
     }
 
     public void dispose() {
