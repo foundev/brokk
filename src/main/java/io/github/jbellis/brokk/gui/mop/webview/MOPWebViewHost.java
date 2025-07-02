@@ -14,6 +14,7 @@ import org.jetbrains.annotations.Nullable;
 import javax.swing.*;
 import java.awt.*;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.atomic.AtomicReference;
 
 import static java.util.Objects.requireNonNull;
@@ -22,6 +23,15 @@ public final class MOPWebViewHost extends JPanel {
     private static final Logger logger = LogManager.getLogger(MOPWebViewHost.class);
     @Nullable private JFXPanel fxPanel;
     private final AtomicReference<MOPBridge> bridgeRef = new AtomicReference<>();
+    private final java.util.List<HostCommand> pendingCommands = new CopyOnWriteArrayList<>();
+
+    // Represents commands to be sent to the bridge; buffered until bridge is ready
+    private sealed interface HostCommand {
+        record Append(String text, boolean isNew, ChatMessageType msgType) implements HostCommand {}
+        record SetTheme(boolean isDark) implements HostCommand {}
+        record ShowSpinner(String message) implements HostCommand {}
+        record Clear() implements HostCommand {}
+    }
 
     public MOPWebViewHost() {
         super(new BorderLayout());
@@ -65,33 +75,35 @@ public final class MOPWebViewHost extends JPanel {
             view.getEngine().getLoadWorker().stateProperty().addListener((obs, oldState, newState) -> {
                 if (newState == javafx.concurrent.Worker.State.SUCCEEDED) {
                     var window = (JSObject) view.getEngine().executeScript("window");
-                window.setMember("javaBridge", bridge);
-                
-                // Inject JavaScript to intercept console methods and forward to Java bridge
-                view.getEngine().executeScript("""
-                    (function() {
-                        var originalLog = console.log;
-                        var originalError = console.error;
-                        var originalWarn = console.warn;
-                        
-                        console.log = function() {
-                            var msg = Array.prototype.slice.call(arguments).join(' ');
-                            if (window.javaBridge) window.javaBridge.jsLog('INFO', msg);
-                            originalLog.apply(console, arguments);
-                        };
-                        console.error = function() {
-                            var msg = Array.prototype.slice.call(arguments).join(' ');
-                            if (window.javaBridge) window.javaBridge.jsLog('ERROR', msg);
-                            originalError.apply(console, arguments);
-                        };
-                        console.warn = function() {
-                            var msg = Array.prototype.slice.call(arguments).join(' ');
-                            if (window.javaBridge) window.javaBridge.jsLog('WARN', msg);
-                            originalWarn.apply(console, arguments);
-                        };
-                    })();
-                    """);
-            } else if (newState == javafx.concurrent.Worker.State.FAILED) {
+                    window.setMember("javaBridge", bridge);
+                    
+                    // Inject JavaScript to intercept console methods and forward to Java bridge
+                    view.getEngine().executeScript("""
+                        (function() {
+                            var originalLog = console.log;
+                            var originalError = console.error;
+                            var originalWarn = console.warn;
+                            
+                            console.log = function() {
+                                var msg = Array.prototype.slice.call(arguments).join(' ');
+                                if (window.javaBridge) window.javaBridge.jsLog('INFO', msg);
+                                originalLog.apply(console, arguments);
+                            };
+                            console.error = function() {
+                                var msg = Array.prototype.slice.call(arguments).join(' ');
+                                if (window.javaBridge) window.javaBridge.jsLog('ERROR', msg);
+                                originalError.apply(console, arguments);
+                            };
+                            console.warn = function() {
+                                var msg = Array.prototype.slice.call(arguments).join(' ');
+                                if (window.javaBridge) window.javaBridge.jsLog('WARN', msg);
+                                originalWarn.apply(console, arguments);
+                            };
+                        })();
+                        """);
+                    // Now that the page is loaded, flush any buffered commands
+                    flushBufferedCommands();
+                } else if (newState == javafx.concurrent.Worker.State.FAILED) {
                     logger.error("WebView Page Load Failed");
                 }
             });
@@ -114,30 +126,32 @@ public final class MOPWebViewHost extends JPanel {
     }
 
     public void append(String text, boolean isNewMessage, ChatMessageType msgType) {
-        var bridge = bridgeRef.get();
-        if (bridge != null) {
-            bridge.append(text, isNewMessage, msgType);
-        }
+        sendOrQueue(new HostCommand.Append(text, isNewMessage, msgType),
+                     bridge -> bridge.append(text, isNewMessage, msgType));
     }
 
     public void setTheme(boolean isDark) {
-        var bridge = bridgeRef.get();
-        if (bridge != null) {
-            bridge.setTheme(isDark);
-        }
+        sendOrQueue(new HostCommand.SetTheme(isDark),
+                     bridge -> bridge.setTheme(isDark));
     }
 
     public void clear() {
-        var bridge = bridgeRef.get();
-        if (bridge != null) {
-            bridge.clear();
-        }
+        sendOrQueue(new HostCommand.Clear(),
+                     MOPBridge::clear);
     }
 
     public void showSpinner(String message) {
+        sendOrQueue(new HostCommand.ShowSpinner(message),
+                     bridge -> bridge.showSpinner(message));
+    }
+
+    private void sendOrQueue(HostCommand command, java.util.function.Consumer<MOPBridge> action) {
         var bridge = bridgeRef.get();
-        if (bridge != null) {
-            bridge.showSpinner(message);
+        if (bridge == null) {
+            pendingCommands.add(command);
+            logger.debug("Buffered command, bridge not ready yet: {}", command);
+        } else {
+            action.accept(bridge);
         }
     }
 
@@ -155,6 +169,22 @@ public final class MOPWebViewHost extends JPanel {
             return bridge.getSelection();
         }
         return CompletableFuture.completedFuture("");
+    }
+
+    private void flushBufferedCommands() {
+        if (!pendingCommands.isEmpty()) {
+            var bridge = requireNonNull(bridgeRef.get());
+            logger.info("Flushing {} buffered commands", pendingCommands.size());
+            pendingCommands.forEach(command -> {
+                switch (command) {
+                    case HostCommand.Append a -> bridge.append(a.text(), a.isNew(), a.msgType());
+                    case HostCommand.SetTheme t -> bridge.setTheme(t.isDark());
+                    case HostCommand.ShowSpinner s -> bridge.showSpinner(s.message());
+                    case HostCommand.Clear ignored -> bridge.clear();
+                }
+            });
+            pendingCommands.clear();
+        }
     }
 
     public void dispose() {

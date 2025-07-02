@@ -9,11 +9,11 @@ declare global {
     brokk: {
       onEvent: (payload: BrokkEvent) => void;
       _eventBuffer: BrokkEvent[];
+      getSelection: () => string;
     };
     javaBridge?: {
       onAck: (epoch: number) => void;
       jsLog: (level: string, message: string) => void;
-      getSelection: () => string;
     };
   }
 }
