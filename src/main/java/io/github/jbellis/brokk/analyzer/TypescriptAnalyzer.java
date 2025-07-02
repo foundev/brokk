@@ -155,12 +155,12 @@ public final class TypescriptAnalyzer extends TreeSitterAnalyzer {
 
     @Override
     protected String renderFunctionDeclaration(TSNode funcNode, String src,
-                                               String exportAndModifierPrefix, String ignoredAsyncPrefix, // asyncPrefix is ignored
+                                               String exportAndModifierPrefix, String asyncPrefix, // Kept for signature compatibility, but ignored
                                                String functionName, String paramsText, String returnTypeText,
                                                String indent)
     {
         // exportAndModifierPrefix now contains all modifiers, including "async" if applicable.
-        // The asyncPrefix parameter is deprecated from the base class and ignored here.
+        // The asyncPrefix parameter is kept for signature compatibility but ignored here.
         String combinedPrefix = exportAndModifierPrefix.stripTrailing(); // e.g., "export async", "public static"
 
         String tsReturnTypeSuffix = (returnTypeText != null && !returnTypeText.isEmpty()) ? ": " + returnTypeText.strip() : "";
@@ -218,18 +218,13 @@ public final class TypescriptAnalyzer extends TreeSitterAnalyzer {
     @Override
     protected String formatFieldSignature(TSNode fieldNode, String src, String exportPrefix, String signatureText, String baseIndent, ProjectFile file) {
         String fullSignature = (exportPrefix.stripTrailing() + " " + signatureText.strip()).strip();
-        // Avoid adding semicolon if signature already ends with it, or if it's a complex initializer like an object or function body placeholder
-        if (!fullSignature.endsWith(";") &&
-            !fullSignature.endsWith("}") && // common for object literal assignments
-            !fullSignature.endsWith(bodyPlaceholder().trim())) { // check for function assignments rendered with placeholder
-            fullSignature += ";";
-        }
+        // For TypeScript skeleton generation, don't add semicolon - the test expects clean signatures
         return baseIndent + fullSignature;
     }
 
     @Override
     protected String renderClassHeader(TSNode classNode, String src,
-                                       String exportAndModifierPrefix, // This now comes from captured @keyword.modifier list
+                                       String exportPrefix, // This now comes from captured @keyword.modifier list
                                        String signatureText, // This is the raw text slice from class start to body start
                                        String baseIndent)
     {
@@ -243,8 +238,8 @@ public final class TypescriptAnalyzer extends TreeSitterAnalyzer {
 
         String remainingSignature = signatureText.stripLeading();
 
-        // Strip the comprehensive exportAndModifierPrefix if it's at the start of the raw signature slice
-        String strippedPrefix = exportAndModifierPrefix.strip(); // e.g., "export abstract"
+        // Strip the comprehensive exportPrefix if it's at the start of the raw signature slice
+        String strippedPrefix = exportPrefix.strip(); // e.g., "export abstract"
         if (!strippedPrefix.isEmpty() && remainingSignature.startsWith(strippedPrefix)) {
             remainingSignature = remainingSignature.substring(strippedPrefix.length()).stripLeading();
         }
@@ -259,8 +254,8 @@ public final class TypescriptAnalyzer extends TreeSitterAnalyzer {
 
 
         // remainingSignature is now "ClassName<Generics> extends Base implements Iface"
-        // exportAndModifierPrefix already has a trailing space if it's not empty.
-        String finalPrefix = exportAndModifierPrefix.stripTrailing();
+        // exportPrefix already has a trailing space if it's not empty.
+        String finalPrefix = exportPrefix.stripTrailing();
         if (!finalPrefix.isEmpty() && !classKeyword.isEmpty() && !remainingSignature.isEmpty()) {
              finalPrefix += " ";
         }
@@ -269,7 +264,52 @@ public final class TypescriptAnalyzer extends TreeSitterAnalyzer {
         return baseIndent + finalPrefix + classKeyword + " " + remainingSignature + " {";
     }
 
-    // getModifierKeywords and getVisibilityPrefix are removed as modifiers are now directly captured.
+    @Override
+    protected String getVisibilityPrefix(TSNode node, String src) {
+        // TypeScript modifier extraction - look for export, declare, async, static, etc.
+        // This method is called when keyword.modifier captures are not available.
+        StringBuilder modifiers = new StringBuilder();
+        
+        // Check the node itself and its parent for common modifier patterns
+        TSNode nodeToCheck = node;
+        TSNode parent = node.getParent();
+        
+        // For variable declarators, check the parent declaration
+        if ("variable_declarator".equals(node.getType()) && parent != null &&
+            ("lexical_declaration".equals(parent.getType()) || "variable_declaration".equals(parent.getType()))) {
+            nodeToCheck = parent;
+        }
+        
+        // Check for export statement wrapper
+        if (parent != null && "export_statement".equals(parent.getType())) {
+            modifiers.append("export ");
+            
+            // Check for default export
+            TSNode exportKeyword = parent.getChild(0);
+            if (exportKeyword != null && parent.getChildCount() > 1) {
+                TSNode defaultKeyword = parent.getChild(1);
+                if (defaultKeyword != null && "default".equals(textSlice(defaultKeyword, src).strip())) {
+                    modifiers.append("default ");
+                }
+            }
+        }
+        
+        // Look for modifier keywords in the first few children of the declaration
+        for (int i = 0; i < Math.min(nodeToCheck.getChildCount(), 5); i++) {
+            TSNode child = nodeToCheck.getChild(i);
+            if (child != null && !child.isNull()) {
+                String childText = textSlice(child, src).strip();
+                // Check for common TypeScript modifiers
+                if (Set.of("declare", "abstract", "static", "readonly", "async", "const", "let", "var").contains(childText)) {
+                    modifiers.append(childText).append(" ");
+                } else if ("accessibility_modifier".equals(child.getType())) {
+                    modifiers.append(childText).append(" ");
+                }
+            }
+        }
+        
+        return modifiers.toString();
+    }
 
     @Override
     protected String bodyPlaceholder() {
