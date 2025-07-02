@@ -1,10 +1,24 @@
 import { mount } from 'svelte';
 import { writable } from 'svelte/store';
 import App from './App.svelte';
+import type { BrokkEvent } from './types';
 
+// Declare global interfaces for Java bridge
+declare global {
+  interface Window {
+    brokk: {
+      onEvent: (payload: BrokkEvent) => void;
+      _eventBuffer: BrokkEvent[];
+    };
+    javaBridge?: {
+      onAck: (epoch: number) => void;
+      jsLog: (level: string, message: string) => void;
+    };
+  }
+}
 
 // Create a writable store for events
-const eventStore = writable({ type: '' });
+const eventStore = writable<BrokkEvent>({ type: '' } as BrokkEvent);
 
 // Instantiate the app using Svelte 5 API
 const app = mount(App, {
