@@ -140,30 +140,37 @@ public class SessionManager implements AutoCloseable
         });
     }
 
-    public SessionInfo copySession(UUID originalSessionId, String newSessionName) throws IOException {
+    public SessionInfo copySession(UUID originalSessionId, String newSessionName) throws Exception {
         var newSessionId = UUID.randomUUID();
         var currentTime = System.currentTimeMillis();
         var newSessionInfo = new SessionInfo(newSessionId, newSessionName, currentTime, currentTime);
-        sessionsCache.put(newSessionId, newSessionInfo);
 
-        var keys = Set.of(originalSessionId.toString(), newSessionId.toString());
-        sessionExecutorByKey.submit(keys, () -> {
+        var copyFuture = sessionExecutorByKey.submit(originalSessionId.toString(), () -> {
             try {
                 Path originalHistoryPath = getSessionHistoryPath(originalSessionId);
                 if (!Files.exists(originalHistoryPath)) {
                     throw new IOException("Original session %s not found, cannot copy".formatted(originalHistoryPath.getFileName()));
                 }
-
                 Path newHistoryPath = getSessionHistoryPath(newSessionId);
                 Files.createDirectories(newHistoryPath.getParent());
                 Files.copy(originalHistoryPath, newHistoryPath);
                 logger.info("Copied session zip {} to {}", originalHistoryPath.getFileName(), newHistoryPath.getFileName());
-
-                writeSessionInfoToZip(newHistoryPath, newSessionInfo);
-                logger.info("Updated manifest.json in new session zip {} for session ID {}", newHistoryPath.getFileName(), newSessionId);
             } catch (Exception e) {
                 logger.error("Failed to copy session from {} to new session {}:", originalSessionId, newSessionName, e);
                 throw new RuntimeException("Failed to copy session " + originalSessionId, e);
+            }
+        });
+        copyFuture.get(); // Wait for copy to complete
+
+        sessionsCache.put(newSessionId, newSessionInfo);
+        sessionExecutorByKey.submit(newSessionId.toString(), () -> {
+            try {
+                Path newHistoryPath = getSessionHistoryPath(newSessionId);
+                writeSessionInfoToZip(newHistoryPath, newSessionInfo);
+                logger.info("Updated manifest.json in new session zip {} for session ID {}", newHistoryPath.getFileName(), newSessionId);
+            } catch (Exception e) {
+                logger.error("Failed to update manifest for new session {}:", newSessionName, e);
+                throw new RuntimeException("Failed to update manifest for new session " + newSessionName, e);
             }
         });
         return newSessionInfo;

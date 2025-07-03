@@ -2034,7 +2034,7 @@ public class ContextManager implements IContextManager, AutoCloseable {
             SessionInfo copiedSessionInfo;
             try {
                 copiedSessionInfo = sessionManager.copySession(originalSessionId, newSessionName);
-            } catch (IOException e) {
+            } catch (Exception e) {
                 logger.error(e);
                 io.toolError("Failed to copy session " + originalSessionName);
                 return;
