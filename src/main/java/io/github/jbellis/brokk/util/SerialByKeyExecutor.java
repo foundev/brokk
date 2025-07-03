@@ -43,7 +43,6 @@ public class SerialByKeyExecutor {
      * @param <T> the type of the task's result
      * @return a CompletableFuture representing the pending completion of the task
      */
-    @SuppressWarnings({"unchecked"})
     public <T> CompletableFuture<T> submit(String key, Callable<T> task) {
         Supplier<T> supplier = toSupplier(() -> {
             try {
@@ -77,7 +76,9 @@ public class SerialByKeyExecutor {
             return taskFuture;
         });
 
-        return (CompletableFuture<T>) future;
+        @SuppressWarnings({"unchecked"})
+        CompletableFuture<T> result = (CompletableFuture<T>) future;
+        return result;
     }
 
     /**
