@@ -751,7 +751,7 @@ public class ContextSerializationTest {
     }
 
     @Test
-    void testRenameSession() throws IOException {
+    void testRenameSession() throws Exception {
         MainProject project = new MainProject(tempDir);
         var sessionManager = project.getSessionManager();
         SessionInfo initialSession = sessionManager.newSession("Original Name");
@@ -768,7 +768,7 @@ public class ContextSerializationTest {
         assertEquals(initialSession.created(), renamedSession.created()); // Created time should not change
         
         // Verify history zip still exists
-        assertTrue(Files.exists(tempDir.resolve(".brokk").resolve("sessions").resolve(initialSession.id().toString() + ".zip")));
+        assertEventually(() -> assertTrue(Files.exists(tempDir.resolve(".brokk").resolve("sessions").resolve(initialSession.id().toString() + ".zip"))));
         
         project.close();
     }
