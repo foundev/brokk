@@ -37,8 +37,8 @@ public abstract class TreeSitterAnalyzer implements IAnalyzer {
     private final IProject project;
     protected final Set<String> normalizedExcludedFiles;
     
-    /** Stores information about a definition found by a query match, including associated modifier keywords. */
-    protected record DefinitionInfoRecord(String primaryCaptureName, String simpleName, List<String> modifierKeywords) {}
+    /** Stores information about a definition found by a query match, including associated modifier keywords and decorators. */
+    protected record DefinitionInfoRecord(String primaryCaptureName, String simpleName, List<String> modifierKeywords, List<TSNode> decoratorNodes) {}
 
 
     protected record LanguageSyntaxProfile(
@@ -442,6 +442,7 @@ public abstract class TreeSitterAnalyzer implements IAnalyzer {
         FUNCTION_LIKE,
         FIELD_LIKE,
         ALIAS_LIKE,
+        DECORATOR,
         UNSUPPORTED
     }
 
@@ -556,6 +557,7 @@ public abstract class TreeSitterAnalyzer implements IAnalyzer {
             log.trace("Match ID: {}", match.getId());
             Map<String, TSNode> capturedNodesForMatch = new HashMap<>();
             List<TSNode> modifierNodesForMatch = new ArrayList<>();
+            List<TSNode> decoratorNodesForMatch = new ArrayList<>();
 
             for (TSQueryCapture capture : match.getCaptures()) {
                 String captureName = this.query.getCaptureNameForId(capture.getIndex());
@@ -565,6 +567,9 @@ public abstract class TreeSitterAnalyzer implements IAnalyzer {
                 if (node != null && !node.isNull()) {
                     if ("keyword.modifier".equals(captureName)) {
                         modifierNodesForMatch.add(node);
+                    } else if ("decorator.definition".equals(captureName)) {
+                        decoratorNodesForMatch.add(node);
+                        log.trace("  Decorator: '{}', Node: {} '{}'", captureName, node.getType(), textSlice(node, src).lines().findFirst().orElse("").trim());
                     } else {
                         // Store the first non-null node found for other capture names in this match
                         capturedNodesForMatch.putIfAbsent(captureName, node);
@@ -579,6 +584,11 @@ public abstract class TreeSitterAnalyzer implements IAnalyzer {
                                                                       .toList();
             if (!sortedModifierStrings.isEmpty()) {
                  log.trace("  Modifiers for this match: {}", sortedModifierStrings);
+            }
+
+            decoratorNodesForMatch.sort(Comparator.comparingInt(TSNode::getStartByte));
+            if (!decoratorNodesForMatch.isEmpty()) {
+                log.trace("  Decorators for this match: {} decorators", decoratorNodesForMatch.size());
             }
 
 
@@ -606,9 +616,9 @@ public abstract class TreeSitterAnalyzer implements IAnalyzer {
                     }
 
                     if (simpleName != null && !simpleName.isBlank()) {
-                        declarationNodes.putIfAbsent(definitionNode, new DefinitionInfoRecord(captureName, simpleName, sortedModifierStrings));
-                        log.trace("MATCH [{}]: Found potential definition: Capture [{}], Node Type [{}], Simple Name [{}], Modifiers [{}] -> Storing.",
-                                  match.getId(), captureName, definitionNode.getType(), simpleName, sortedModifierStrings);
+                        declarationNodes.putIfAbsent(definitionNode, new DefinitionInfoRecord(captureName, simpleName, sortedModifierStrings, decoratorNodesForMatch));
+                        log.trace("MATCH [{}]: Found potential definition: Capture [{}], Node Type [{}], Simple Name [{}], Modifiers [{}], Decorators [{}] -> Storing.",
+                                  match.getId(), captureName, definitionNode.getType(), simpleName, sortedModifierStrings, decoratorNodesForMatch.size());
                     } else {
                         if (simpleName == null) {
                             log.warn("Could not determine simple name (NULL) for definition capture {} (Node Type [{}], Line {}) in file {}.",
@@ -722,7 +732,8 @@ public abstract class TreeSitterAnalyzer implements IAnalyzer {
                 continue;
             }
 
-            String signature = buildSignatureString(node, simpleName, src, primaryCaptureName, modifierKeywords, file);
+            List<TSNode> decoratorNodes = defInfo.decoratorNodes();
+            String signature = buildSignatureString(node, simpleName, src, primaryCaptureName, modifierKeywords, decoratorNodes, file);
             log.trace("Built signature for '{}': [{}]", simpleName, signature == null ? "NULL" : signature.isBlank() ? "BLANK" : signature.lines().findFirst().orElse("EMPTY"));
 
 
@@ -852,8 +863,9 @@ public abstract class TreeSitterAnalyzer implements IAnalyzer {
      * This includes decorators and the main declaration line (e.g., class header or function signature).
      * @param simpleName The simple name of the definition, pre-determined by query captures.
      * @param modifierKeywords A list of modifier keywords (e.g., "export", "static", "const") from the query.
+     * @param decoratorNodes A list of decorator nodes captured in the same match as the definition.
      */
-    private String buildSignatureString(TSNode definitionNode, String simpleName, String src, String primaryCaptureName, List<String> capturedModifierKeywords, ProjectFile file) {
+    private String buildSignatureString(TSNode definitionNode, String simpleName, String src, String primaryCaptureName, List<String> capturedModifierKeywords, List<TSNode> decoratorNodes, ProjectFile file) {
         List<String> signatureLines = new ArrayList<>();
         var profile = getLanguageSyntaxProfile();
         SkeletonType skeletonType = getSkeletonTypeForCapture(primaryCaptureName); // Get skeletonType early
@@ -901,11 +913,19 @@ public abstract class TreeSitterAnalyzer implements IAnalyzer {
             }
         }
 
-        // 2. Add decorators that immediately precede nodeForContent (unless handled by Python's decorated_definition).
+        // 2. Add decorators captured in the same match or that immediately precede nodeForContent.
         if (!(project.getAnalyzerLanguage() == Language.PYTHON && "decorated_definition".equals(definitionNode.getType()))) {
-            List<TSNode> decorators = getPrecedingDecorators(nodeForContent);
-            for (TSNode decoratorNode : decorators) {
-                signatureLines.add(textSlice(decoratorNode, src).stripLeading());
+            // First, use decorators captured in the same match (preferred for TypeScript)
+            if (decoratorNodes != null && !decoratorNodes.isEmpty()) {
+                for (TSNode decoratorNode : decoratorNodes) {
+                    signatureLines.add(textSlice(decoratorNode, src).stripLeading());
+                }
+            } else {
+                // Fallback to finding decorators as siblings (for other languages)
+                List<TSNode> decorators = getPrecedingDecorators(nodeForContent);
+                for (TSNode decoratorNode : decorators) {
+                    signatureLines.add(textSlice(decoratorNode, src).stripLeading());
+                }
             }
         }
 

@@ -1,84 +1,16 @@
 ; Classes, Interfaces, Enums, Modules (Namespaces)
-; Export statements wrapping class-like declarations
-(export_statement
-  "export" @keyword.modifier
-  (class_declaration name: (type_identifier) @class.name) @class.definition)
-
-(export_statement
-  "export" @keyword.modifier
-  (abstract_class_declaration 
-    "abstract" @keyword.modifier
-    name: (type_identifier) @class.name) @class.definition)
-
-(export_statement
-  "export" @keyword.modifier
-  (interface_declaration name: (type_identifier) @interface.name) @interface.definition)
-
-(export_statement
-  "export" @keyword.modifier
-  (enum_declaration name: (identifier) @enum.name) @enum.definition)
-
-(export_statement
-  "export" @keyword.modifier
-  (module name: [(identifier) (string) (nested_identifier)] @module.name) @module.definition)
-
-; Regular class-like declarations without export
-((class_declaration name: (type_identifier) @class.name) @class.definition
-  (#not-parent-type? @class.definition "export_statement"))
-
-((abstract_class_declaration 
-  "abstract" @keyword.modifier
-  name: (type_identifier) @class.name) @class.definition
-  (#not-parent-type? @class.definition "export_statement"))
-
-((interface_declaration name: (type_identifier) @interface.name) @interface.definition
-  (#not-parent-type? @interface.definition "export_statement"))
-
-((enum_declaration name: (identifier) @enum.name) @enum.definition
-  (#not-parent-type? @enum.definition "export_statement"))
-
-((module name: [(identifier) (string) (nested_identifier)] @module.name) @module.definition
-  (#not-parent-type? @module.definition "export_statement")) ; module X {} or namespace X {}
+((class_declaration name: (type_identifier) @class.name) @class.definition)
+((abstract_class_declaration name: (type_identifier) @class.name) @class.definition)
+((interface_declaration name: (type_identifier) @interface.name) @interface.definition)
+((enum_declaration name: (identifier) @enum.name) @enum.definition)
+((module name: [(identifier) (string) (nested_identifier)] @module.name) @module.definition) ; module X {} or namespace X {}
 
 ; Functions and Methods (excluding arrow functions assigned to vars, handled below)
-; Export statements wrapping function declarations
-(export_statement
-  "export" @keyword.modifier
-  (function_declaration
-    name: (identifier) @function.name
-    parameters: (formal_parameters) @function.parameters
-    return_type: (_)? @function.return_type
-    body: (_)? @function.body) @function.definition)
-
-; Export default function declarations
-(export_statement
-  "export" @keyword.modifier
-  "default" @keyword.modifier
-  (function_declaration
-    name: (identifier) @function.name
-    parameters: (formal_parameters) @function.parameters
-    return_type: (_)? @function.return_type
-    body: (_)? @function.body) @function.definition)
-
-; Export default class declarations
-(export_statement
-  "export" @keyword.modifier
-  "default" @keyword.modifier
-  (class_declaration name: (type_identifier) @class.name) @class.definition)
-
-; Export default interface declarations
-(export_statement
-  "export" @keyword.modifier
-  "default" @keyword.modifier
-  (interface_declaration name: (type_identifier) @interface.name) @interface.definition)
-
-; Regular function declarations without export
 ((function_declaration
   name: (identifier) @function.name
   parameters: (formal_parameters) @function.parameters
   return_type: (_)? @function.return_type
-  body: (_)? @function.body) @function.definition
-  (#not-parent-type? @function.definition "export_statement"))
+  body: (_)? @function.body) @function.definition)
 
 ((method_definition
   name: [(property_identifier) (private_property_identifier) (string) (number) (computed_property_name)] @function.name ; also covers get/set accessors and computed names
@@ -86,9 +18,23 @@
   return_type: (_)? @function.return_type
   body: (_)? @function.body) @function.definition)
 
-; TODO: Arrow function assignments - currently disabled to avoid conflicts with field patterns
-; The test expects arrow function assignments to be treated as fields, not functions
-; e.g., "const anArrowFunc = (msg: string): void => { ... }" should be a field signature
+; Arrow function assigned to a variable (const, let, var)
+; This rule is more specific and should be prioritized by the analyzer for these cases.
+(lexical_declaration
+  (variable_declarator
+    name: (identifier) @function.name ; Name of the const/let
+    value: (arrow_function
+      parameters: (_)? @function.parameters
+      return_type: (_)? @function.return_type
+      body: (_)) @function.definition)) ; @function.definition is the arrow_function node
+
+(variable_declaration ; for 'var' keyword
+  (variable_declarator
+    name: (identifier) @function.name ; Name of the var
+    value: (arrow_function
+      parameters: (_)? @function.parameters
+      return_type: (_)? @function.return_type
+      body: (_)) @function.definition)) ; @function.definition is the arrow_function node
 
 ; Standalone arrow functions (e.g., in callbacks, IIFEs, not directly assigned to a var captured above)
 ((arrow_function
@@ -118,44 +64,14 @@
 ; Fields (Variables, Class properties, Interface properties, Enum members)
 
 ; Top-level/local variables (const, let, var) - EXCLUDING those whose value is an arrow function
-; Export statement wrapping lexical declaration
-(export_statement
-  "export" @keyword.modifier
-  (lexical_declaration
-    ["const" "let"] @keyword.modifier
-    (variable_declarator
-      name: (identifier) @field.name
-      value: (_)? @field.value) @field.definition))
+; (variable_declarator node itself is the definition)
+(variable_declarator
+  name: (identifier) @field.name
+  value: (_)? @field.value) @field.definition
   (#not-parent-type? @field.definition "for_in_statement")
   (#not-parent-type? @field.definition "for_of_statement")
-
-; Export statement wrapping variable declaration (var)
-(export_statement
-  "export" @keyword.modifier
-  (variable_declaration
-    "var" @keyword.modifier
-    (variable_declarator
-      name: (identifier) @field.name
-      value: (_)? @field.value) @field.definition))
-
-; Non-export variable declarations - temporarily simplified to avoid conflicts
-; Focus on getting export patterns working correctly first
-; TODO: Add back comprehensive non-export patterns with working exclusion mechanism
-
-; Basic top-level variable declarations that are clearly not in export context
-(program
-  (lexical_declaration
-    ["const" "let"] @keyword.modifier
-    (variable_declarator
-      name: (identifier) @field.name
-      value: (_)? @field.value) @field.definition))
-
-(program  
-  (variable_declaration
-    "var" @keyword.modifier
-    (variable_declarator
-      name: (identifier) @field.name
-      value: (_)? @field.value) @field.definition))
+  ; Further condition to ensure value is not an arrow_function will be handled in Java code
+  ; to avoid making this query too complex or slow, as @field.value can be diverse.
 
 ; Class fields (public_field_definition also covers private, protected, static, readonly)
 (public_field_definition
@@ -211,6 +127,3 @@
 (type_annotation) @return_type_node  ; General type annotation
 (predefined_type) @predefined_type_node ; e.g. string, number
 (type_identifier) @type_identifier_node ; e.g. MyClass, InterfaceName
-
-; Note: keyword.modifier captures are now scoped within specific definition patterns above
-; This ensures they are properly associated with their corresponding definition nodes
