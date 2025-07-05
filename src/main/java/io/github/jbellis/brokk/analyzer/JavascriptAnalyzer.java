@@ -94,7 +94,7 @@ public final class JavascriptAnalyzer extends TreeSitterAnalyzer {
     }
 
     @Override
-    protected String renderFunctionDeclaration(TSNode funcNode, String src, String exportPrefix, String asyncPrefix, String functionName, String paramsText, String returnTypeText, String indent) {
+    protected String renderFunctionDeclaration(TSNode funcNode, String src, String exportPrefix, String asyncPrefix, String functionName, String typeParamsText, String paramsText, String returnTypeText, String indent) {
         // The 'indent' parameter is now "" when called from buildSignatureString.
         String tsReturnTypeSuffix = (returnTypeText != null && !returnTypeText.isEmpty()) ? ": " + returnTypeText : "";
         String signature;

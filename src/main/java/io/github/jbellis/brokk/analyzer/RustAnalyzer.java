@@ -210,13 +210,14 @@ public final class RustAnalyzer extends TreeSitterAnalyzer {
                                                String exportPrefix, // Visibility: "pub ", "pub(crate) ", or ""
                                                String asyncPrefix,  // Async: "async " or "" (base class tries to populate this)
                                                String functionName,
+                                               String typeParamsText,
                                                String paramsText,
                                                String returnTypeText,
                                                String indent) { // indent is "" when called from buildSignatureString
 
         String rt = returnTypeText.isBlank() ? "" : " -> " + returnTypeText;
         // exportPrefix is from getVisibilityPrefix. asyncPrefix from base class logic.
-        String header = String.format("%s%s%sfn %s%s%s", indent, exportPrefix, asyncPrefix, functionName, paramsText, rt).stripLeading();
+        String header = String.format("%s%s%sfn %s%s%s%s", indent, exportPrefix, asyncPrefix, functionName, typeParamsText, paramsText, rt).stripLeading();
 
         TSNode bodyNode = fnNode.getChildByFieldName(getLanguageSyntaxProfile().bodyFieldName());
         if (bodyNode != null && !bodyNode.isNull()) {

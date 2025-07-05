@@ -233,7 +233,7 @@ public final class PhpAnalyzer extends TreeSitterAnalyzer {
 
     @Override
     protected String renderFunctionDeclaration(TSNode funcNode, String src, String exportPrefix, String asyncPrefix,
-                                               String functionName, String paramsText, String returnTypeText, String indent) {
+                                               String functionName, String typeParamsText, String paramsText, String returnTypeText, String indent) {
         // Attributes are handled by the base class's buildSignatureString via getPrecedingDecorators.
         // exportPrefix and asyncPrefix are "" for PHP. indent is also "" at this stage from base.
         String modifiers = extractModifiers(funcNode, src);

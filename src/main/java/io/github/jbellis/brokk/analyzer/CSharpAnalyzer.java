@@ -120,7 +120,7 @@ public final class CSharpAnalyzer extends TreeSitterAnalyzer {
     // getTopLevelBlockerNodeTypes is removed as the base method in TreeSitterAnalyzer is removed.
 
     @Override
-    protected String renderFunctionDeclaration(TSNode funcNode, String src, String exportPrefix, String asyncPrefix, String functionName, String paramsText, String returnTypeText, String indent) {
+    protected String renderFunctionDeclaration(TSNode funcNode, String src, String exportPrefix, String asyncPrefix, String functionName, String typeParamsText, String paramsText, String returnTypeText, String indent) {
         // The 'indent' parameter is now "" when called from buildSignatureString.
         TSNode body = funcNode.getChildByFieldName("body");
         String signature;

@@ -175,7 +175,7 @@ public final class GoAnalyzer extends TreeSitterAnalyzer {
     }
 
     @Override
-    protected String renderFunctionDeclaration(TSNode funcNode, String src, String exportPrefix, String asyncPrefix, String functionName, String paramsText, String returnTypeText, String indent) {
+    protected String renderFunctionDeclaration(TSNode funcNode, String src, String exportPrefix, String asyncPrefix, String functionName, String typeParamsText, String paramsText, String returnTypeText, String indent) {
         log.trace("GoAnalyzer.renderFunctionDeclaration for node type '{}', functionName '{}'. Params: '{}', Return: '{}'", funcNode.getType(), functionName, paramsText, returnTypeText);
         String rt = (returnTypeText != null && !returnTypeText.isEmpty()) ? " " + returnTypeText : "";
         String signature;
@@ -187,7 +187,7 @@ public final class GoAnalyzer extends TreeSitterAnalyzer {
             }
             // paramsText from formatParameterList already includes parentheses for regular functions
             // For methods, paramsText is for the method's own parameters, not the receiver.
-            signature = String.format("func %s %s%s%s", receiverText, functionName, paramsText, rt);
+            signature = String.format("func %s %s%s%s%s", receiverText, functionName, typeParamsText, paramsText, rt);
             return signature + " { " + bodyPlaceholder() + " }";
         } else if ("method_elem".equals(funcNode.getType())) { // Interface method
             // Interface methods don't have 'func', receiver, or body placeholder in their definition.
@@ -195,10 +195,10 @@ public final class GoAnalyzer extends TreeSitterAnalyzer {
             // paramsText is the parameters (e.g., "()", "(p int)").
             // rt is the return type (e.g., " string", " (int, error)").
             // exportPrefix and asyncPrefix are not applicable here as part of the signature string.
-            signature = String.format("%s%s%s", functionName, paramsText, rt);
+            signature = String.format("%s%s%s%s", functionName, typeParamsText, paramsText, rt);
             return signature; // No " { ... }"
         } else { // For function_declaration
-            signature = String.format("func %s%s%s", functionName, paramsText, rt);
+            signature = String.format("func %s%s%s%s", functionName, typeParamsText, paramsText, rt);
             return signature + " { " + bodyPlaceholder() + " }";
         }
     }

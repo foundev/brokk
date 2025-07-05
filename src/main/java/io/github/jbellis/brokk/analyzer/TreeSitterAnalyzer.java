@@ -1096,8 +1096,8 @@ public abstract class TreeSitterAnalyzer implements IAnalyzer {
     protected String formatHeritage(String signatureText) { return signatureText; }
 
     /* ---------- Granular Signature Rendering Callbacks (Assembly) ---------- */
-    protected String assembleFunctionSignature(TSNode funcNode, String src, String exportPrefix, String asyncPrefix, String functionName, String paramsText, String returnTypeText, String indent) {
-        return renderFunctionDeclaration(funcNode, src, exportPrefix, asyncPrefix, functionName, paramsText, returnTypeText, indent);
+    protected String assembleFunctionSignature(TSNode funcNode, String src, String exportPrefix, String asyncPrefix, String functionName, String typeParamsText, String paramsText, String returnTypeText, String indent) {
+        return renderFunctionDeclaration(funcNode, src, exportPrefix, asyncPrefix, functionName, typeParamsText, paramsText, returnTypeText, indent);
     }
     protected String assembleClassSignature(TSNode classNode, String src, String exportPrefix, String classSignatureText, String baseIndent) {
         return renderClassHeader(classNode, src, exportPrefix, classSignatureText, baseIndent);
@@ -1194,9 +1194,18 @@ public abstract class TreeSitterAnalyzer implements IAnalyzer {
         // The asyncPrefix logic is removed as it's now part of the unified exportPrefix.
         String paramsText = formatParameterList(paramsNode, src);
         String returnTypeText = formatReturnType(returnTypeNode, src);
+        
+        // Extract type parameters if available
+        String typeParamsText = "";
+        if (profile.typeParametersFieldName() != null && !profile.typeParametersFieldName().isEmpty()) {
+            TSNode typeParamsNode = funcNode.getChildByFieldName(profile.typeParametersFieldName());
+            if (typeParamsNode != null && !typeParamsNode.isNull()) {
+                typeParamsText = textSlice(typeParamsNode, src); // Raw text including < >
+            }
+        }
 
         // The asyncPrefix parameter is removed from assembleFunctionSignature
-        String functionLine = assembleFunctionSignature(funcNode, src, exportPrefix, /* asyncPrefix no longer needed */ "", functionName, paramsText, returnTypeText, indent);
+        String functionLine = assembleFunctionSignature(funcNode, src, exportPrefix, /* asyncPrefix no longer needed */ "", functionName, typeParamsText, paramsText, returnTypeText, indent);
         if (functionLine != null && !functionLine.isBlank()) {
             lines.add(functionLine);
         }
@@ -1225,6 +1234,7 @@ public abstract class TreeSitterAnalyzer implements IAnalyzer {
                                                         String exportAndModifierPrefix,
                                                         String asyncPrefix, // Kept for signature compatibility, but ignored
                                                         String functionName,
+                                                        String typeParamsText,
                                                         String paramsText,
                                                         String returnTypeText,
                                                         String indent);
