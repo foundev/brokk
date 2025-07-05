@@ -666,6 +666,20 @@ public abstract class TreeSitterAnalyzer implements IAnalyzer {
                     // Add similar checks for other languages if they have field-like constructs that can be functions
                 }
             }
+            
+            // Skip creating non-exported class.definition CUs if they are wrapped in export_statement,
+            // as they're already handled by export patterns
+            if (primaryCaptureName.equals("class.definition") && 
+                ("interface_declaration".equals(node.getType()) || 
+                 "class_declaration".equals(node.getType()) || 
+                 "enum_declaration".equals(node.getType()))) {
+                TSNode parent = node.getParent();
+                if (parent != null && !parent.isNull() && "export_statement".equals(parent.getType())) {
+                    log.trace("analyzeFileDeclarations: Skipping {} CU for '{} ({})' because it's wrapped in export_statement, handled by export patterns.",
+                               primaryCaptureName, simpleName, node.getType());
+                    continue;
+                }
+            }
 
             log.trace("Processing definition: Name='{}', Capture='{}', Node Type='{}'",
                       simpleName, primaryCaptureName, node.getType());

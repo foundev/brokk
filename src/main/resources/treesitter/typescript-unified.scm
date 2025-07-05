@@ -12,10 +12,6 @@
 ; EXPORT STATEMENTS  
 ; ============================================================================
 
-; ============================================================================
-; EXPORT STATEMENTS (consolidated using alternation)
-; ============================================================================
-
 ; Export statements (both default and regular) for class-like declarations
 (export_statement
   "export" @keyword.modifier
@@ -79,19 +75,21 @@
       name: (identifier) @function.name
       value: (arrow_function))) @function.definition)
 
-; Other values in const/let (export and non-export)
+; Other values in const/let (export and non-export) - Note: arrow functions are handled by specific patterns above
 (export_statement
   "export" @keyword.modifier
   (lexical_declaration
     ["const" "let"] @keyword.modifier
     (variable_declarator
-      name: (identifier) @field.name) @field.definition))
+      name: (identifier) @field.name
+      value: (_)) @field.definition))
 
 (program
   (lexical_declaration
     ["const" "let"] @keyword.modifier
     (variable_declarator
-      name: (identifier) @field.name)) @field.definition)
+      name: (identifier) @field.name
+      value: (_)) @field.definition))
 
 ; ============================================================================
 ; VARIABLE DECLARATIONS (var) - consolidated
@@ -120,6 +118,21 @@
 (program
   (function_declaration
     name: (identifier) @function.name) @function.definition)
+
+; Top-level non-export interface declarations (direct children of program, not export_statement)
+(program
+  (interface_declaration
+    name: (type_identifier) @class.name) @class.definition)
+
+; Top-level non-export class declarations (direct children of program, not export_statement)
+(program
+  . (class_declaration
+      name: (type_identifier) @class.name) @class.definition)
+
+; Top-level non-export enum declarations (direct children of program, not export_statement)
+(program
+  . (enum_declaration
+      name: (identifier) @class.name) @class.definition)
 
 ; ============================================================================
 ; FUNCTION SIGNATURES (Overloads)
@@ -162,8 +175,9 @@
 )
 
 ; Interface properties - uses interface_member_name pattern
-(property_signature
-  name: [(property_identifier) (string) (number) (computed_property_name)] @field.name) @field.definition
+(interface_body
+  (property_signature
+    name: [(property_identifier) (string) (number) (computed_property_name)] @field.name) @field.definition)
 
 ; ============================================================================
 ; ENUM MEMBERS
@@ -172,4 +186,10 @@
 ; Enum members for proper enum reconstruction - capture individual members
 (enum_body
   ((property_identifier) @field.name) @field.definition)
+
+; Enum members with values (e.g., Green = 3, Active = "active")
+(enum_body
+  (enum_assignment
+    name: (property_identifier) @field.name
+    value: (_)) @field.definition)
 
