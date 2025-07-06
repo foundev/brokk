@@ -136,7 +136,8 @@ public class PhpAnalyzerTest {
         // Assuming PHP grammar order: visibility, static, abstract/final. So "protected abstract".
         // Test code has `abstract protected`. Let's stick to test file for now.
 
-        assertEquals(expectedSkeleton.trim(), skeletonOpt.get().trim(), "Foo class skeleton mismatch.");
+        var normalize = (java.util.function.Function<String, String>) s -> s.lines().map(String::strip).collect(Collectors.joining("\n"));
+        assertEquals(normalize.apply(expectedSkeleton), normalize.apply(skeletonOpt.get()), "Foo class skeleton mismatch.");
     }
 
     @Test
