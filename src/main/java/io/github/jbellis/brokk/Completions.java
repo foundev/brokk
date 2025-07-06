@@ -16,41 +16,44 @@ import static java.util.Objects.requireNonNull;
 
 public class Completions {
     public static List<CodeUnit> completeSymbols(String input, IAnalyzer analyzer) {
+        return completeSymbols(input, analyzer.getAllDeclarations());
+    }
+
+    public static List<CodeUnit> completeSymbols(String input, Collection<CodeUnit> symbols) {
         String pattern = input.trim();
-        var allDefs = analyzer.searchDefinitions(".*").stream().toList();
 
         // empty pattern -> alphabetic list
         if (pattern.isEmpty()) {
-            return allDefs.stream()
-                    .distinct() // collapse method overloads
-                    .sorted(Comparator.comparing(CodeUnit::fqName))
-                    .toList();
+            return symbols.stream()
+                          .distinct() // collapse method overloads
+                          .sorted(Comparator.comparing(CodeUnit::fqName))
+                          .toList();
         }
 
         var matcher = new FuzzyMatcher(pattern);
         boolean hierarchicalQuery = pattern.indexOf('.') >= 0 || pattern.indexOf('$') >= 0;
 
         // has a family resemblance to scoreShortAndLong but different enough that it doesn't fit
-        record ScoredCU(CodeUnit cu, int score) { // Renamed local record to avoid conflict
+        record ScoredCU(CodeUnit cu, int score) {
         }
-        return allDefs.stream()
-                .map(cu -> {
-                    int score;
-                    if (hierarchicalQuery) {
-                        // query includes hierarchy separators -> match against full FQN
-                        score = matcher.score(cu.fqName());
-                    } else {
-                        // otherwise match ONLY the trailing symbol (class, method, field)
-                        score = matcher.score(cu.identifier());
-                    }
-                    return new ScoredCU(cu, score);
-                })
-                .filter(sc -> sc.score() != Integer.MAX_VALUE)
-                .sorted(Comparator.<ScoredCU>comparingInt(ScoredCU::score)
-                                .thenComparing(sc -> sc.cu().fqName()))
-                .distinct()
-                .map(ScoredCU::cu)
-                .toList();
+        return symbols.stream()
+                      .map(cu -> {
+                          int score;
+                          if (hierarchicalQuery) {
+                              // query includes hierarchy separators -> match against full FQN
+                              score = matcher.score(cu.fqName());
+                          } else {
+                              // otherwise match ONLY the trailing symbol (class, method, field)
+                              score = matcher.score(cu.identifier());
+                          }
+                          return new ScoredCU(cu, score);
+                      })
+                      .filter(sc -> sc.score() != Integer.MAX_VALUE)
+                      .sorted(Comparator.<ScoredCU>comparingInt(ScoredCU::score)
+                                      .thenComparing(sc -> sc.cu().fqName()))
+                      .distinct()
+                      .map(ScoredCU::cu)
+                      .toList();
     }
 
     /**

@@ -64,6 +64,7 @@ import java.util.function.BiConsumer;
 import java.util.stream.Stream;
 
 import static io.github.jbellis.brokk.gui.Constants.*;
+import static java.util.Objects.requireNonNull;
 import static org.checkerframework.checker.nullness.util.NullnessUtil.castNonNull;
 
 
@@ -102,7 +103,7 @@ public class InstructionsPanel extends JPanel implements IContextManager.Context
     private final JButton stopButton;
     private final JButton configureModelsButton;
     private final JLabel commandResultLabel;
-    private final @Nullable ContextManager contextManager; // Can be null if Chrome is initialized without one
+    private final ContextManager contextManager;
     private JTable referenceFileTable;
     private JLabel failureReasonLabel;
     private JPanel suggestionContentPanel;
@@ -127,8 +128,8 @@ public class InstructionsPanel extends JPanel implements IContextManager.Context
     private @Nullable String lastCheckedInputText = null;
     private @Nullable float[][] lastCheckedEmbeddings = null;
     private @Nullable List<FileReferenceData> pendingQuickContext = null;
-    private @Nullable AutoCompletion instructionAutoCompletion;
-    private @Nullable InstructionCompletionProvider instructionCompletionProvider;
+    private AutoCompletion instructionAutoCompletion;
+    private InstructionCompletionProvider instructionCompletionProvider;
 
     public InstructionsPanel(Chrome chrome) {
         super(new BorderLayout(2, 2));
@@ -139,7 +140,7 @@ public class InstructionsPanel extends JPanel implements IContextManager.Context
                                                    new Font(Font.DIALOG, Font.BOLD, 12)));
 
         this.chrome = chrome;
-        this.contextManager = chrome.getContextManager(); // Store potentially null CM
+        this.contextManager = requireNonNull(chrome.getContextManager());
         this.commandInputUndoManager = new UndoManager();
         commandInputOverlay = new OverlayPanel(
                 overlay -> activateCommandInput(),
@@ -150,15 +151,14 @@ public class InstructionsPanel extends JPanel implements IContextManager.Context
         // Initialize components
         instructionsArea = buildCommandInputField(); // Build first to add listener
         
-        // Initialize autocomplete for instructions if contextManager is available
-        if (contextManager != null) {
-            instructionCompletionProvider = new InstructionCompletionProvider(contextManager);
-            instructionAutoCompletion = new AutoCompletion(instructionCompletionProvider);
-            instructionAutoCompletion.setAutoActivationEnabled(true);
-            instructionAutoCompletion.setAutoActivationDelay(200);
-            instructionAutoCompletion.install(instructionsArea);
-            AutoCompleteUtil.bindCtrlEnter(instructionAutoCompletion, instructionsArea);
-        }
+        // Initialize autocomplete for instructions
+        instructionCompletionProvider = new InstructionCompletionProvider(contextManager);
+        instructionAutoCompletion = new AutoCompletion(instructionCompletionProvider);
+        instructionCompletionProvider.setAutoCompletion(instructionAutoCompletion);
+        instructionAutoCompletion.setAutoActivationEnabled(true);
+        instructionAutoCompletion.setAutoActivationDelay(200);
+        instructionAutoCompletion.install(instructionsArea);
+        AutoCompleteUtil.bindCtrlEnter(instructionAutoCompletion, instructionsArea);
         
         micButton = new VoiceInputButton(instructionsArea, contextManager, () -> {
             activateCommandInput();
@@ -297,7 +297,7 @@ public class InstructionsPanel extends JPanel implements IContextManager.Context
             }
         });
 
-        // Add this panel as a listener to context changes, only if CM is available
+        // Add this panel as a listener to context changes
         this.contextManager.addContextListener(this);
 
         // Buttons start disabled and will be enabled by ContextManager when session loading completes
@@ -788,12 +788,6 @@ public class InstructionsPanel extends JPanel implements IContextManager.Context
     private void processInputSuggestions(long myGen, String snapshot) {
         logger.trace("Starting suggestion task generation {}", myGen);
 
-        if (contextManager == null) {
-            logger.warn("Task {} cannot provide suggestions: ContextManager is not available.", myGen);
-            SwingUtilities.invokeLater(() -> showFailureLabel("Context features unavailable"));
-            return;
-        }
-
         // 0. Initial staleness check
         if (myGen != suggestionGeneration.get()) {
             logger.trace("Task {} is stale (current gen {}), aborting early.", myGen, suggestionGeneration.get());
@@ -1016,11 +1010,6 @@ public class InstructionsPanel extends JPanel implements IContextManager.Context
      */
     private void triggerDeepScan(ActionEvent e) {
         var goal = getInstructions();
-        if (contextManager == null) {
-            chrome.toolError("Deep Scan requires a project and ContextManager to be active.");
-            deepScanButton.setEnabled(false);
-            return;
-        }
         deepScanButton.setLoading(true, "Scanning…");
 
         DeepScanDialog.triggerDeepScan(chrome, goal)
@@ -1601,17 +1590,11 @@ public class InstructionsPanel extends JPanel implements IContextManager.Context
      */
     private void updateButtonStates() {
         SwingUtilities.invokeLater(() -> {
-            boolean cmAvailable = this.contextManager != null;
             boolean gitAvailable = chrome.getProject().hasGit();
-            // boolean worktreesSupported = gitAvailable && chrome.getProject().getRepo().supportsWorktrees(); // No longer needed here
 
             // Architect Button
-            architectButton.setEnabled(cmAvailable);
-            if (cmAvailable) {
-                 architectButton.setToolTipText("Run the multi-step agent (options include worktree setup)");
-            } else {
-                 architectButton.setToolTipText("Architect agent unavailable (project/CM not ready)");
-            }
+            architectButton.setEnabled(true);
+            architectButton.setToolTipText("Run the multi-step agent (options include worktree setup)");
             // Worktree option is now part of ArchitectOptionsDialog
 
             // Code Button
@@ -1619,23 +1602,19 @@ public class InstructionsPanel extends JPanel implements IContextManager.Context
                 codeButton.setEnabled(false);
                 codeButton.setToolTipText("Code feature requires Git integration for this project.");
             } else {
-                codeButton.setEnabled(cmAvailable);
+                codeButton.setEnabled(true);
                 // Default tooltip is set during initialization, no need to reset unless it changed
             }
 
-            askButton.setEnabled(cmAvailable);
-            searchButton.setEnabled(cmAvailable);
-            runButton.setEnabled(cmAvailable); // Requires CM for getRoot()
+            askButton.setEnabled(true);
+            searchButton.setEnabled(true);
+            runButton.setEnabled(true); // Requires CM for getRoot()
             // Enable deepScanButton only if instructionsArea is also enabled
-            deepScanButton.setEnabled(cmAvailable && instructionsArea.isEnabled());
+            deepScanButton.setEnabled(instructionsArea.isEnabled());
             // Stop is only enabled when an action is running
             stopButton.setEnabled(false);
 
-            if (cmAvailable) {
-                chrome.enableHistoryPanel();
-            } else {
-                chrome.disableHistoryPanel();
-            }
+            chrome.enableHistoryPanel();
         });
     }
 
@@ -1741,14 +1720,6 @@ public class InstructionsPanel extends JPanel implements IContextManager.Context
     private JPopupMenu createModelSelectionMenu(BiConsumer<String, Service.ReasoningLevel> onModelSelect)
     {
         var popupMenu = new JPopupMenu();
-        if (this.contextManager == null) {
-            var item = new JMenuItem("Models unavailable (ContextManager not ready)");
-            item.setEnabled(false);
-            popupMenu.add(item);
-            chrome.themeManager.registerPopupMenu(popupMenu);
-            return popupMenu;
-        }
-
         var modelsInstance = this.contextManager.getService();
         var availableModelsMap = modelsInstance.getAvailableModels(); // Get all available models
 
@@ -1823,9 +1794,7 @@ public class InstructionsPanel extends JPanel implements IContextManager.Context
             isPopupOpen = true;
             
             // Disable instruction autocompletion while @ popup is shown
-            if (instructionAutoCompletion != null) {
-                instructionAutoCompletion.setAutoActivationEnabled(false);
-            }
+            instructionAutoCompletion.setAutoActivationEnabled(false);
             
             try {
                 Rectangle r = instructionsArea.modelToView2D(atOffset).getBounds();
@@ -1867,9 +1836,7 @@ public class InstructionsPanel extends JPanel implements IContextManager.Context
                         // Removal of "@" is now handled by the JMenuItem's ActionListener
                         
                         // Re-enable instruction autocompletion
-                        if (instructionAutoCompletion != null) {
-                            instructionAutoCompletion.setAutoActivationEnabled(true);
-                        }
+                        instructionAutoCompletion.setAutoActivationEnabled(true);
                     }
 
                     @Override
@@ -1883,9 +1850,7 @@ public class InstructionsPanel extends JPanel implements IContextManager.Context
                         // Do not remove "@" on cancel
                         
                         // Re-enable instruction autocompletion
-                        if (instructionAutoCompletion != null) {
-                            instructionAutoCompletion.setAutoActivationEnabled(true);
-                        }
+                        instructionAutoCompletion.setAutoActivationEnabled(true);
                     }
                 });
 

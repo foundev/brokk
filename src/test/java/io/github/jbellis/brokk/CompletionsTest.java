@@ -8,6 +8,7 @@ import org.junit.jupiter.api.io.TempDir;
 import org.msgpack.core.annotations.VisibleForTesting;
 
 import java.nio.file.Path;
+import java.util.Collection;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -62,7 +63,9 @@ public class CompletionsTest {
 
         @Override
         public List<CodeUnit> getAllDeclarations() {
-            return allClasses;
+            return Stream.concat(allClasses.stream(),
+                                 methodsMap.values().stream().flatMap(Collection::stream))
+                         .toList();
         }
 
         @Override
