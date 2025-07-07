@@ -9,11 +9,11 @@ import io.github.jbellis.brokk.gui.Chrome;
 import io.github.jbellis.brokk.gui.FileSelectionPanel;
 
 import javax.swing.*;
-import javax.swing.Box;
 import java.awt.*;
 import java.awt.event.InputEvent;
 import java.awt.event.KeyEvent;
 
+import io.github.jbellis.brokk.gui.util.ScaledIcon;
 import io.github.jbellis.brokk.prompts.CodePrompts;
 import io.github.jbellis.brokk.util.Messages;
 
@@ -26,18 +26,20 @@ import java.nio.file.Path;
 import java.util.*;
 import java.util.List;
 
-import io.github.jbellis.brokk.gui.dialogs.UpgradeAgentProgressDialog.PostProcessingOption;
+import io.github.jbellis.brokk.gui.dialogs.BlitzForgeProgressDialog.PostProcessingOption;
 
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ConcurrentHashMap;
 
 import static io.github.jbellis.brokk.gui.Constants.H_GLUE;
-import static io.github.jbellis.brokk.gui.Constants.V_GLUE;
+import static io.github.jbellis.brokk.gui.Constants.H_GAP;
 
-public class UpgradeAgentDialog extends JDialog {
+public class BlitzForgeDialog extends JDialog {
     private final Chrome chrome;
     private JTextArea instructionsArea;
     private JComboBox<Service.FavoriteModel> modelComboBox;
     private JLabel tokenWarningLabel;
+    private JLabel costEstimateLabel;
     private JCheckBox includeWorkspaceCheckbox;
     private JRadioButton entireProjectScopeRadioButton;
     private JRadioButton selectFilesScopeRadioButton;
@@ -52,21 +54,30 @@ public class UpgradeAgentDialog extends JDialog {
 
     // Post-processing controls
     private JComboBox<String> runPostProcessCombo;
-    private ButtonGroup parallelOutputGroup;
-    private JRadioButton includeNoneRadio;
-    private JRadioButton includeAllRadio;
-    private JRadioButton includeChangedRadio;
+    private JComboBox<String> parallelOutputCombo;
     private JCheckBox buildFirstCheckbox;
     private JTextField contextFilterTextField;
     private static final String ALL_LANGUAGES_OPTION = "All Languages";
     private static final int TOKEN_SAFETY_MARGIN = 32768;
+
+    // Tracks the most recent cost estimate and user balance
+    private volatile double estimatedCost = 0.0;
+    private volatile float userBalance    = Float.NaN;
+
+    // Cache (file -> token count) to avoid recomputation on every UI refresh
+    private final Map<ProjectFile, Long> tokenCountCache = new ConcurrentHashMap<>();
 
     private FileSelectionPanel fileSelectionPanel;
     private JTable selectedFilesTable;
     private javax.swing.table.DefaultTableModel tableModel;
     private JRadioButton listFilesScopeRadioButton;
     private JTextArea listFilesTextArea;
-    private JLabel fileListStatusLabel;
+    // Components for the raw-text “List Files” card
+    private javax.swing.table.DefaultTableModel parsedTableModel;
+    private JTable parsedFilesTable;
+    private JLabel parsedFilesCountLabel;
+    private JComboBox<String> listLanguageCombo;
+    private JLabel entireProjectFileCountLabel;
 
     private static final Icon smallInfoIcon;
 
@@ -85,54 +96,48 @@ public class UpgradeAgentDialog extends JDialog {
     }
 
     /**
-     * Icon wrapper that paints its delegate scaled by the given factor.
+     * Simple filled-circle icon used for speed indicators.
      */
-    private static final class ScaledIcon implements Icon {
-        private final Icon delegate;
-        private final double factor;
-        private final int width;
-        private final int height;
+    private static final class ColorDotIcon implements Icon {
+        private final Color color;
+        private final int   diameter;
 
-        private ScaledIcon(Icon delegate, double factor)
-        {
-            this.delegate = Objects.requireNonNull(delegate, "delegate");
-            this.factor = factor;
-            this.width = (int) Math.round(delegate.getIconWidth() * factor);
-            this.height = (int) Math.round(delegate.getIconHeight() * factor);
+        private ColorDotIcon(Color color, int diameter) {
+            this.color     = Objects.requireNonNull(color, "color");
+            this.diameter  = diameter;
         }
 
         @Override
-        public void paintIcon(Component c, Graphics g, int x, int y)
-        {
-            Graphics2D g2 = (Graphics2D) g.create();
-            try {
-                g2.translate(x, y);
-                g2.scale(factor, factor);
-                delegate.paintIcon(c, g2, 0, 0);
-            } finally {
-                g2.dispose();
-            }
+        public void paintIcon(Component c, Graphics g, int x, int y) {
+            g.setColor(color);
+            g.fillOval(x, y, diameter, diameter);
+            g.setColor(Color.DARK_GRAY);
+            g.drawOval(x, y, diameter, diameter); // subtle outline
         }
 
         @Override
-        public int getIconWidth() {
-            return width;
-        }
-
+        public int getIconWidth()  { return diameter; }
         @Override
-        public int getIconHeight() {
-            return height;
-        }
+        public int getIconHeight() { return diameter; }
     }
 
-    public UpgradeAgentDialog(Frame owner, Chrome chrome) {
-        super(owner, "Upgrade Agent", true);
+    public BlitzForgeDialog(Frame owner, Chrome chrome) {
+        super(owner, "BlitzForge", true);
+        setPreferredSize(new Dimension(1000, 800));
         this.chrome = chrome;
         initComponents();
         setupKeyBindings();
-        modelComboBox.addActionListener(e -> updateTokenWarningLabel());
-        includeWorkspaceCheckbox.addActionListener(e -> updateTokenWarningLabel());
+        modelComboBox.addActionListener(e -> {
+            updateTokenWarningLabel();
+            updateCostEstimate();
+        });
+        includeWorkspaceCheckbox.addActionListener(e -> {
+            updateTokenWarningLabel();
+            updateCostEstimate();
+        });
         updateTokenWarningLabel();
+        updateCostEstimate();
+        fetchUserBalance();
         pack();
         setLocationRelativeTo(owner);
     }
@@ -147,22 +152,9 @@ public class UpgradeAgentDialog extends JDialog {
         gbc.insets = new Insets(5, 5, 5, 5);
         gbc.fill = GridBagConstraints.HORIZONTAL;
 
-        // Explanation Label
-        gbc.gridx = 0;
-        gbc.gridy = 0;
-        gbc.gridwidth = 3;
-        JLabel explanationLabel = new JLabel("""
-                                             <html>
-                                             Upgrade Agent applies your instructions independently to multiple files in parallel, with optional
-                                             post-processing by a single agent.
-                                             </html>
-                                             """);
-        contentPanel.add(explanationLabel, gbc);
-
-
         // Scope Row
-        gbc.gridy++;
         gbc.gridx = 0;
+        gbc.gridy = 0; // Shifted up since explanationLabel is removed
         gbc.weightx = 0.0;
         gbc.fill = GridBagConstraints.NONE;
         gbc.anchor = GridBagConstraints.EAST;
@@ -172,17 +164,22 @@ public class UpgradeAgentDialog extends JDialog {
         scopeCardsPanel = new JPanel(scopeCardLayout);
 
         // "Entire Project" Card
-        JPanel entireProjectPanel = new JPanel(new GridBagLayout());
-        GridBagConstraints entireGbc = new GridBagConstraints();
-        entireGbc.insets = new Insets(0, 0, 5, 5);
-        entireGbc.anchor = GridBagConstraints.WEST;
-        entireGbc.gridx = 0;
-        entireGbc.gridy = 0;
-        entireProjectPanel.add(new JLabel("Restrict to Language"), entireGbc);
+        JPanel entireProjectPanel = new JPanel(new GridBagLayout()); // Changed to GridBagLayout
+        entireProjectPanel.setBorder(BorderFactory.createEmptyBorder(5, 5, 5, 5));
+        GridBagConstraints epGBC = new GridBagConstraints();
+        epGBC.insets = new Insets(0, 0, 0, 0); // Reset insets for this panel
 
-        entireGbc.gridx = 1;
-        entireGbc.weightx = 1.0;
-        entireGbc.fill = GridBagConstraints.HORIZONTAL;
+        // Row 0: "Restrict to Language" Label and ComboBox
+        epGBC.gridx = 0;
+        epGBC.gridy = 0;
+        epGBC.anchor = GridBagConstraints.WEST;
+        epGBC.fill = GridBagConstraints.NONE;
+        epGBC.weightx = 0.0;
+        entireProjectPanel.add(new JLabel("Restrict to Language"), epGBC);
+
+        epGBC.gridx = 1;
+        epGBC.weightx = 1.0; // Allow combobox to take extra horizontal space
+        epGBC.fill = GridBagConstraints.HORIZONTAL; // Fill horizontally
         languageComboBox = new JComboBox<>();
         languageComboBox.addItem(ALL_LANGUAGES_OPTION);
         chrome.getProject().getAnalyzerLanguages().stream()
@@ -190,15 +187,27 @@ public class UpgradeAgentDialog extends JDialog {
                 .sorted()
                 .forEach(languageComboBox::addItem);
         languageComboBox.setSelectedItem(ALL_LANGUAGES_OPTION);
-        entireProjectPanel.add(languageComboBox, entireGbc);
+        entireProjectPanel.add(languageComboBox, epGBC);
+        // Action listener will be added later, after the new update method is defined
 
-        // Spacer to push content to the top
-        var gbcSpacer = new GridBagConstraints();
-        gbcSpacer.gridy = 1;
-        gbcSpacer.gridwidth = 2;
-        gbcSpacer.weighty = 1.0;
-        gbcSpacer.fill = GridBagConstraints.VERTICAL;
-        entireProjectPanel.add(new JPanel(), gbcSpacer);
+        // Row 1: File Count Label
+        epGBC.gridx = 0;
+        epGBC.gridy = 1;
+        epGBC.gridwidth = 2; // Span across both columns
+        epGBC.weightx = 1.0;
+        epGBC.fill = GridBagConstraints.HORIZONTAL;
+        epGBC.anchor = GridBagConstraints.WEST;
+        entireProjectFileCountLabel = new JLabel(" ");
+        entireProjectFileCountLabel.setBorder(BorderFactory.createEmptyBorder(3, 0, 0, 0)); // Add a bit of top padding
+        entireProjectPanel.add(entireProjectFileCountLabel, epGBC);
+
+        // Spacer to push content to the top (remaining vertical space)
+        epGBC.gridx = 0;
+        epGBC.gridy = 2;
+        epGBC.gridwidth = 2;
+        epGBC.weighty = 1.0;
+        epGBC.fill = GridBagConstraints.VERTICAL;
+        entireProjectPanel.add(new JPanel(), epGBC); // Filler panel
 
         scopeCardsPanel.add(entireProjectPanel, "ENTIRE");
 
@@ -229,8 +238,15 @@ public class UpgradeAgentDialog extends JDialog {
         inputComponent.getActionMap().put("addFiles", addFilesAction);
 
         JPanel selectFilesCardPanel = new JPanel(new BorderLayout(0, 5));
-        selectFilesCardPanel.add(fileSelectionPanel, BorderLayout.NORTH);
+        selectFilesCardPanel.setBorder(BorderFactory.createEmptyBorder(5, 5, 5, 5));
 
+        // Side-by-side panels (50 % each) without a resizable splitter
+        JPanel horizontalSplitPane = new JPanel(new GridLayout(1, 2, H_GAP, 0));
+
+        // Left side: FileSelectionPanel
+        horizontalSplitPane.add(fileSelectionPanel);
+
+        // Create the JTable and its scroll pane
         tableModel = new javax.swing.table.DefaultTableModel(new String[]{"File"}, 0);
         selectedFilesTable = new JTable(tableModel);
 
@@ -268,9 +284,15 @@ public class UpgradeAgentDialog extends JDialog {
         });
 
         JScrollPane tableScrollPane = new JScrollPane(selectedFilesTable);
-        tableScrollPane.setPreferredSize(new Dimension(500, 120)); // Smaller height for the table
-        selectFilesCardPanel.add(tableScrollPane, BorderLayout.CENTER);
+        // tableScrollPane.setPreferredSize(new Dimension(500, 120)); // No longer needed with JSplitPane
 
+        // Right side: selected-files table
+        horizontalSplitPane.add(tableScrollPane);
+
+        // Add the JSplitPane to the center of selectFilesCardPanel
+        selectFilesCardPanel.add(horizontalSplitPane, BorderLayout.CENTER);
+
+        // The removeButtonPanel remains at BorderLayout.SOUTH
         JPanel removeButtonPanel = new JPanel(new FlowLayout(FlowLayout.RIGHT));
         JButton removeButton = new JButton("Remove Selected");
         removeButton.addActionListener(e -> removeSelectedFilesFromTable());
@@ -281,29 +303,72 @@ public class UpgradeAgentDialog extends JDialog {
 
         // "List Files" Card
         JPanel listFilesCardPanel = new JPanel(new BorderLayout(5, 5));
-        listFilesTextArea = new JTextArea(5, 50);
+        listFilesCardPanel.setBorder(BorderFactory.createEmptyBorder(5, 5, 5, 5));
+
+        // --- Left: raw-text area and its instructions ---
+        JPanel rawTextPanel = new JPanel(new BorderLayout(0, 5));
+        JLabel listFilesInstructions = new JLabel("Raw text containing filenames");
+
+        // Calculate the target height from the right-side components' typical preferred sizes
+        // We create temporary components to ensure their preferred size accurately reflects the current L&F
+        // and font metrics, without depending on the order of UI initialization.
+        JLabel tempRestrictLabel = new JLabel("Restrict to Language");
+        JComboBox<String> tempLanguageCombo = new JComboBox<>();
+        tempLanguageCombo.addItem("Longest language name possible to ensure height calculation"); // Ensure combo has some content
+        int targetHeaderHeight = Math.max(tempRestrictLabel.getPreferredSize().height, tempLanguageCombo.getPreferredSize().height);
+        listFilesInstructions.setPreferredSize(new Dimension(listFilesInstructions.getPreferredSize().width, targetHeaderHeight));
+
+        listFilesTextArea = new JTextArea(8, 40);
         listFilesTextArea.getDocument().addDocumentListener(new javax.swing.event.DocumentListener() {
-            @Override
-            public void insertUpdate(javax.swing.event.DocumentEvent e) {
-                updateFileListStatus();
-            }
-
-            @Override
-            public void removeUpdate(javax.swing.event.DocumentEvent e) {
-                updateFileListStatus();
-            }
-
-            @Override
-            public void changedUpdate(javax.swing.event.DocumentEvent e) { /* Not needed for plain text */ }
+            @Override public void insertUpdate(javax.swing.event.DocumentEvent e) { updateParsedFilesTable(); }
+            @Override public void removeUpdate(javax.swing.event.DocumentEvent e) { updateParsedFilesTable(); }
+            @Override public void changedUpdate(javax.swing.event.DocumentEvent e) { updateParsedFilesTable(); }
         });
-        JScrollPane listFilesScrollPane = new JScrollPane(listFilesTextArea);
-        JLabel listFilesInstructions = new JLabel("Paste target files, separated by whitespace");
-        listFilesCardPanel.add(listFilesInstructions, BorderLayout.NORTH);
-        listFilesCardPanel.add(listFilesScrollPane, BorderLayout.CENTER);
+        JScrollPane rawTextScroll = new JScrollPane(listFilesTextArea);
+        rawTextPanel.add(listFilesInstructions, BorderLayout.NORTH);
+        rawTextPanel.add(rawTextScroll, BorderLayout.CENTER);
 
-        fileListStatusLabel = new JLabel(" ");
-        fileListStatusLabel.setBorder(BorderFactory.createEmptyBorder(3, 0, 0, 0));
-        listFilesCardPanel.add(fileListStatusLabel, BorderLayout.SOUTH);
+
+        // --- Right: parsed-file table with language filter ---
+        parsedTableModel = new javax.swing.table.DefaultTableModel(new String[]{"File"}, 0) {
+            @Override public boolean isCellEditable(int row, int column) { return false; }
+        };
+        parsedFilesTable = new JTable(parsedTableModel);
+        JScrollPane parsedScroll = new JScrollPane(parsedFilesTable);
+
+        /* top-right panel: language combo */
+        JPanel rightTopPanel = new JPanel(new FlowLayout(FlowLayout.LEFT, H_GAP, 0));
+        rightTopPanel.add(new JLabel("Restrict to Language"));
+        listLanguageCombo = new JComboBox<>();
+        listLanguageCombo.addItem(ALL_LANGUAGES_OPTION);
+        chrome.getProject().getAnalyzerLanguages().stream()
+              .map(Language::toString)
+              .sorted()
+              .forEach(listLanguageCombo::addItem);
+        listLanguageCombo.setSelectedItem(ALL_LANGUAGES_OPTION);
+        listLanguageCombo.addActionListener(e -> {
+            updateParsedFilesTable();
+            updateCostEstimate();
+        });
+        rightTopPanel.add(listLanguageCombo);
+
+        /* bottom-right: file count */
+        parsedFilesCountLabel = new JLabel("0 files");
+        parsedFilesCountLabel.setBorder(BorderFactory.createEmptyBorder(3, 0, 0, 0));
+
+        JPanel rightPanel = new JPanel(new BorderLayout(0, 5));
+        rightPanel.add(rightTopPanel, BorderLayout.NORTH);
+        rightPanel.add(parsedScroll,   BorderLayout.CENTER);
+
+        // Side-by-side panels (50 % each) without a resizable splitter
+        JPanel splitPane = new JPanel(new GridLayout(1, 2, H_GAP, 0));
+        splitPane.add(rawTextPanel);
+        splitPane.add(rightPanel);
+
+        listFilesCardPanel.add(splitPane, BorderLayout.CENTER);
+        listFilesCardPanel.add(parsedFilesCountLabel, BorderLayout.SOUTH);
+
+
         scopeCardsPanel.add(listFilesCardPanel, "LIST");
 
 
@@ -314,33 +379,43 @@ public class UpgradeAgentDialog extends JDialog {
         gbc.gridx = 0;
         gbc.gridwidth = 3;
         gbc.weightx = 1.0;
+        gbc.weighty = 0.15;
         gbc.fill = GridBagConstraints.BOTH;
 
-        JPanel combined = new JPanel(new GridBagLayout());
-        GridBagConstraints cmbc = new GridBagConstraints();
-        cmbc.insets = new Insets(0, 0, 0, 0);
-        // allow both panels to expand equally in both directions
-        cmbc.fill = GridBagConstraints.BOTH;
-        cmbc.anchor = GridBagConstraints.NORTH;
-        cmbc.weighty = 1.0;
-        cmbc.weightx = 0.5;
-
+        JPanel combined = new JPanel(new GridLayout(1, 2, H_GAP, 0));
+        
         // ---- parallel processing panel --------------------------------
         JPanel parallelProcessingPanel = new JPanel(new GridBagLayout());
-        parallelProcessingPanel.setBorder(BorderFactory.createTitledBorder("Parallel processing"));
+        var ppTitleBorder = BorderFactory.createTitledBorder("Parallel processing");
+        parallelProcessingPanel.setBorder(BorderFactory.createCompoundBorder(ppTitleBorder,
+                                                                            BorderFactory.createEmptyBorder(5, 5, 5, 5)));
         GridBagConstraints paraGBC = new GridBagConstraints();
-        paraGBC.insets = new Insets(5, 5, 5, 5);
+        paraGBC.insets = new Insets(0, 0, 0, 0); // Removed per-cell insets
         paraGBC.fill = GridBagConstraints.HORIZONTAL;
 
-        // Instructions label
+        // Instructions label and info icon
         paraGBC.gridx = 0;
         paraGBC.gridy = 0;
         paraGBC.gridwidth = 3;
-        paraGBC.weightx = 0;
+        paraGBC.weightx = 1.0; // Allow it to expand horizontally
         paraGBC.weighty = 0;
-        paraGBC.fill = GridBagConstraints.NONE;
+        paraGBC.fill = GridBagConstraints.HORIZONTAL;
         paraGBC.anchor = GridBagConstraints.WEST;
-        parallelProcessingPanel.add(new JLabel("Instructions:"), paraGBC);
+
+        var instructionsPanel = new JPanel(new FlowLayout(FlowLayout.LEFT, 0, 0)); // No horizontal gap for FlowLayout initially
+        instructionsPanel.add(new JLabel("Instructions:"));
+        instructionsPanel.add(Box.createHorizontalStrut(H_GAP)); // Manual H_GAP
+
+        var infoIcon = new JLabel(smallInfoIcon);
+        infoIcon.setToolTipText("""
+                                <html>
+                                BlitzForge applies your instructions independently to multiple files in parallel, with optional
+                                post-processing by a single agent.
+                                </html>
+                                """);
+        instructionsPanel.add(infoIcon);
+        parallelProcessingPanel.add(instructionsPanel, paraGBC);
+
 
         // Instructions TextArea
         paraGBC.gridy = 1;
@@ -365,26 +440,6 @@ public class UpgradeAgentDialog extends JDialog {
         paraGBC.anchor = GridBagConstraints.EAST;
         parallelProcessingPanel.add(new JLabel("Model"), paraGBC);
 
-        if (chrome.getProject().getDataRetentionPolicy() == MainProject.DataRetentionPolicy.IMPROVE_BROKK) {
-            paraGBC.gridx = 1;
-            paraGBC.weightx = 0.0;
-            paraGBC.fill = GridBagConstraints.NONE;
-            paraGBC.anchor = GridBagConstraints.WEST;
-            var deepSeekV3Icon = new JLabel(smallInfoIcon);
-            deepSeekV3Icon.setToolTipText("""
-                                          <html>
-                                          Strong options include:
-                                          <ul>
-                                          <li>DeepSeek v3: inexpensive, massively parallel
-                                          <li>Gemini Flash Lite: even cheaper than DSv3. Not as parallel but faster per-task
-                                          </ul>
-                                          </html>
-                                          """);
-            paraGBC.insets = new Insets(5, 2, 5, 5);
-            parallelProcessingPanel.add(deepSeekV3Icon, paraGBC);
-            paraGBC.insets = new Insets(5, 5, 5, 5);
-        }
-
         paraGBC.gridx = 2;
         paraGBC.weightx = 0.0;
         paraGBC.fill = GridBagConstraints.NONE;
@@ -392,20 +447,73 @@ public class UpgradeAgentDialog extends JDialog {
         List<Service.FavoriteModel> favoriteModels = MainProject.loadFavoriteModels();
         favoriteModels.sort((m1, m2) -> m1.alias().compareToIgnoreCase(m2.alias()));
         modelComboBox = new JComboBox<>(favoriteModels.toArray(new Service.FavoriteModel[0]));
+        // Add colored-dot speed indicator next to each model alias
+        var service = chrome.getContextManager().getService();
         modelComboBox.setRenderer(new DefaultListCellRenderer() {
+            private final Icon redDot    = new ColorDotIcon(Color.RED,    10);
+            private final Icon yellowDot = new ColorDotIcon(Color.YELLOW, 10);
+            private final Icon greenDot  = new ColorDotIcon(new Color(0, 170, 0), 10); // deeper green for visibility
+
             @Override
-            public Component getListCellRendererComponent(JList<?> list, Object value, int index, boolean isSelected, boolean cellHasFocus) {
-                super.getListCellRendererComponent(list, value, index, isSelected, cellHasFocus);
-                if (value instanceof Service.FavoriteModel fav) {
-                    setText(fav.alias());
+            public Component getListCellRendererComponent(JList<?> list,
+                                                          Object value,
+                                                          int index,
+                                                          boolean isSelected,
+                                                          boolean cellHasFocus)
+            {
+                // Use default renderer for basic background/selection handling
+                super.getListCellRendererComponent(list, "", index, isSelected, cellHasFocus);
+                var fav = (Service.FavoriteModel) value;
+                var panel = new JPanel(new FlowLayout(FlowLayout.LEFT, 5, 0));
+                panel.setOpaque(true);
+                panel.setBackground(getBackground());
+
+                // Determine metric + color
+                var model   = service.getModel(fav.modelName(), fav.reasoning());
+                Color color = Color.GRAY;
+                String tooltip = "unknown capacity";
+                if (model != null) {
+                    Integer maxConc = service.getMaxConcurrentRequests(model);
+                    if (maxConc != null) {
+                        tooltip = "%,d max concurrent requests".formatted(maxConc);
+                        color   = (maxConc <= 5) ? Color.RED
+                                                 : (maxConc <= 50) ? Color.YELLOW
+                                                                   : new Color(0, 170, 0);
+                    } else {
+                        Integer tpm = service.getTokensPerMinute(model);
+                        if (tpm != null) {
+                            tooltip = "%,d tokens/minute".formatted(tpm);
+                            color   = (tpm <= 1_000_000)  ? Color.RED
+                                                          : (tpm <= 10_000_000) ? Color.YELLOW
+                                                                                : new Color(0, 170, 0);
+                        }
+                    }
                 }
-                return this;
+
+                Icon dot = switch (color.getRGB()) {
+                    case 0xFFFF0000 -> redDot;
+                    case 0xFFFFFF00 -> yellowDot;
+                    default         -> greenDot;
+                };
+
+                panel.setToolTipText(tooltip);
+                panel.add(new JLabel(dot));
+                var name = new JLabel(fav.alias());
+                name.setForeground(getForeground());
+                panel.add(name);
+                return panel;
             }
         });
         if (!favoriteModels.isEmpty()) {
             modelComboBox.setSelectedIndex(0);
         }
-        parallelProcessingPanel.add(modelComboBox, paraGBC);
+        // Use FlowLayout with 0 horizontal gap to ensure modelComboBox starts at the cell's left edge
+        JPanel modelCostPanel = new JPanel(new FlowLayout(FlowLayout.LEFT, 0, 0));
+        modelCostPanel.add(modelComboBox);
+        modelCostPanel.add(Box.createHorizontalStrut(H_GAP)); // Add explicit horizontal gap
+        costEstimateLabel = new JLabel(" ");
+        modelCostPanel.add(costEstimateLabel);
+        parallelProcessingPanel.add(modelCostPanel, paraGBC);
 
         // Token Warning Label
         paraGBC.gridy++;
@@ -456,6 +564,7 @@ public class UpgradeAgentDialog extends JDialog {
         parallelProcessingPanel.add(relatedIcon, paraGBC);
         paraGBC.gridx = 2;
         relatedClassesCombo = new JComboBox<>(new String[]{"0", "5", "10", "20"});
+        relatedClassesCombo.addActionListener(e -> updateCostEstimate());
         relatedClassesCombo.setEditable(true);
         relatedClassesCombo.setSelectedItem("0");
         parallelProcessingPanel.add(relatedClassesCombo, paraGBC);
@@ -475,9 +584,11 @@ public class UpgradeAgentDialog extends JDialog {
 
         // ---- post-processing panel ------------------------
         JPanel ppPanel = new JPanel(new GridBagLayout());
-        ppPanel.setBorder(BorderFactory.createTitledBorder("Post-processing"));
+        var postTitleBorder = BorderFactory.createTitledBorder("Post-processing");
+        ppPanel.setBorder(BorderFactory.createCompoundBorder(postTitleBorder,
+                                                             BorderFactory.createEmptyBorder(5, 5, 5, 5)));
         GridBagConstraints ppGBC = new GridBagConstraints();
-        ppGBC.insets = new Insets(5, 5, 5, 5);
+        ppGBC.insets = new Insets(0, 0, 0, 0); // Removed per-cell insets
         ppGBC.fill = GridBagConstraints.HORIZONTAL;
         ppGBC.anchor = GridBagConstraints.WEST;
 
@@ -520,29 +631,73 @@ public class UpgradeAgentDialog extends JDialog {
         var noneInfoIcon = new JLabel(smallInfoIcon);
         noneInfoIcon.setToolTipText("Optionally select Architect or Ask to run after parallel processing");
 
-        actGbc.gridx = 0;
-        actGbc.gridy = 0;
-        actGbc.weightx = 0.0;
-        actionPanel.add(noneInfoIcon, actGbc);
+        GridBagConstraints iconGbc = new GridBagConstraints();
+        iconGbc.insets = new Insets(5, 5, 5, 5);
+        iconGbc.anchor = GridBagConstraints.WEST;
+        iconGbc.fill = GridBagConstraints.NONE;
+        iconGbc.gridx = 0;
+        iconGbc.gridy = 0;
+        iconGbc.weightx = 0.0;
+        actionPanel.add(noneInfoIcon, iconGbc);
 
-        /* combo box – stretches to fill remaining width */
+        /* Combo box and Model label row */
         runPostProcessCombo = new JComboBox<>(new String[]{"None", "Architect", "Ask"});
-        actGbc.gridx = 1;
-        actGbc.weightx = 1.0;
-        actionPanel.add(runPostProcessCombo, actGbc);
-
-        /* model label on its own row, aligned with column 1 */
-        actGbc.gridy++;
-        actGbc.gridx = 1;
         postProcessingModelLabel = new JLabel(" ");
-        actionPanel.add(postProcessingModelLabel, actGbc);
 
-        /* build-first checkbox on its own row, also in column 1 */
-        actGbc.gridy++;
+        // Determine the maximum width needed for the model label
+        var tempLabel = new JLabel();
+        var fm = tempLabel.getFontMetrics(tempLabel.getFont());
+        var cm = chrome.getContextManager();
+        String architectModelName = service.nameOf(cm.getArchitectModel());
+        String askModelName = service.nameOf(cm.getAskModel());
+        int maxWidth = fm.stringWidth("Model: " + architectModelName);
+        maxWidth = Math.max(maxWidth, fm.stringWidth("Model: " + askModelName));
+
+        // Use a GridBagLayout for the combo and label to allow the label to shrink
+        // but set a minimum size based on calculated max width.
+        JPanel comboAndModelPanel = new JPanel(new GridBagLayout());
+        GridBagConstraints cAmpGbc = new GridBagConstraints();
+        cAmpGbc.insets = new Insets(0, H_GAP, 0, 0); // Horizontal gap for the model label
+
+        // Add the runPostProcessCombo
+        cAmpGbc.gridx = 0;
+        cAmpGbc.gridy = 0;
+        cAmpGbc.weightx = 0.0;
+        cAmpGbc.fill = GridBagConstraints.NONE;
+        cAmpGbc.anchor = GridBagConstraints.WEST;
+        comboAndModelPanel.add(runPostProcessCombo, cAmpGbc);
+
+        // Add the postProcessingModelLabel
+        cAmpGbc.gridx = 1;
+        cAmpGbc.gridy = 0;
+        cAmpGbc.weightx = 1.0; // Allow the label to take extra space
+        cAmpGbc.fill = GridBagConstraints.HORIZONTAL;
+        cAmpGbc.anchor = GridBagConstraints.WEST;
+        postProcessingModelLabel.setMinimumSize(new Dimension(maxWidth, postProcessingModelLabel.getPreferredSize().height));
+        postProcessingModelLabel.setPreferredSize(new Dimension(maxWidth, postProcessingModelLabel.getPreferredSize().height)); // Set preferred to minimum
+        comboAndModelPanel.add(postProcessingModelLabel, cAmpGbc);
+
+        GridBagConstraints comboModelGbc = new GridBagConstraints();
+        comboModelGbc.insets = new Insets(5, 5, 5, 5);
+        comboModelGbc.anchor = GridBagConstraints.WEST;
+        comboModelGbc.fill = GridBagConstraints.HORIZONTAL; // This panel can fill horizontally
+        comboModelGbc.gridx = 1; // Align with the info icon's column for consistency
+        comboModelGbc.gridy = 0;
+        comboModelGbc.weightx = 1.0; // Allow this panel to take horizontal space
+        actionPanel.add(comboAndModelPanel, comboModelGbc);
+
+        /* build-first checkbox on its own row, aligned with column 1 */
+        GridBagConstraints buildCheckboxGbc = new GridBagConstraints();
+        buildCheckboxGbc.insets = new Insets(5, 5, 5, 5);
+        buildCheckboxGbc.anchor = GridBagConstraints.WEST;
+        buildCheckboxGbc.fill = GridBagConstraints.NONE;
+        buildCheckboxGbc.gridx = 1;
+        buildCheckboxGbc.gridy = 1; // This is now row 1 as combo/model are on row 0
+        buildCheckboxGbc.weightx = 0.0;
         buildFirstCheckbox = new JCheckBox("Build project first");
         buildFirstCheckbox.setToolTipText("Run the project's build/verification command before invoking post-processing");
         buildFirstCheckbox.setEnabled(false);
-        actionPanel.add(buildFirstCheckbox, actGbc);
+        actionPanel.add(buildFirstCheckbox, buildCheckboxGbc);
 
         ppPanel.add(actionPanel, ppGBC);
         ppGBC.gridwidth = 1;
@@ -560,25 +715,20 @@ public class UpgradeAgentDialog extends JDialog {
         opGBC.anchor = GridBagConstraints.WEST;
         opGBC.fill = GridBagConstraints.NONE;
 
-        parallelOutputGroup = new ButtonGroup();
-        includeNoneRadio = new JRadioButton("Include none");
-        includeAllRadio = new JRadioButton("Include all");
-        includeChangedRadio = new JRadioButton("Include changed files");
-        parallelOutputGroup.add(includeNoneRadio);
-        parallelOutputGroup.add(includeAllRadio);
-        parallelOutputGroup.add(includeChangedRadio);
+        parallelOutputCombo = new JComboBox<>(new String[] {
+                "Include none",
+                "Include all",
+                "Include changed files"
+        });
+        parallelOutputCombo.setSelectedIndex(0);
 
         int opRow = 0;
 
-        /* Radios */
+        /* Combo */
         opGBC.gridx = 0;
         opGBC.gridy = opRow++;
         opGBC.gridwidth = 3;
-        outputPanel.add(includeNoneRadio, opGBC);
-        opGBC.gridy = opRow++;
-        outputPanel.add(includeAllRadio, opGBC);
-        opGBC.gridy = opRow++;
-        outputPanel.add(includeChangedRadio, opGBC);
+        outputPanel.add(parallelOutputCombo, opGBC);
 
         /* Filter row – label */
         GridBagConstraints filterLabelGbc = new GridBagConstraints();
@@ -611,13 +761,6 @@ public class UpgradeAgentDialog extends JDialog {
         ppPanel.add(outputPanel, ppGBC);
         ppGBC.gridwidth = 1;
 
-        // --- spacer ---
-        var ppSpacer = new GridBagConstraints();
-        ppSpacer.gridy = ppGBC.gridy + 1;
-        ppSpacer.gridwidth = 3;
-        ppSpacer.weighty = 1.0;
-        ppSpacer.fill = GridBagConstraints.VERTICAL;
-        ppPanel.add(new JPanel(), ppSpacer);
 
         java.awt.event.ActionListener postProcessListener = ev -> {
             String selectedOption = (String) runPostProcessCombo.getSelectedItem();
@@ -637,7 +780,7 @@ public class UpgradeAgentDialog extends JDialog {
                 if (!hasVerification) {
                     buildFirstCheckbox.setToolTipText("No build/verification command available");
                 }
-                includeAllRadio.setSelected(true);
+                parallelOutputCombo.setSelectedItem("Include all");
             } else if (architect) {
                 var verificationCommand = io.github.jbellis.brokk.agents.BuildAgent
                         .determineVerificationCommand(chrome.getContextManager());
@@ -647,17 +790,16 @@ public class UpgradeAgentDialog extends JDialog {
                 if (!hasVerification) {
                     buildFirstCheckbox.setToolTipText("No build/verification command available");
                 }
-                includeChangedRadio.setSelected(true);
+                parallelOutputCombo.setSelectedItem("Include changed files");
                 if (postProcessingInstructionsArea.getText().trim().isEmpty()) {
                     postProcessingInstructionsArea.setText("Fix any build errors");
                 }
             } else { // None
                 buildFirstCheckbox.setEnabled(false);
                 buildFirstCheckbox.setSelected(false);
-                includeNoneRadio.setSelected(true);
+                parallelOutputCombo.setSelectedItem("Include none");
             }
 
-            var cm = chrome.getContextManager();
             if (architect) {
                 String modelName = cm.getService().nameOf(cm.getArchitectModel());
                 postProcessingModelLabel.setText("Model: " + modelName);
@@ -673,10 +815,8 @@ public class UpgradeAgentDialog extends JDialog {
 
 
         // ---- add both panels ------------------------------
-        cmbc.gridx = 0;
-        combined.add(parallelProcessingPanel, cmbc);
-        cmbc.gridx = 1;
-        combined.add(ppPanel, cmbc);
+        combined.add(parallelProcessingPanel);
+        combined.add(ppPanel);
         contentPanel.add(combined, gbc);
 
         // Scope Panel at the bottom
@@ -714,13 +854,20 @@ public class UpgradeAgentDialog extends JDialog {
             String command;
             if (entireProjectScopeRadioButton.isSelected()) {
                 command = "ENTIRE";
+                updateEntireProjectFileCountLabel();
             } else if (listFilesScopeRadioButton.isSelected()) {
                 command = "LIST";
             } else {
                 command = "SELECT";
             }
             scopeCardLayout.show(scopeCardsPanel, command);
+            updateCostEstimate();
         };
+        languageComboBox.addActionListener(e -> {
+            updateEntireProjectFileCountLabel();
+            updateCostEstimate();
+        });
+
         entireProjectScopeRadioButton.addActionListener(scopeListener);
         selectFilesScopeRadioButton.addActionListener(scopeListener);
         listFilesScopeRadioButton.addActionListener(scopeListener);
@@ -742,6 +889,122 @@ public class UpgradeAgentDialog extends JDialog {
         add(buttonPanel, BorderLayout.SOUTH);
     }
 
+    private void updateCostEstimate() {
+        var cm      = chrome.getContextManager();
+        var service = cm.getService();
+        var fav     = (Service.FavoriteModel) modelComboBox.getSelectedItem();
+        requireNonNull(fav);
+
+        var pricing = service.getModelPricing(fav.modelName());
+
+        List<ProjectFile> files = getSelectedFilesForCost();
+        int n = files.size();
+        if (n == 0) { costEstimateLabel.setText(" "); return; }
+
+        long tokensFiles = files.parallelStream()
+                .mapToLong(this::getTokenCount)
+                .sum();
+        double avgTokens = tokensFiles / (double) n;
+
+        long workspaceTokens = includeWorkspaceCheckbox.isSelected()
+                               ? Messages.getApproximateTokens(
+                io.github.jbellis.brokk.prompts.CodePrompts.instance
+                        .getWorkspaceContentsMessages(cm.topContext()))
+                               : 0;
+        long workspaceAdd = includeWorkspaceCheckbox.isSelected() ? workspaceTokens * n : 0;
+
+        int relatedK = 0;
+        try {
+            var txt = Objects.toString(relatedClassesCombo.getEditor().getItem(), "").trim();
+            if (!txt.isEmpty()) relatedK = Integer.parseInt(txt);
+        } catch (NumberFormatException ex) {
+            // Invalid number → treat as zero related classes
+            relatedK = 0;
+        }
+        long relatedAdd = relatedK > 0 ? Math.round(n * relatedK * avgTokens * 0.1) : 0;
+
+        long totalInput = tokensFiles + workspaceAdd + relatedAdd;
+        long estOutput  = Math.min(4000, totalInput / 2);
+        double cost     = pricing.estimateCost(totalInput, 0, estOutput);
+        estimatedCost   = cost;
+
+        costEstimateLabel.setText(String.format("Cost Estimate: $%.2f", cost));
+    }
+    
+    private void fetchUserBalance() {
+        var cm = chrome.getContextManager();
+        cm.submitBackgroundTask("Fetch balance",
+                                () -> cm.getService().getUserBalance())
+          .thenAccept(balance -> userBalance = balance);
+    }
+    
+    /**
+     * Returns the cached token count of a file, computing it once if necessary.
+     */
+    private long getTokenCount(ProjectFile pf) {
+        return tokenCountCache.computeIfAbsent(pf, file -> {
+            try {
+                return (long) Messages.getApproximateTokens(file.read());
+            } catch (Exception e) {
+                return 0L;
+            }
+        });
+    }
+    
+    /**
+     * Gather the currently selected files (no validation).
+     */
+    private List<ProjectFile> getSelectedFilesForCost() {
+        try {
+            if (entireProjectScopeRadioButton.isSelected()) {
+                var files = chrome.getProject().getRepo().getTrackedFiles().stream()
+                                   .filter(ProjectFile::isText);
+                String langSel = Objects.toString(languageComboBox.getSelectedItem(), ALL_LANGUAGES_OPTION);
+                if (!ALL_LANGUAGES_OPTION.equals(langSel)) {
+                    files = files.filter(pf -> langSel.equals(pf.getLanguage().toString()));
+                }
+                return files.toList();
+            }
+
+            if (listFilesScopeRadioButton.isSelected()) {
+                String text = listFilesTextArea.getText();
+                var projectFiles = chrome.getProject().getRepo().getTrackedFiles();
+                return projectFiles.parallelStream()
+                                   .filter(ProjectFile::isText)
+                                   .filter(pf -> {
+                                       boolean nameMatch = text.contains(pf.toString()) || text.contains(pf.getFileName());
+                                       if (!nameMatch) return false;
+                                       String langSel = Objects.toString(listLanguageCombo.getSelectedItem(), ALL_LANGUAGES_OPTION);
+                                       if (ALL_LANGUAGES_OPTION.equals(langSel)) return true;
+                                       return langSel.equals(pf.getLanguage().toString());
+                                   })
+                                   .toList();
+            }
+
+            // select-files scope
+            List<ProjectFile> files = new ArrayList<>();
+            for (int i = 0; i < tableModel.getRowCount(); i++) {
+                String rel = (String) tableModel.getValueAt(i, 0);
+                files.add(chrome.getContextManager().toFile(rel));
+            }
+            return files;
+        } catch (Exception e) {
+            return List.of();
+        }
+    }
+
+    private void updateEntireProjectFileCountLabel() {
+        var files = chrome.getProject().getRepo().getTrackedFiles().stream()
+                .filter(ProjectFile::isText);
+        String langSel = Objects.toString(languageComboBox.getSelectedItem(), ALL_LANGUAGES_OPTION);
+        if (!ALL_LANGUAGES_OPTION.equals(langSel)) {
+            files = files.filter(pf -> langSel.equals(pf.getLanguage().toString()));
+        }
+        long count = files.count();
+        entireProjectFileCountLabel.setText(count + " file" + (count == 1 ? "" : "s"));
+    }
+
+    /* ---------------- existing method ------------------------------ */
     private void updateTokenWarningLabel() {
         if (!includeWorkspaceCheckbox.isSelected()) {
             tokenWarningLabel.setVisible(false);
@@ -819,6 +1082,7 @@ public class UpgradeAgentDialog extends JDialog {
             }
         }
         fileSelectionPanel.setInputText("");
+        updateCostEstimate();
     }
 
     private void removeSelectedFilesFromTable() {
@@ -827,44 +1091,38 @@ public class UpgradeAgentDialog extends JDialog {
         for (int i = selectedRows.length - 1; i >= 0; i--) {
             tableModel.removeRow(selectedRows[i]);
         }
+        updateCostEstimate();
     }
 
-    private void updateFileListStatus() {
+    private void updateParsedFilesTable() {
         String text = listFilesTextArea.getText();
+        parsedTableModel.setRowCount(0);
+
         if (text.isBlank()) {
-            fileListStatusLabel.setText(" ");
+            parsedFilesCountLabel.setText("0 files");
+            updateCostEstimate();
             return;
         }
 
-        var repo = chrome.getProject().getRepo();
-        var trackedFiles = repo.getTrackedFiles();
+        var tracked = chrome.getProject().getRepo().getTrackedFiles();
 
-        List<String> paths = Arrays.stream(text.split("\\s+"))
-                .filter(s -> !s.isBlank())
-                .toList();
+        String langSel = Objects.toString(listLanguageCombo.getSelectedItem(), ALL_LANGUAGES_OPTION);
 
-        int trackedCount = 0;
-        int untrackedCount = 0;
+        List<ProjectFile> matches = tracked.parallelStream()
+                                           .filter(ProjectFile::isText)
+                                           .filter(pf -> {
+                                               boolean nameMatch = text.contains(pf.toString())
+                                                                 || text.contains(pf.getFileName());
+                                               if (!nameMatch) return false;
+                                               if (ALL_LANGUAGES_OPTION.equals(langSel)) return true;
+                                               return langSel.equals(pf.getLanguage().toString());
+                                           })
+                                           .sorted(Comparator.comparing(ProjectFile::toString))
+                                           .toList();
 
-        for (String pathStr : paths) {
-            try {
-                // toFile may throw for paths outside the project
-                ProjectFile pf = chrome.getContextManager().toFile(pathStr);
-                if (trackedFiles.contains(pf)) {
-                    trackedCount++;
-                } else {
-                    untrackedCount++;
-                }
-            } catch (IllegalArgumentException e) {
-                untrackedCount++; // Treat invalid paths as untracked
-            }
-        }
-
-        String status = String.format("Found %d tracked files, %d untracked", trackedCount, untrackedCount);
-        if (untrackedCount > 0) {
-            status += " Untracked files will not be processed";
-        }
-        fileListStatusLabel.setText(status);
+        matches.forEach(pf -> parsedTableModel.addRow(new Object[]{pf.getRelPath().toString()}));
+        parsedFilesCountLabel.setText(matches.size() + " file" + (matches.size() == 1 ? "" : "s"));
+        updateCostEstimate();
     }
 
     private void onOK() {
@@ -878,6 +1136,22 @@ public class UpgradeAgentDialog extends JDialog {
         if (selectedFavorite == null) {
             JOptionPane.showMessageDialog(this, "Please select a model", "Input Error", JOptionPane.ERROR_MESSAGE);
             return;
+        }
+
+        // Refresh cost estimate and warn if it is more than half the balance
+        updateCostEstimate();
+        if (!Float.isNaN(userBalance) && estimatedCost > userBalance / 2.0) {
+            int choice = JOptionPane.showConfirmDialog(
+                    this,
+                    String.format(
+                            "The estimated cost is $%.2f, which exceeds half of your remaining balance ($%.2f).\nDo you want to continue?",
+                            estimatedCost, (double) userBalance),
+                    "Low Balance Warning",
+                    JOptionPane.OK_CANCEL_OPTION,
+                    JOptionPane.WARNING_MESSAGE);
+            if (choice != JOptionPane.OK_OPTION) {
+                return;
+            }
         }
 
         // Determine scope and get files to process
@@ -906,21 +1180,19 @@ public class UpgradeAgentDialog extends JDialog {
         } else if (listFilesScopeRadioButton.isSelected()) {
             String text = listFilesTextArea.getText();
             if (text.isBlank()) {
-                JOptionPane.showMessageDialog(this, "File list cannot be empty", "Input Error", JOptionPane.ERROR_MESSAGE);
+                JOptionPane.showMessageDialog(this, "Raw text cannot be empty", "Input Error", JOptionPane.ERROR_MESSAGE);
                 return;
             }
-            var trackedFiles = chrome.getProject().getRepo().getTrackedFiles();
-            filesToProcessList = Arrays.stream(text.split("\\s+"))
-                    .filter(s -> !s.isBlank())
-                    .map(pathStr -> {
-                        try {
-                            return chrome.getContextManager().toFile(pathStr);
-                        } catch (IllegalArgumentException e) {
-                            return null;
-                        }
+            var projectFiles = chrome.getProject().getRepo().getTrackedFiles();
+            filesToProcessList = projectFiles.parallelStream()
+                    .filter(ProjectFile::isText)
+                    .filter(pf -> {
+                        boolean nameMatch = text.contains(pf.toString()) || text.contains(pf.getFileName());
+                        if (!nameMatch) return false;
+                        String langSel = Objects.toString(listLanguageCombo.getSelectedItem(), ALL_LANGUAGES_OPTION);
+                        if (ALL_LANGUAGES_OPTION.equals(langSel)) return true;
+                        return langSel.equals(pf.getLanguage().toString());
                     })
-                    .filter(Objects::nonNull)
-                    .filter(trackedFiles::contains)
                     .toList();
 
             if (filesToProcessList.isEmpty()) {
@@ -971,14 +1243,12 @@ public class UpgradeAgentDialog extends JDialog {
             case "Ask" -> PostProcessingOption.ASK;
             default -> PostProcessingOption.NONE;
         };
-        String parallelOutputMode;
-        if (includeNoneRadio.isSelected()) {
-            parallelOutputMode = "none";
-        } else if (includeAllRadio.isSelected()) {
-            parallelOutputMode = "all";
-        } else {
-            parallelOutputMode = "changed";
-        }
+        String selectedInclude = (String) parallelOutputCombo.getSelectedItem();
+        String parallelOutputMode = switch (selectedInclude) {
+            case "Include none"          -> "none";
+            case "Include changed files" -> "changed";
+            default                      -> "all";
+        };
         boolean buildFirst = buildFirstCheckbox.isSelected();
         String contextFilter = contextFilterTextField.getText().trim();
         String postProcessingInstructions = postProcessingInstructionsArea.getText().trim();
@@ -991,7 +1261,7 @@ public class UpgradeAgentDialog extends JDialog {
         setVisible(false); // Hide this dialog
 
         // Show progress dialog
-        var progressDialog = new UpgradeAgentProgressDialog(
+        var progressDialog = new BlitzForgeProgressDialog(
                 (Frame) getOwner(),
                 instructions,
                 selectedFavorite,

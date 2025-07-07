@@ -9,7 +9,7 @@ import io.github.jbellis.brokk.gui.dialogs.ImportDependencyDialog;
 import io.github.jbellis.brokk.gui.dialogs.PreviewImagePanel;
 import io.github.jbellis.brokk.gui.dialogs.SettingsDialog;
 import io.github.jbellis.brokk.gui.dialogs.FeedbackDialog;
-import io.github.jbellis.brokk.gui.dialogs.UpgradeAgentDialog;
+import io.github.jbellis.brokk.gui.dialogs.BlitzForgeDialog;
 
 import javax.swing.*;
 import java.awt.*;
@@ -262,10 +262,10 @@ public class MenuBar {
         var toolsMenu = new JMenu("Tools");
         toolsMenu.setEnabled(true);
 
-        var upgradeAgentItem = new JMenuItem("Upgrade Agent...");
+        var upgradeAgentItem = new JMenuItem("BlitzForge...");
         upgradeAgentItem.addActionListener(e -> {
             SwingUtilities.invokeLater(() -> {
-                var dialog = new UpgradeAgentDialog(chrome.getFrame(), chrome);
+                var dialog = new BlitzForgeDialog(chrome.getFrame(), chrome);
                 dialog.setVisible(true);
             });
         });
@@ -364,6 +364,12 @@ public class MenuBar {
             dialog.setVisible(true);
         });
         helpMenu.add(sendFeedbackItem);
+
+        var joinDiscordItem = new JMenuItem("Join Discord");
+        joinDiscordItem.addActionListener(e -> {
+            io.github.jbellis.brokk.util.Environment.openInBrowser("https://discord.gg/QjhQDK8kAj", chrome.getFrame());
+        });
+        helpMenu.add(joinDiscordItem);
 
         var aboutItem = new JMenuItem("About");
         aboutItem.addActionListener(e -> {

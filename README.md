@@ -11,6 +11,11 @@ on large codebases that cannot be jammed entirely into working context.
 
 There is a [Brokk Discord](https://discord.gg/QjhQDK8kAj) for questions and suggestions.
 
+# Running Brokk
+
+1. Sign up at [Brokk.ai](https://brokk.ai/)
+1. Follow the instructions to install jbang and run Brokk
+
 # Documentation
 
 Brokk documentation is at https://brokk.ai/documentation/.
@@ -21,10 +26,6 @@ Brokk uses sbt (Scala Build Tool) since it has a Scala component. To build Brokk
 1. Install sbt (e.g. with sdkman)
 2. Run the sbt repl: `sbt` (with JDK 21 or newer)
 3. In the sbt repl, run individual commands: `run`, `clean`, `test`, `assembly`, etc.
-
-If you have `sbtn` installed it can be used to run commands such as `sbtn run` with a faster startup time.
-(You can also run a single command without the repl with e.g. `sbt run` but sbt has a very high
-startup overhead so using the repl or `sbtn` is recommended.)
 
 ### Checking the PATH Brokk Sees
 
