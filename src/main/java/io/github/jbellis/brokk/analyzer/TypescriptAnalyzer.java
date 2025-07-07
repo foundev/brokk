@@ -16,7 +16,7 @@ import java.util.Optional;
 
 public final class TypescriptAnalyzer extends TreeSitterAnalyzer {
     private static final TSLanguage TS_LANGUAGE = new TreeSitterTypescript();
-    
+
 
     private static final LanguageSyntaxProfile TS_SYNTAX_PROFILE = new LanguageSyntaxProfile(
             // classLikeNodeTypes
@@ -48,7 +48,7 @@ public final class TypescriptAnalyzer extends TreeSitterAnalyzer {
                 "field.definition", SkeletonType.FIELD_LIKE,
                 "typealias.definition", SkeletonType.ALIAS_LIKE, // New mapping
                 "decorator.definition", SkeletonType.UNSUPPORTED, // Keep as UNSUPPORTED but handle differently
-                "keyword.modifier", SkeletonType.UNSUPPORTED 
+                "keyword.modifier", SkeletonType.UNSUPPORTED
             ),
             // asyncKeywordNodeType
             "async", // TS uses 'async' keyword
@@ -80,7 +80,7 @@ public final class TypescriptAnalyzer extends TreeSitterAnalyzer {
 
     @Override
     protected String getQueryResource() {
-        return "treesitter/typescript-unified.scm";
+        return "treesitter/typescript.scm";
     }
 
     @Override
@@ -213,17 +213,17 @@ public final class TypescriptAnalyzer extends TreeSitterAnalyzer {
                 // Interface method signatures, abstract method signatures, non-ambient function signatures, and constructor signatures should not have semicolons per TypeScript conventions
                 boolean isFunctionSignatureInAmbient = "function_signature".equals(funcNode.getType()) && isInAmbientContext(funcNode);
                 boolean isNonAmbientFunctionSignature = "function_signature".equals(funcNode.getType()) && !isInAmbientContext(funcNode);
-                
+
                 if (!"method_signature".equals(funcNode.getType()) && !"construct_signature".equals(funcNode.getType()) && !"abstract_method_signature".equals(funcNode.getType()) && !isNonAmbientFunctionSignature) {
                     endMarker = ";";
                 }
             }
-            
+
             // Assemble: combinedPrefix [keyword] [functionName] [typeParams] paramsText returnTypeSuffix endMarker
             List<String> parts = new ArrayList<>();
             if (!combinedPrefix.isEmpty()) parts.add(combinedPrefix);
             if (!keyword.isEmpty()) parts.add(keyword);
-            if (!functionName.isEmpty() || (keyword.equals("constructor") && functionName.isEmpty())) { 
+            if (!functionName.isEmpty() || (keyword.equals("constructor") && functionName.isEmpty())) {
                 // Add functionName + typeParams for regular functions and constructors
                 parts.add(functionName + typeParamsText);
             } else if (keyword.equals("new")) {
@@ -232,7 +232,7 @@ public final class TypescriptAnalyzer extends TreeSitterAnalyzer {
                     parts.add(typeParamsText);
                 }
             }
-            
+
             // Special handling for constructor signatures to add space before parameters
             String baseSignature = String.join(" ", parts).strip();
             if (keyword.equals("new")) {
@@ -248,10 +248,10 @@ public final class TypescriptAnalyzer extends TreeSitterAnalyzer {
     @Override
     protected String formatFieldSignature(TSNode fieldNode, String src, String exportPrefix, String signatureText, String baseIndent, ProjectFile file) {
         String fullSignature = (exportPrefix.stripTrailing() + " " + signatureText.strip()).strip();
-        
+
         // Remove trailing semicolons to match test expectations
         fullSignature = fullSignature.replaceAll(";\\s*$", "");
-        
+
         // Special handling for enum members - add comma instead of semicolon
         String suffix = "";
         if (fieldNode.getParent() != null && "enum_body".equals(fieldNode.getParent().getType()) &&
@@ -259,10 +259,10 @@ public final class TypescriptAnalyzer extends TreeSitterAnalyzer {
             // Enum members get commas, not semicolons
             suffix = ",";
         }
-        
+
         return baseIndent + fullSignature + suffix;
     }
-    
+
 
     @Override
     protected String renderClassHeader(TSNode classNode, String src,
@@ -293,13 +293,13 @@ public final class TypescriptAnalyzer extends TreeSitterAnalyzer {
             for (String part : prefixParts) {
                 if (remainingSignature.startsWith(part + " ")) {
                     remainingSignature = remainingSignature.substring((part + " ").length()).stripLeading();
-                } else if (remainingSignature.startsWith(part) && 
+                } else if (remainingSignature.startsWith(part) &&
                           (remainingSignature.length() == part.length() || !Character.isLetterOrDigit(remainingSignature.charAt(part.length())))) {
                     remainingSignature = remainingSignature.substring(part.length()).stripLeading();
                 }
             }
         }
-        
+
         // Then, strip the class keyword itself
         if (remainingSignature.startsWith(classKeyword + " ")) {
             remainingSignature = remainingSignature.substring((classKeyword + " ").length()).stripLeading();
@@ -325,21 +325,21 @@ public final class TypescriptAnalyzer extends TreeSitterAnalyzer {
         // TypeScript modifier extraction - look for export, declare, async, static, etc.
         // This method is called when keyword.modifier captures are not available.
         StringBuilder modifiers = new StringBuilder();
-        
+
         // Check the node itself and its parent for common modifier patterns
         TSNode nodeToCheck = node;
         TSNode parent = node.getParent();
-        
+
         // For variable declarators, check the parent declaration
         if ("variable_declarator".equals(node.getType()) && parent != null &&
             ("lexical_declaration".equals(parent.getType()) || "variable_declaration".equals(parent.getType()))) {
             nodeToCheck = parent;
         }
-        
+
         // Check for export statement wrapper
         if (parent != null && "export_statement".equals(parent.getType())) {
             modifiers.append("export ");
-            
+
             // Check for default export
             TSNode exportKeyword = parent.getChild(0);
             if (exportKeyword != null && parent.getChildCount() > 1) {
@@ -349,7 +349,7 @@ public final class TypescriptAnalyzer extends TreeSitterAnalyzer {
                 }
             }
         }
-        
+
         // Look for modifier keywords in the first few children of the declaration
         for (int i = 0; i < Math.min(nodeToCheck.getChildCount(), 5); i++) {
             TSNode child = nodeToCheck.getChild(i);
@@ -363,7 +363,7 @@ public final class TypescriptAnalyzer extends TreeSitterAnalyzer {
                 }
             }
         }
-        
+
         return modifiers.toString();
     }
 
@@ -386,7 +386,7 @@ public final class TypescriptAnalyzer extends TreeSitterAnalyzer {
         // e.g., @parameters, @return_type_node if they are only for context and not main definitions
         return Set.of("parameters", "return_type_node", "predefined_type_node", "type_identifier_node", "export.keyword");
     }
-    
+
     /**
      * Checks if a function node is inside an ambient declaration context (declare namespace/module).
      * In ambient contexts, function signatures should not include the "function" keyword.
@@ -405,31 +405,31 @@ public final class TypescriptAnalyzer extends TreeSitterAnalyzer {
     @Override
     public Map<CodeUnit, String> getSkeletons(ProjectFile file) {
         var skeletons = super.getSkeletons(file);
-        
+
         // Clean up and deduplicate skeletons to match test expectations
         var cleaned = new HashMap<CodeUnit, String>();
         for (var entry : skeletons.entrySet()) {
             String skeleton = entry.getValue();
-            
+
             // Remove trailing commas in enums: ",\n}" -> "\n}"
             skeleton = skeleton.replaceAll(",\\s*\\r?\\n(\\s*})", "\n$1");
-            
+
             // Remove trailing semicolons from non-exported arrow functions only
             if (skeleton.contains("=>") && skeleton.strip().endsWith("};") && !skeleton.startsWith("export")) {
                 skeleton = skeleton.replaceAll(";\\s*$", "");
             }
-            
-            
+
+
             // Remove duplicate lines within skeletons and handle default exports
             skeleton = deduplicateSkeletonLines(skeleton);
             skeleton = extractDefaultExportIfPresent(skeleton);
-            
+
             cleaned.put(entry.getKey(), skeleton);
         }
-        
+
         return cleaned;
     }
-    
+
     /**
      * Remove duplicate lines within a skeleton while preserving order and structure.
      */
@@ -437,16 +437,16 @@ public final class TypescriptAnalyzer extends TreeSitterAnalyzer {
         var lines = skeleton.lines().toList();
         var result = new ArrayList<String>();
         var seen = new HashSet<String>();
-        
+
         for (String line : lines) {
             String trimmedLine = line.strip();
-            
+
             // Keep structural lines and only deduplicate content
             if (trimmedLine.isEmpty() || trimmedLine.equals("{") || trimmedLine.equals("}")) {
                 result.add(line);
                 continue;
             }
-            
+
             // Handle interface/class/enum header duplication (e.g., "export interface Point {" vs "interface Point {")
             // Check if this line is a non-export version of a previous export line
             boolean isDuplicate = false;
@@ -456,7 +456,7 @@ public final class TypescriptAnalyzer extends TreeSitterAnalyzer {
                     isDuplicate = true;
                     break;
                 }
-                // Check if the current line is an export version of a seen line  
+                // Check if the current line is an export version of a seen line
                 if (trimmedLine.startsWith("export ") && trimmedLine.substring(7).equals(seenLine)) {
                     // Replace the non-export version with the export version
                     seen.remove(seenLine);
@@ -472,26 +472,26 @@ public final class TypescriptAnalyzer extends TreeSitterAnalyzer {
                     break;
                 }
             }
-            
+
             if (!isDuplicate && seen.add(trimmedLine)) {
                 result.add(line);
             }
         }
-        
+
         return String.join("\n", result);
     }
-    
+
     /**
      * If skeleton contains both regular and default export lines, keep only the default export.
      */
     private String extractDefaultExportIfPresent(String skeleton) {
         var lines = skeleton.lines().toList();
         boolean hasDefaultExport = lines.stream().anyMatch(line -> line.strip().startsWith("export default"));
-        
+
         if (!hasDefaultExport) {
             return skeleton;
         }
-        
+
         // Filter out non-default exports if default exports exist
         var result = new ArrayList<String>();
         for (String line : lines) {
@@ -500,7 +500,7 @@ public final class TypescriptAnalyzer extends TreeSitterAnalyzer {
                 result.add(line);
             }
         }
-        
+
         return String.join("\n", result);
     }
 
@@ -512,7 +512,7 @@ public final class TypescriptAnalyzer extends TreeSitterAnalyzer {
         }
         return super.extractSimpleName(decl, src);
     }
-    
+
     @Override
     protected void buildFunctionSkeleton(TSNode funcNode, Optional<String> providedNameOpt, String src, String indent, List<String> lines, String exportPrefix) {
         // Handle constructor signatures specially
@@ -524,20 +524,20 @@ public final class TypescriptAnalyzer extends TreeSitterAnalyzer {
                 String typeText = textSlice(typeNode, src);
                 // typeText includes the colon, e.g., ": GenericInterface<T,U>"
                 String returnTypeText = typeText.startsWith(":") ? typeText.substring(1).strip() : typeText;
-                
+
                 // Get the other components from the base method
                 var profile = getLanguageSyntaxProfile();
                 String functionName = extractSimpleName(funcNode, src).orElse("new");
                 TSNode paramsNode = funcNode.getChildByFieldName(profile.parametersFieldName());
                 String paramsText = formatParameterList(paramsNode, src);
-                
+
                 // Extract type parameters
                 String typeParamsText = "";
                 TSNode typeParamsNode = funcNode.getChildByFieldName(profile.typeParametersFieldName());
                 if (typeParamsNode != null && !typeParamsNode.isNull()) {
                     typeParamsText = textSlice(typeParamsNode, src);
                 }
-                
+
                 // Render the constructor signature manually
                 String signature = renderFunctionDeclaration(funcNode, src, exportPrefix, "", functionName, typeParamsText, paramsText, returnTypeText, indent);
                 if (signature != null && !signature.isBlank()) {
@@ -546,10 +546,10 @@ public final class TypescriptAnalyzer extends TreeSitterAnalyzer {
                 return;
             }
         }
-        
+
         // Handle lexical_declaration with arrow_function specially
         TSNode lexicalDeclaration = null;
-        
+
         // Check if funcNode is a lexical_declaration
         if ("lexical_declaration".equals(funcNode.getType())) {
             lexicalDeclaration = funcNode;
@@ -564,13 +564,13 @@ public final class TypescriptAnalyzer extends TreeSitterAnalyzer {
                 }
             }
         }
-        
+
         if (lexicalDeclaration != null) {
             // This is a const/let declaration containing an arrow function
             TSNode variableDeclarator = null;
             TSNode arrowFunctionNode = null;
             String declarationKeyword = "";
-            
+
             // Find the declaration keyword (const, let) and variable_declarator
             for (int i = 0; i < lexicalDeclaration.getChildCount(); i++) {
                 TSNode child = lexicalDeclaration.getChild(i);
@@ -590,7 +590,7 @@ public final class TypescriptAnalyzer extends TreeSitterAnalyzer {
                     break;
                 }
             }
-            
+
             if (variableDeclarator != null && arrowFunctionNode != null) {
                 // Extract the name from variable declarator
                 String functionName = providedNameOpt.orElse("");
@@ -600,15 +600,15 @@ public final class TypescriptAnalyzer extends TreeSitterAnalyzer {
                         functionName = textSlice(nameNode, src);
                     }
                 }
-                
+
                 // Extract parameters from arrow function
                 TSNode paramsNode = arrowFunctionNode.getChildByFieldName("parameters");
                 String paramsText = formatParameterList(paramsNode, src);
-                
-                // Extract return type from arrow function  
+
+                // Extract return type from arrow function
                 TSNode returnTypeNode = arrowFunctionNode.getChildByFieldName("return_type");
                 String returnTypeText = formatReturnType(returnTypeNode, src);
-                
+
                 // Extract type parameters from arrow function
                 String typeParamsText = "";
                 var profile = getLanguageSyntaxProfile();
@@ -618,14 +618,14 @@ public final class TypescriptAnalyzer extends TreeSitterAnalyzer {
                         typeParamsText = textSlice(typeParamsNode, src);
                     }
                 }
-                
+
                 // Check if arrow function is async by looking for async keyword in the lexical declaration
                 boolean isAsync = false;
                 String arrowFunctionText = textSlice(arrowFunctionNode, src);
                 if (arrowFunctionText.startsWith("async ")) {
                     isAsync = true;
                 }
-                
+
                 // Build the abbreviated arrow function skeleton - use existing exportPrefix which already contains the modifiers
                 String asyncPrefix = isAsync ? "async" : "";
                 String signature = renderFunctionDeclaration(arrowFunctionNode, src, exportPrefix, asyncPrefix, functionName, typeParamsText, paramsText, returnTypeText, indent);
@@ -635,7 +635,7 @@ public final class TypescriptAnalyzer extends TreeSitterAnalyzer {
                 return;
             }
         }
-        
+
         // For all other cases, use the parent implementation
         super.buildFunctionSkeleton(funcNode, providedNameOpt, src, indent, lines, exportPrefix);
     }
@@ -643,37 +643,37 @@ public final class TypescriptAnalyzer extends TreeSitterAnalyzer {
     @Override
     public Optional<String> getMethodSource(String fqName) {
         Optional<String> result = super.getMethodSource(fqName);
-        
+
         if (result.isPresent()) {
             String source = result.get();
-            
+
             // Remove trailing semicolons from arrow function assignments
             if (source.contains("=>") && source.strip().endsWith("};")) {
                 source = source.replaceAll(";\\s*$", "");
             }
-            
+
             // Remove semicolons from function overload signatures
             String[] lines = source.split("\n");
             StringBuilder cleaned = new StringBuilder();
-            
+
             for (int i = 0; i < lines.length; i++) {
                 String line = lines[i];
                 String trimmed = line.strip();
-                
+
                 // Remove semicolons from function overload signatures (lines ending with ; that don't have {)
                 if (trimmed.startsWith("export function") && trimmed.endsWith(";") && !trimmed.contains("{")) {
                     line = line.replaceAll(";\\s*$", "");
                 }
-                
+
                 cleaned.append(line);
                 if (i < lines.length - 1) {
                     cleaned.append("\n");
                 }
             }
-            
+
             return Optional.of(cleaned.toString());
         }
-        
+
         return result;
     }
 
@@ -687,16 +687,16 @@ public final class TypescriptAnalyzer extends TreeSitterAnalyzer {
             CodeUnit cu = cuOpt.get();
             // Find the top-level parent for this CodeUnit
             CodeUnit topLevelParent = findTopLevelParent(cu);
-            
+
             // Get the skeleton from getSkeletons and apply our cleanup
             Map<CodeUnit, String> skeletons = getSkeletons(topLevelParent.source());
             String skeleton = skeletons.get(topLevelParent);
-            
+
             return Optional.ofNullable(skeleton);
         }
         return Optional.empty();
     }
-    
+
     /**
      * Find the top-level parent CodeUnit for a given CodeUnit.
      * If the CodeUnit has no parent, it returns itself.

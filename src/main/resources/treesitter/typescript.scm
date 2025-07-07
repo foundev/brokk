@@ -1,129 +1,469 @@
-; Classes, Interfaces, Enums, Modules (Namespaces)
-((class_declaration name: (type_identifier) @class.name) @class.definition)
-((abstract_class_declaration name: (type_identifier) @class.name) @class.definition)
-((interface_declaration name: (type_identifier) @interface.name) @interface.definition)
-((enum_declaration name: (identifier) @enum.name) @enum.definition)
-((module name: [(identifier) (string) (nested_identifier)] @module.name) @module.definition) ; module X {} or namespace X {}
+; ============================================================================
+; REUSABLE NAME PATTERNS (for reference and consistency)
+; ============================================================================
+; member_name: [(property_identifier) (private_property_identifier) (string) (number) (computed_property_name)]
+; interface_member_name: [(property_identifier) (string) (number) (computed_property_name)]
 
-; Functions and Methods (excluding arrow functions assigned to vars, handled below)
-((function_declaration
-  name: (identifier) @function.name
-  parameters: (formal_parameters) @function.parameters
-  return_type: (_)? @function.return_type
-  body: (_)? @function.body) @function.definition)
+; Namespace/Module declarations are handled by specific patterns below (ambient and non-ambient)
 
-((method_definition
-  name: [(property_identifier) (private_property_identifier) (string) (number) (computed_property_name)] @function.name ; also covers get/set accessors and computed names
-  parameters: (formal_parameters) @function.parameters
-  return_type: (_)? @function.return_type
-  body: (_)? @function.body) @function.definition)
+; ============================================================================
+; EXPORT STATEMENTS  
+; ============================================================================
 
-; Arrow function assigned to a variable (const, let, var)
-; This rule is more specific and should be prioritized by the analyzer for these cases.
-(lexical_declaration
-  (variable_declarator
-    name: (identifier) @function.name ; Name of the const/let
-    value: (arrow_function
-      parameters: (_)? @function.parameters
-      return_type: (_)? @function.return_type
-      body: (_)) @function.definition)) ; @function.definition is the arrow_function node
+; Export statements (both default and regular) for class-like declarations
+(export_statement
+  "export" @keyword.modifier
+  "default"? @keyword.modifier
+  [
+    (class_declaration name: (type_identifier) @class.name type_parameters: (_)? @class.type_parameters)
+    (abstract_class_declaration 
+      "abstract" @keyword.modifier
+      name: (type_identifier) @class.name 
+      type_parameters: (_)? @class.type_parameters)
+    (enum_declaration name: (identifier) @class.name)
+    (interface_declaration name: (type_identifier) @class.name type_parameters: (_)? @class.type_parameters)
+  ]) @class.definition
 
-(variable_declaration ; for 'var' keyword
-  (variable_declarator
-    name: (identifier) @function.name ; Name of the var
-    value: (arrow_function
-      parameters: (_)? @function.parameters
-      return_type: (_)? @function.return_type
-      body: (_)) @function.definition)) ; @function.definition is the arrow_function node
-
-; Standalone arrow functions (e.g., in callbacks, IIFEs, not directly assigned to a var captured above)
-((arrow_function
-  parameters: (_)? @function.parameters
-  return_type: (_)? @function.return_type
-  body: (_)) @function.definition
-  (#set! "default_name" "anonymous_arrow_function"))
-
-; Function signature (e.g. in interfaces, type literals, function overloads)
-((function_signature
-  name: (identifier) @function.name
-  parameters: (formal_parameters) @function.parameters
-  return_type: (_)? @function.return_type) @function.definition)
-
-((method_signature ; for interfaces/type literals
-  name: [(property_identifier) (string) (number) (computed_property_name)] @function.name
-  parameters: (formal_parameters) @function.parameters
-  return_type: (_)? @function.return_type) @function.definition)
-
-; Generator functions
-((generator_function_declaration
-  name: (identifier) @function.name
-  parameters: (formal_parameters) @function.parameters
-  return_type: (_)? @function.return_type
-  body: (statement_block) @function.body) @function.definition)
-
-; Fields (Variables, Class properties, Interface properties, Enum members)
-
-; Top-level/local variables (const, let, var) - EXCLUDING those whose value is an arrow function
-; (variable_declarator node itself is the definition)
-(variable_declarator
-  name: (identifier) @field.name
-  value: (_)? @field.value) @field.definition
-  (#not-parent-type? @field.definition "for_in_statement")
-  (#not-parent-type? @field.definition "for_of_statement")
-  ; Further condition to ensure value is not an arrow_function will be handled in Java code
-  ; to avoid making this query too complex or slow, as @field.value can be diverse.
-
-; Class fields (public_field_definition also covers private, protected, static, readonly)
-(public_field_definition
-  name: [(property_identifier) (private_property_identifier) (string) (number) (computed_property_name)] @field.name
-  type: (_)? @field.type
-  value: (_)? @field.value) @field.definition
-
-; Interface/type literal properties
-(property_signature
-  name: [(property_identifier) (string) (number) (computed_property_name)] @field.name
-  type: (_)? @field.type) @field.definition
-
-; Enum members
-(enum_declaration
-  body: (enum_body
-    ((property_identifier) @field.name @field.definition))) ; Member without value
-
-(enum_declaration
-  body: (enum_body
-    (enum_assignment
-      name: (property_identifier) @field.name
-      value: (_)) @field.definition)) ; Member with value
-
-
-; Decorators
-(decorator (identifier) @decorator.name) @decorator.definition ; @foo
-(decorator (call_expression function: (identifier) @decorator.name) @decorator.definition) ; @foo()
-(decorator (call_expression function: (member_expression property: (property_identifier) @decorator.name)) @decorator.definition) ; @obj.foo()
-
-; Type Aliases
+; Export statements with decorators for class declarations
 (
+  (decorator)*
+  . (export_statement
+      "export" @keyword.modifier
+      declaration: (class_declaration name: (type_identifier) @class.name type_parameters: (_)? @class.type_parameters)) @class.definition
+)
+
+; Export statements with decorators for abstract class declarations
+(
+  (decorator)*
+  . (export_statement
+      "export" @keyword.modifier
+      declaration: (abstract_class_declaration
+        "abstract" @keyword.modifier
+        name: (type_identifier) @class.name 
+        type_parameters: (_)? @class.type_parameters)) @class.definition
+)
+
+; Export statements (both default and regular) for functions
+(export_statement
+  "export" @keyword.modifier
+  "default"? @keyword.modifier
+  (function_declaration
+    "async"? @keyword.modifier
+    name: (identifier) @function.name
+    type_parameters: (_)? @function.type_parameters)) @function.definition
+
+; Export statements (both default and regular) for type aliases
+(export_statement
+  "export" @keyword.modifier
+  "default"? @keyword.modifier
   (type_alias_declaration
-    name: (type_identifier) @typealias.name
-    type_parameters: (_)? @typealias.type_parameters ; Optional: Capture type parameters for alias
-    value: (_) @typealias.value       ; Capture the actual type being aliased
-  ) @typealias.definition
-)
+    name: (type_identifier) @field.name) @field.definition)
+
+
+; ============================================================================
+; TYPE ALIAS DECLARATIONS (non-export)
+; ============================================================================
+
+; Non-export type alias declarations
+(program 
+  (type_alias_declaration
+    name: (type_identifier) @field.name) @field.definition)
+
+; ============================================================================
+; LEXICAL DECLARATIONS (const, let) - consolidated patterns
+; ============================================================================
+
+; Arrow functions in const/let (export and non-export)
+(export_statement
+  "export" @keyword.modifier
+  (lexical_declaration
+    ["const" "let"] @keyword.modifier
+    (variable_declarator
+      name: (identifier) @function.name
+      value: (arrow_function)))) @function.definition
+
+(program
+  (lexical_declaration
+    ["const" "let"] @keyword.modifier
+    (variable_declarator
+      name: (identifier) @function.name
+      value: (arrow_function))) @function.definition)
+
+; Other values in const/let (export and non-export) - Note: arrow functions are handled by specific patterns above
+(export_statement
+  "export" @keyword.modifier
+  (lexical_declaration
+    ["const" "let"] @keyword.modifier
+    (variable_declarator
+      name: (identifier) @field.name
+      value: (_)) @field.definition))
+
+(program
+  (lexical_declaration
+    ["const" "let"] @keyword.modifier
+    (variable_declarator
+      name: (identifier) @field.name
+      value: (_)) @field.definition))
+
+; ============================================================================
+; VARIABLE DECLARATIONS (var) - consolidated
+; ============================================================================
+
+; Export var declarations
+(export_statement
+  "export" @keyword.modifier
+  (variable_declaration
+    "var" @keyword.modifier
+    (variable_declarator
+      name: (identifier) @field.name) @field.definition))
+
+; Top-level non-export var declarations
+(program
+  (variable_declaration
+    "var" @keyword.modifier
+    (variable_declarator
+      name: (identifier) @field.name) @field.definition))
+
+; ============================================================================
+; AMBIENT DECLARATIONS (declare statements)
+; ============================================================================
+
+; Ambient variable declarations (declare var, declare let, declare const)
+(program
+  (ambient_declaration
+    "declare" @keyword.modifier
+    (variable_declaration
+      ["var" "let" "const"] @keyword.modifier
+      (variable_declarator
+        name: (identifier) @field.name) @field.definition)))
+
+; Ambient function declarations (declare function) 
+(program
+  (ambient_declaration
+    "declare" @keyword.modifier
+    (function_signature
+      name: (identifier) @function.name
+      type_parameters: (_)? @function.type_parameters)) @function.definition)
+
+; Ambient class declarations (declare class)
+(program
+  (ambient_declaration
+    "declare" @keyword.modifier
+    (class_declaration
+      name: (type_identifier) @class.name
+      type_parameters: (_)? @class.type_parameters) @class.definition))
+
+; Ambient interface declarations (declare interface)
+(program
+  (ambient_declaration
+    "declare" @keyword.modifier
+    (interface_declaration
+      name: (type_identifier) @class.name
+      type_parameters: (_)? @class.type_parameters) @class.definition))
+
+; Ambient enum declarations (declare enum)
+(program
+  (ambient_declaration
+    "declare" @keyword.modifier
+    (enum_declaration
+      name: (identifier) @class.name) @class.definition))
+
+; Ambient namespace declarations (declare namespace/module)
+(program
+  (ambient_declaration
+    "declare" @keyword.modifier
+    (internal_module
+      name: (_) @class.name) @class.definition))
+
+; Function signatures inside ambient namespaces
+(ambient_declaration
+  (internal_module
+    body: (statement_block
+      (function_signature
+        name: (identifier) @function.name
+        type_parameters: (_)? @function.type_parameters) @function.definition)))
+
+; Interface declarations inside ambient namespaces
+(ambient_declaration
+  (internal_module
+    body: (statement_block
+      (interface_declaration
+        name: (type_identifier) @class.name
+        type_parameters: (_)? @class.type_parameters) @class.definition)))
+
+; Class declarations inside ambient namespaces
+(ambient_declaration
+  (internal_module
+    body: (statement_block
+      (class_declaration
+        name: (type_identifier) @class.name
+        type_parameters: (_)? @class.type_parameters) @class.definition)))
+
+; Variable declarations inside ambient namespaces
+(ambient_declaration
+  (internal_module
+    body: (statement_block
+      (variable_declaration
+        ["var" "let" "const"] @keyword.modifier
+        (variable_declarator
+          name: (identifier) @field.name) @field.definition))))
+
+; ============================================================================
+; FUNCTION DECLARATIONS
+; ============================================================================
+
+; Top-level non-export function declarations
+(program
+  (function_declaration
+    "async"? @keyword.modifier
+    name: (identifier) @function.name
+    type_parameters: (_)? @function.type_parameters) @function.definition)
+
+; Top-level non-export interface declarations (not nested in export_statement)
+(program
+  (interface_declaration
+    name: (type_identifier) @class.name
+    type_parameters: (_)? @class.type_parameters) @class.definition)
+
+; Top-level non-export class declarations that are direct children of program (not nested in export_statement)
+(program
+  . (class_declaration
+      name: (type_identifier) @class.name
+      type_parameters: (_)? @class.type_parameters) @class.definition)
+
+; Top-level non-export abstract class declarations that are direct children of program (not nested in export_statement)
+(program
+  . (abstract_class_declaration
+      "abstract" @keyword.modifier
+      name: (type_identifier) @class.name
+      type_parameters: (_)? @class.type_parameters) @class.definition)
+
+; Top-level non-export enum declarations that are direct children of program (not nested in export_statement)
+(program
+  . (enum_declaration
+      name: (identifier) @class.name) @class.definition)
+
+; Top-level non-export namespace/module declarations (direct children of program, not export_statement or ambient_declaration)
+(program
+  (internal_module
+    name: (_) @class.name) @class.definition)
+
+; Top-level non-export namespace/module declarations wrapped in expression_statement
+(program
+  (expression_statement
+    (internal_module
+      name: (_) @class.name) @class.definition))
+
+; Function declarations inside regular namespaces
+(internal_module
+  body: (statement_block
+    (function_declaration
+      "async"? @keyword.modifier
+      name: (identifier) @function.name
+      type_parameters: (_)? @function.type_parameters) @function.definition))
+
+; Function signatures inside regular namespaces
+(internal_module
+  body: (statement_block
+    (function_signature
+      name: (identifier) @function.name
+      type_parameters: (_)? @function.type_parameters) @function.definition))
+
+; Interface declarations inside regular namespaces
+(internal_module
+  body: (statement_block
+    (interface_declaration
+      name: (type_identifier) @class.name
+      type_parameters: (_)? @class.type_parameters) @class.definition))
+
+; Class declarations inside regular namespaces
+(internal_module
+  body: (statement_block
+    (class_declaration
+      name: (type_identifier) @class.name
+      type_parameters: (_)? @class.type_parameters) @class.definition))
+
+; Enum declarations inside regular namespaces
+(internal_module
+  body: (statement_block
+    (enum_declaration
+      name: (identifier) @class.name) @class.definition))
+
+; Variable declarations inside regular namespaces
+(internal_module
+  body: (statement_block
+    (variable_declaration
+      ["var" "let" "const"] @keyword.modifier
+      (variable_declarator
+        name: (identifier) @field.name) @field.definition)))
+
+; Lexical declarations inside regular namespaces
+(internal_module
+  body: (statement_block
+    (lexical_declaration
+      ["const" "let"] @keyword.modifier
+      (variable_declarator
+        name: (identifier) @field.name
+        value: (_)) @field.definition)))
+
+; Type alias declarations inside regular namespaces
+(internal_module
+  body: (statement_block
+    (type_alias_declaration
+      name: (type_identifier) @field.name) @field.definition))
+
+; Nested namespace declarations inside regular namespaces
+(internal_module
+  body: (statement_block
+    (expression_statement
+      (internal_module
+        name: (_) @class.name) @class.definition)))
+
+; Nested namespace declarations inside regular namespaces (direct)
+(internal_module
+  body: (statement_block
+    (internal_module
+      name: (_) @class.name) @class.definition))
+
+; Export statements inside regular namespaces
+(internal_module
+  body: (statement_block
+    (export_statement
+      "export" @keyword.modifier
+      [
+        (class_declaration name: (type_identifier) @class.name type_parameters: (_)? @class.type_parameters)
+        (interface_declaration name: (type_identifier) @class.name type_parameters: (_)? @class.type_parameters)
+        (enum_declaration name: (identifier) @class.name)
+      ]) @class.definition))
+
+; Export statements for functions inside regular namespaces
+(internal_module
+  body: (statement_block
+    (export_statement
+      "export" @keyword.modifier
+      (function_declaration
+        "async"? @keyword.modifier
+        name: (identifier) @function.name
+        type_parameters: (_)? @function.type_parameters)) @function.definition))
+
+; Export statements for type aliases inside regular namespaces
+(internal_module
+  body: (statement_block
+    (export_statement
+      "export" @keyword.modifier
+      (type_alias_declaration
+        name: (type_identifier) @field.name) @field.definition)))
+
+; Handle nested exports in deeply nested namespaces
+(internal_module
+  body: (statement_block
+    (expression_statement
+      (internal_module
+        body: (statement_block
+          (export_statement
+            "export" @keyword.modifier
+            [
+              (class_declaration name: (type_identifier) @class.name type_parameters: (_)? @class.type_parameters)
+              (interface_declaration name: (type_identifier) @class.name type_parameters: (_)? @class.type_parameters)
+              (enum_declaration name: (identifier) @class.name)
+            ]) @class.definition)))))
+
+; Handle nested exports for functions in deeply nested namespaces
+(internal_module
+  body: (statement_block
+    (expression_statement
+      (internal_module
+        body: (statement_block
+          (export_statement
+            "export" @keyword.modifier
+            (function_declaration
+              "async"? @keyword.modifier
+              name: (identifier) @function.name
+              type_parameters: (_)? @function.type_parameters)) @function.definition)))))
+
+; Handle nested exports for type aliases in deeply nested namespaces
+(internal_module
+  body: (statement_block
+    (expression_statement
+      (internal_module
+        body: (statement_block
+          (export_statement
+            "export" @keyword.modifier
+            (type_alias_declaration
+              name: (type_identifier) @field.name) @field.definition))))))
+
+; ============================================================================
+; FUNCTION SIGNATURES (Overloads)
+; ============================================================================
+
+; Export function signatures (overloads)
+(export_statement
+  "export" @keyword.modifier
+  (function_signature
+    name: (identifier) @function.name
+    type_parameters: (_)? @function.type_parameters)) @function.definition
+
+; Top-level non-export function signatures
+(program
+  (function_signature
+    name: (identifier) @function.name
+    type_parameters: (_)? @function.type_parameters) @function.definition)
+
+; ============================================================================
+; CLASS/INTERFACE MEMBERS
+; ============================================================================
+
+; Method definitions (with optional decorators and modifiers) - uses member_name pattern
 (
-  (export_statement
-    "export"
-    "default"
-    declaration: (type_alias_declaration
-      name: (type_identifier) @typealias.name
-      type_parameters: (_)? @typealias.type_parameters
-      value: (_) @typealias.value
-    )
-  ) @typealias.definition
+  (decorator)*
+  . (method_definition
+      (accessibility_modifier)? @keyword.modifier
+      ["static" "readonly" "async"]* @keyword.modifier
+      name: [(property_identifier) (private_property_identifier) (string) (number) (computed_property_name)] @function.name
+      type_parameters: (_)? @function.type_parameters) @function.definition
 )
 
+; Interface method signatures - uses interface_member_name pattern
+(method_signature
+  name: [(property_identifier) (string) (number) (computed_property_name)] @function.name
+  type_parameters: (_)? @function.type_parameters) @function.definition
 
-; Captures for modifiers, parameters, return types (used by TreeSitterAnalyzer logic, not direct CUs)
-(formal_parameters) @parameters
-(type_annotation) @return_type_node  ; General type annotation
-(predefined_type) @predefined_type_node ; e.g. string, number
-(type_identifier) @type_identifier_node ; e.g. MyClass, InterfaceName
+; Interface constructor signatures (new signatures)
+(construct_signature
+  type_parameters: (_)? @function.type_parameters) @function.definition (#set! "default_name" "new")
+
+; Abstract method signatures (captured anywhere they appear)
+; Note: Abstract methods are typically method_signature nodes in abstract classes
+(
+  (decorator)*
+  . (abstract_method_signature
+      "abstract" @keyword.modifier
+      name: [(property_identifier) (private_property_identifier) (string) (number) (computed_property_name)] @function.name
+      type_parameters: (_)? @function.type_parameters) @function.definition
+)
+
+; Class fields (with optional decorators) - uses member_name pattern
+(
+  (decorator)*
+  . (public_field_definition
+      name: [(property_identifier) (private_property_identifier) (string) (number) (computed_property_name)] @field.name) @field.definition
+)
+
+; Interface properties - uses interface_member_name pattern
+(interface_body
+  (property_signature
+    name: [(property_identifier) (string) (number) (computed_property_name)] @field.name) @field.definition)
+
+; ============================================================================
+; ENUM MEMBERS
+; ============================================================================
+
+; Enum members for proper enum reconstruction - capture individual members
+(enum_body
+  ((property_identifier) @field.name) @field.definition)
+
+; Enum members with values (e.g., Green = 3, Active = "active")
+(enum_body
+  (enum_assignment
+    name: (property_identifier) @field.name
+    value: (_)) @field.definition)
